@@ -6,6 +6,8 @@ alwaysApply: false
 
 # Worker & DB Deployment — Use Project Scripts
 
+Prod deploys require an explicit OK per `deploy-guardrails.mdc`; this file only documents which scripts to run after approval.
+
 When giving deployment or runbook steps, **use the project’s scripts and `npm run` commands** from `infra/workers`. Do not substitute raw `aws`, `cdk`, or `supabase` CLI commands unless a script does not exist for that step.
 
 ## Where things live

@@ -1126,7 +1126,11 @@ export class SendWorker {
             emailBody,
             inReplyTo,
             references,
-            isHtmlBody ? { bodyHtml: emailBody, bodyText: emailBodyText ?? undefined } : undefined
+            isHtmlBody
+              ? { bodyHtml: emailBody, bodyText: emailBodyText ?? undefined }
+              : emailBodyText
+                ? { bodyText: emailBodyText }
+                : undefined
           );
           
           // Mark message sent (for maxMessages tracking)

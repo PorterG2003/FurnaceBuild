@@ -255,7 +255,7 @@ test('client api POST /flow?dry_run=true does not persist flow or versions', asy
   }
 });
 
-test('client api POST /flow:validate returns allowed false for invalid flow', async () => {
+test('client api POST /flow:validate returns 200 with warnings for empty draft flow', async () => {
   const harness = new ClientApiDbHarness({
     namespace: createClientApiTestNamespace('flow-validate-invalid'),
   });
@@ -264,13 +264,12 @@ test('client api POST /flow:validate returns allowed false for invalid flow', as
     const setup = await setupDraftCampaign(harness);
     campaignId = setup.campaignId;
     const response = await validateFlow(harness, campaignId, { nodes: [], edges: [] }, setup.apiKey);
-    assert.equal(response.status, 400);
-    const body = await response.json() as {
-      error: { code: string };
-      details?: unknown[];
-    };
-    assert.equal(body.error.code, 'invalid_flow');
-    assert.ok((body.details ?? []).length > 0);
+    assert.equal(response.status, 200);
+    const body = await response.json() as { data: unknown };
+    assertFlowDryRunShape(body.data);
+    assert.equal(body.data.allowed, true);
+    assert.equal(body.data.blocking_issues.length, 0);
+    assert.ok(body.data.warnings.length > 0);
   } finally {
     await cleanupCreatedCampaign(harness, campaignId);
     await harness.cleanup();
@@ -296,7 +295,7 @@ test('client api POST /flow:validate returns allowed true for valid linear flow'
   }
 });
 
-test('client api POST /flow with invalid flow returns 400 invalid_flow', async () => {
+test('client api POST /flow saves empty draft flow with validation warnings', async () => {
   const harness = new ClientApiDbHarness({
     namespace: createClientApiTestNamespace('flow-invalid-write'),
   });
@@ -305,13 +304,16 @@ test('client api POST /flow with invalid flow returns 400 invalid_flow', async (
     const setup = await setupDraftCampaign(harness);
     campaignId = setup.campaignId;
     const response = await saveFlow(harness, campaignId, { nodes: [], edges: [] }, { apiKey: setup.apiKey });
-    assert.equal(response.status, 400);
-    const body = await response.json() as {
-      error: { code: string };
-      details?: unknown[];
-    };
-    assert.equal(body.error.code, 'invalid_flow');
-    assert.ok((body.details ?? []).length > 0);
+    assert.equal(response.status, 200);
+    const body = await response.json() as { data: unknown };
+    assertFlowSaveShape(body.data);
+    assert.equal(body.data.validation.blocking_issues.length, 0);
+    assert.ok(body.data.validation.warnings.length > 0);
+
+    const dbFlow = await loadCampaignFlowFromDb(harness, campaignId);
+    assert.ok(dbFlow);
+    assert.ok(Array.isArray(dbFlow.nodes));
+    assert.ok(Array.isArray(dbFlow.edges));
   } finally {
     await cleanupCreatedCampaign(harness, campaignId);
     await harness.cleanup();
@@ -465,31 +467,35 @@ test('client api POST /campaigns with flow persists initial flow', async () => {
   }
 });
 
-test('client api POST /campaigns with invalid flow returns 400 before insert', async () => {
+test('client api POST /campaigns creates draft campaign when flow is empty (warnings only)', async () => {
   const harness = new ClientApiDbHarness({
     namespace: createClientApiTestNamespace('flow-create-invalid'),
   });
+  let campaignId: string | null = null;
   try {
     await harness.ensureOwnerAuthUser();
     const apiKey = await harness.createApiKey();
+    const campaignName = `Empty Flow Create ${harness.namespace}`;
     const response = await harness.request('/v1/campaigns', {
       method: 'POST',
       apiKey: apiKey.secret,
       body: {
-        name: 'Invalid Flow Create',
+        name: campaignName,
         flow: { nodes: [], edges: [] },
       },
     });
-    assert.equal(response.status, 400);
-    const body = await response.json() as { error: { code: string } };
-    assert.equal(body.error.code, 'invalid_flow');
+    assert.equal(response.status, 201);
+    const body = await response.json() as { data: { id: string; status: string } };
+    campaignId = body.data.id;
+    assert.equal(body.data.status, 'draft');
 
     const { data: campaigns } = await harness.supabase
       .from('campaigns')
       .select('id')
-      .eq('name', 'Invalid Flow Create');
-    assert.equal((campaigns ?? []).length, 0);
+      .eq('id', campaignId);
+    assert.equal((campaigns ?? []).length, 1);
   } finally {
+    await cleanupCreatedCampaign(harness, campaignId);
     await harness.cleanup();
   }
 });
@@ -717,7 +723,7 @@ test('client api POST /flow node add on running returns 403 flow_locked', async 
   }
 });
 
-test('client api paused campaign allows content edit and blocks structural edit', async () => {
+test('client api paused campaign allows content and structural edits', async () => {
   const harness = new ClientApiDbHarness({
     namespace: createClientApiTestNamespace('flow-paused-lock'),
   });
@@ -740,11 +746,17 @@ test('client api paused campaign allows content edit and blocks structural edit'
     assert.equal(contentResponse.status, 200);
 
     const structural = cloneFlow(content);
+    const edgeCountBefore = structural.edges.length;
     structural.edges.pop();
-    const blocked = await saveFlow(harness, campaignId, structural, { apiKey: setup.apiKey });
-    assert.equal(blocked.status, 403);
-    const blockedBody = await blocked.json() as { error: { code: string } };
-    assert.equal(blockedBody.error.code, 'flow_locked');
+    const structuralResponse = await saveFlow(harness, campaignId, structural, { apiKey: setup.apiKey });
+    assert.equal(structuralResponse.status, 200);
+    const structuralBody = await structuralResponse.json() as { data: unknown };
+    assertFlowSaveShape(structuralBody.data);
+    assert.equal(structuralBody.data.change_kind, 'structural');
+
+    const dbFlow = await loadCampaignFlowFromDb(harness, campaignId);
+    assert.ok(dbFlow);
+    assert.equal(dbFlow.edges.length, edgeCountBefore - 1);
   } finally {
     await cleanupCreatedCampaign(harness, campaignId);
     await harness.cleanup();
@@ -1052,6 +1064,53 @@ test('client api foreign account cannot read or write campaign flow', async () =
     assert.equal(write.status, 404);
   } finally {
     await foreign.cleanup();
+    await cleanupCreatedCampaign(harness, campaignId);
+    await harness.cleanup();
+  }
+});
+
+test('client api template-only email variants persist empty body_html and still render copy', async () => {
+  const harness = new ClientApiDbHarness({
+    namespace: createClientApiTestNamespace('flow-template-only-body'),
+  });
+  let campaignId: string | null = null;
+  try {
+    const setup = await setupDraftCampaign(harness);
+    campaignId = setup.campaignId;
+
+    const flow = linearFlowForApi();
+    const emailNode = flow.nodes.find((node) => node.id === 'email-1');
+    assert.ok(emailNode && emailNode.type === 'email');
+    emailNode.data.variants[0]!.template = 'Hey {{first_name}}, figured this might help.';
+    delete (emailNode.data.variants[0] as { body_html?: string }).body_html;
+    delete (emailNode.data.variants[0] as { body_text?: string }).body_text;
+
+    const saved = await saveFlow(harness, campaignId, flow, { apiKey: setup.apiKey });
+    assert.equal(saved.status, 200);
+
+    const dbFlow = await loadCampaignFlowFromDb(harness, campaignId);
+    const dbEmail = dbFlow?.nodes.find((node) => node.id === 'email-1');
+    assert.ok(dbEmail && dbEmail.type === 'email');
+    const variant = dbEmail.data.variants[0];
+    assert.ok(variant);
+    assert.equal(variant.body_html, '');
+    assert.equal(variant.template, 'Hey {{first_name}}, figured this might help.');
+
+    const { buildCampaignEmailContent } = await import('../../email/buildCampaignEmailContent.js');
+    const rendered = buildCampaignEmailContent(
+      {
+        subject: variant.subject,
+        body_html: variant.body_html,
+        body_text: variant.body_text,
+        template: variant.template,
+        editor_mode: variant.editor_mode,
+      },
+      { first_name: 'Casey' },
+      { deterministic: true }
+    );
+    assert.equal(rendered.bodyMerged, 'Hey Casey, figured this might help.');
+    assert.match(rendered.bodyText ?? '', /Hey Casey, figured this might help/);
+  } finally {
     await cleanupCreatedCampaign(harness, campaignId);
     await harness.cleanup();
   }

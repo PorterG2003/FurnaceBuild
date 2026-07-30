@@ -1,0 +1,134 @@
+---
+description: Never push/merge to main or run any prod deploy without a separate explicit OK — plan/todo execution is not approval
+alwaysApply: true
+---
+
+# Deploy & prod ship — hard stop
+
+Applies to **any** agent action that ships to production: push/merge to `main`
+(Amplify Hosting auto-deploys), worker/Foundry/docs/migration prod scripts, or
+equivalent raw `aws`/`cdk`/`supabase` commands aimed at prod.
+
+Dev deploys and non-`main` git pushes are free. This rule is the **whether /
+when** gate; for worker/DB script names after approval, see `deployment-workers.mdc`.
+
+## Hard stop (non-negotiable)
+
+**Before the first prod-touching git or deploy action in a session (or a new
+wave of prod ship), STOP.** Present a short blast-radius note, then wait for an
+explicit prod OK.
+
+Do **not** proceed past this gate because todos remain, a plan says to deploy,
+or the user said to implement/execute the plan.
+
+### What counts as deploy approval
+
+The user must clearly authorize **this ship**, naming or clearly covering the
+surface and env. Examples that count:
+
+- "OK to merge this PR to main"
+- "OK to push this branch to main"
+- "OK to `deploy:prod` workers"
+- "OK to prod client-api-docs"
+- "OK to `migrate:prod`"
+
+### What does **not** count as deploy approval
+
+Never treat these as permission to ship prod:
+
+- "Implement the plan" / "execute the plan" / "do all the todos" / "don't stop until done"
+- Approving or attaching a plan that *mentions* deploy, merge, Amplify, workers, etc.
+- Phase gates, "after gate" todos, or plan checklists that imply a prod step later
+- "Continue" / "keep going" / "finish shipping" without naming the prod surface
+- A prior turn that approved a **different** surface or env (e.g. `deploy:dev` ≠ `deploy:prod`)
+- Writing or editing deploy scripts (code is fine; **running** prod is not)
+- Creating a PR or pushing a feature branch (allowed; does not authorize merge to `main`)
+
+If unclear whether approval covers this prod action → **ask**. Do not infer.
+
+## Required ask format (before prod ship)
+
+In one short message, include:
+
+1. **Surface** (main / Amplify Hosting, workers CDK, Foundry, Supabase migrations, client-api-docs, …)
+2. **Env** (`prod`)
+3. **Command** you will run (or merge/push intent)
+4. **Blast radius** (e.g. “Amplify Hosting prod via main”, “ECS WorkerStack-prod”)
+
+Then wait. No parallel "I'll just start it" while asking.
+
+## Allowed without OK
+
+Agents may do these without asking:
+
+- Push feature/topic branches (any branch other than `main`)
+- Create PRs (when the user asks; existing commit/PR user rules still apply)
+- `npx ampx sandbox` (and sandbox secret helpers)
+- Any `*:dev` / `--env dev` deploy, build, restart, migrate, or docs deploy
+- Dev client API docs: `npm run deploy:client-api-docs -- --env dev`
+- Diff/preview against prod stacks when read-only (e.g. `diff:prod`) — do **not** follow with deploy without OK
+
+## Prod surface checklist (requires explicit OK)
+
+Treat these as gated. Prefer project npm scripts over raw CLI when both exist.
+
+### Git → Amplify Hosting prod
+
+- `git push` to `main` (including `HEAD:main`, upstream set to `main`)
+- Merge into `main` locally or via `gh pr merge` (or any UI-equivalent agent action)
+- Any force-update of `main`
+
+Pushing or merging to `main` **is** a prod deploy: Amplify Hosting builds and ships from that branch.
+
+### Workers (`infra/workers`)
+
+- `npm run deploy:prod` / `deploy:all` when it includes prod
+- `npm run build:prod` / `build:prod:*`
+- `npm run restart:prod`
+- `npm run migrate:prod` or any apply aimed at the prod Supabase branch
+
+### Foundry (`infra/foundry`)
+
+- `npm run deploy:prod`
+
+### Client API docs
+
+- `npm run deploy:client-api-docs -- --env prod`
+
+### Raw equivalents
+
+Any direct `cdk deploy …prod…`, `aws …` against prod accounts/stacks, or
+`supabase db push` / migration apply to prod — same gate as the npm scripts above.
+
+## Mid-flight
+
+If a prod deploy or merge is running and the user says stop / pause / do not
+ship — **stop immediately** when safe (kill the process; do not complete a
+pending merge/push), then confirm what already ran and what did not.
+
+If you discover mid-todo that the next step needs a prod ship you have not been
+OK'd for — **stop that todo**, ask for deploy OK, leave gated todos pending.
+Completing the todo list never outranks this rule.
+
+## Examples
+
+```text
+❌ User: "Implement the plan, don't stop until all todos are done."
+   Agent: merges the PR to main and runs deploy:prod workers.
+
+✅ User: "Implement the plan…"
+   Agent: finishes code on a branch, pushes the branch, opens a PR; before merge:
+   "Merging to main will deploy Amplify Hosting prod. OK to merge this PR to main?"
+
+❌ Plan todo: "deploy workers prod" + user approved plan earlier.
+   Agent: runs npm run deploy:prod in infra/workers.
+
+✅ Same todo: agent asks "OK to run `cd infra/workers && npm run deploy:prod`
+   (ECS WorkerStack-prod)?" and only then runs.
+
+✅ User: "push the branch and open a PR"
+   Agent: pushes feature branch and creates PR — no main/prod OK needed.
+
+❌ User: "ship it" after a PR exists (no surface named).
+   Agent: asks whether that means merge to main / workers prod / both.
+```

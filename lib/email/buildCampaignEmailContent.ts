@@ -1,7 +1,11 @@
 /**
  * Build campaign email content from node config and lead.
  * Single source of truth for both send-worker (actual send) and app (preview).
- * Pipeline: body_html ?? template ?? body → processSpintax → mergeTemplate; same for subject.
+ * Pipeline: first meaningful body_html → template → body → body_text,
+ * then processSpintax → mergeTemplate; same for subject.
+ *
+ * Blank / placeholder `body_html` (e.g. `""` or `<p></p>` from API/MCP richText
+ * normalize) must not block fallback to `template`.
  */
 
 import { stripHtml } from './parse-body.js';
@@ -25,6 +29,39 @@ export function htmlToFragment(html: string): string {
   out = out.replace(/^<p[^>]*>/i, '');
   out = out.replace(/<\/p>\s*$/i, '');
   return out.trim();
+}
+
+/**
+ * True when a body field has real copy after trimming tags/nbsp placeholders.
+ * Empty string and TipTap shells like `<p></p>` are not meaningful.
+ */
+export function hasMeaningfulEmailBody(value: string | null | undefined): boolean {
+  if (value == null) return false;
+  const trimmed = String(value).trim();
+  if (!trimmed) return false;
+  return stripHtml(trimmed.replace(/&nbsp;/gi, ' ')).length > 0;
+}
+
+/**
+ * Prefer real HTML body, then template / legacy body / body_text.
+ * Skips blank and placeholder-only HTML so API template-only variants still send.
+ */
+export function selectCampaignBodySource(config: {
+  body_html?: string | null;
+  template?: string | null;
+  body?: string | null;
+  body_text?: string | null;
+}): string {
+  const candidates = [config.body_html, config.template, config.body, config.body_text];
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && hasMeaningfulEmailBody(candidate)) {
+      return candidate;
+    }
+  }
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string') return candidate;
+  }
+  return '';
 }
 
 export interface MergeInboxComposeHtmlResult {
@@ -104,10 +141,7 @@ export function buildCampaignEmailContent(
   const subjectSpun = processSpintax(subjectRaw, options);
   const subject = mergeTemplate(subjectSpun, lead);
 
-  const bodySource =
-    typeof (config.body_html ?? config.template ?? config.body) === 'string'
-      ? (config.body_html ?? config.template ?? config.body)!
-      : '';
+  const bodySource = selectCampaignBodySource(config);
   const editorMode: EmailEditorMode =
     config.editor_mode === 'html' || isFullHtmlDocument(bodySource) ? 'html' : 'richText';
   const normalizedSignature =

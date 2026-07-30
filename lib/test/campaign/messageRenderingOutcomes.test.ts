@@ -290,3 +290,131 @@ test('html-mode campaign content preserves full-document markup through sent per
     await harness.cleanup();
   }
 });
+
+test('empty body_html with populated template still renders campaign copy (API/MCP shape)', async () => {
+  const harness = new CampaignDbHarness({
+    namespace: createCampaignTestNamespace('message-rendering-empty-html'),
+  });
+
+  try {
+    const graph = await harness.createCampaignGraph({
+      name: 'Message Rendering Empty body_html Outcomes',
+      status: 'running',
+      flowKind: 'emailOnly',
+      mailboxes: [
+        {
+          key: 'mailbox-1',
+          emailAddress: `sender-${harness.namespace}@example.com`,
+          displayName: 'Sender',
+        },
+      ],
+      leads: [
+        buildCampaignLead({
+          key: 'render-target',
+          email: `lead-${harness.namespace}@example.com`,
+          firstName: 'Casey',
+          enrollment: buildCampaignEnrollment({
+            state: 'active',
+            currentFlowNodeId: 'email-1',
+            nextRunAt: new Date(Date.now() - 60_000).toISOString(),
+          }),
+        }),
+      ],
+    });
+
+    const lead = graph.leadsByKey.get('render-target')!;
+    const mailboxId = graph.mailboxIdsByKey.get('mailbox-1')!;
+    const { error: signatureError } = await harness.supabase
+      .from('mailboxes')
+      .update({ signature: '<p>Thanks,<br>Porter</p>' })
+      .eq('id', mailboxId);
+    assert.equal(signatureError, null);
+    const nodeId = graph.nodeIdsByFlowNodeId.get('email-1')!;
+    const scheduledAt = new Date().toISOString();
+    const messageJobId = randomUUID();
+
+    const { error: jobError } = await harness.supabase.from('message_jobs').insert({
+      id: messageJobId,
+      enrollment_id: lead.enrollmentId,
+      campaign_id: graph.campaignId,
+      account_id: graph.accountId,
+      lead_id: lead.leadId,
+      mailbox_id: mailboxId,
+      node_id: nodeId,
+      status: 'reserved',
+      scheduled_at: scheduledAt,
+      reserved_at: scheduledAt,
+      lease_expires_at: null,
+      claim_token: null,
+      sending_started_at: null,
+      sent_at: null,
+      provider_message_id: null,
+      error_message: null,
+      retry_count: 0,
+      message_type: 'campaign',
+      send_wait_reason: null,
+      interval_id: null,
+      message_data: {
+        node_config: {
+          subject: 'thought this might help',
+          body_html: '',
+          template: 'Hey {{first_name}}, figured this might help.',
+          body_text: 'Hey {{first_name}}, figured this might help.',
+          body: 'Hey {{first_name}}, figured this might help.',
+        },
+      },
+    } as any);
+    assert.equal(jobError, null);
+    graph.manifest.messageJobIds.push(messageJobId);
+
+    let capturedSmtpBody: string | null = null;
+    const sendWorker = new SendWorker({
+      supabase: harness.supabase as any,
+      databaseClient: {} as any,
+      campaignEmailSender: async (
+        _transporter,
+        _mailbox,
+        _job,
+        _lead,
+        _subject,
+        body,
+        _inReplyTo,
+        _references,
+        options
+      ) => {
+        capturedSmtpBody = options?.bodyHtml ?? body;
+        return '<provider@example.com>';
+      },
+    });
+    (sendWorker as any).smtpPool = {
+      getTransporter: async () => ({}),
+      markMessageSent: () => {},
+      closeAll: async () => {},
+    };
+
+    const { data: messageJobRow, error: messageJobLoadError } = await harness.supabase
+      .from('message_jobs')
+      .select('*')
+      .eq('id', messageJobId)
+      .single();
+    assert.equal(messageJobLoadError, null);
+
+    await (sendWorker as any).processMessageJob(messageJobRow);
+
+    const { data: sentEvent, error: sentEventError } = await harness.supabase
+      .from('events')
+      .select('event_data')
+      .eq('message_job_id', messageJobId)
+      .eq('event_type', 'sent')
+      .single();
+    assert.equal(sentEventError, null);
+
+    const eventData = (sentEvent as any).event_data as Record<string, string | null>;
+    assert.match(eventData.sent_body_html ?? '', /Hey Casey, figured this might help/);
+    assert.match(eventData.sent_body_html ?? '', /Thanks,<br\s*\/?>Porter/);
+    assert.match(eventData.sent_body_text ?? '', /Hey Casey, figured this might help/);
+    assert.match(capturedSmtpBody ?? '', /Hey Casey, figured this might help/);
+  } finally {
+    await harness.cleanup();
+  }
+});

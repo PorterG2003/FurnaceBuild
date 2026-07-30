@@ -107,8 +107,14 @@ export async function sendEmail(
     attachments = inlineAttachments;
     text = options.bodyText?.trim() || stripHtml(html) || body;
   } else {
-    text = body;
-    html = body;
+    // Prefer non-empty plain body; fall back to bodyText so blank merged HTML
+    // cannot wipe a populated text part (API template-only / signature edge cases).
+    const plain =
+      String(body ?? '').trim() ||
+      String(options?.bodyText ?? '').trim() ||
+      String(body ?? '');
+    text = plain;
+    html = plain;
     attachments = undefined;
   }
 

@@ -131,4 +131,54 @@ describe('buildCampaignEmailContent', () => {
     assert.match(result.bodyMerged, /Thanks,<br\s*\/?>Porter/);
     assert.equal(result.bodyText, 'Hello Casey Thanks, Porter');
   });
+
+  it('falls back to template when body_html is an empty string (API/MCP normalize shape)', () => {
+    const result = buildCampaignEmailContent(
+      {
+        subject: 'API template only',
+        body_html: '',
+        template: 'Hey {{first_name}}, figured this might help.',
+        body_text: 'Hey {{first_name}}, figured this might help.',
+      },
+      lead,
+      { deterministic: true }
+    );
+
+    assert.equal(result.bodyMerged, 'Hey Casey, figured this might help.');
+    assert.equal(result.isHtmlBody, false);
+    assert.equal(result.bodyText, 'Hey Casey, figured this might help.');
+  });
+
+  it('falls back to template when body_html is a TipTap empty shell', () => {
+    const result = buildCampaignEmailContent(
+      {
+        subject: 'Placeholder html',
+        body_html: '<p></p>',
+        template: 'Hey {{first_name}}, quick note.',
+        signature: '<p>Thanks,<br>Porter</p>',
+      },
+      lead,
+      { deterministic: true }
+    );
+
+    assert.match(result.bodyMerged, /Hey Casey, quick note/);
+    assert.match(result.bodyMerged, /Thanks,<br\s*\/?>Porter/);
+    assert.equal(result.isHtmlBody, true);
+    assert.match(result.bodyText ?? '', /Hey Casey, quick note/);
+  });
+
+  it('falls back to template when body_html is whitespace-only', () => {
+    const result = buildCampaignEmailContent(
+      {
+        subject: 'Whitespace html',
+        body_html: '   ',
+        template: 'Hello {{first_name}}',
+      },
+      lead,
+      { deterministic: true }
+    );
+
+    assert.equal(result.bodyMerged, 'Hello Casey');
+    assert.equal(result.bodyText, 'Hello Casey');
+  });
 });

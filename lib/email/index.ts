@@ -50,8 +50,10 @@ export {
 
 export {
   buildCampaignEmailContent,
+  hasMeaningfulEmailBody,
   htmlToFragment,
   mergeInboxComposeHtml,
+  selectCampaignBodySource,
   type BuildCampaignEmailContentConfig,
   type BuildCampaignEmailContentResult,
   type BuildCampaignEmailContentOptions,

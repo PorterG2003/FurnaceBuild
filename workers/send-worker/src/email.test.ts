@@ -182,4 +182,36 @@ describe('sendEmail', () => {
     assert.match(String(sentMail.html), /<table>/i);
     assert.equal(sentMail.text, 'Hello Casey');
   });
+
+  it('uses bodyText when plain body is empty', async () => {
+    let sent: Pick<CapturedMail, 'text' | 'html'> | null = null;
+    const transporter = {
+      async sendMail(options: SendMailOptions) {
+        sent = {
+          text: options.text,
+          html: options.html,
+        };
+        return { messageId: '<provider@example.com>' };
+      },
+    };
+
+    await sendEmail(
+      transporter as any,
+      createMailbox(),
+      createJob(),
+      createLead(),
+      'Blank merged body',
+      '',
+      null,
+      null,
+      {
+        bodyText: 'Hey Casey, figured this might help.',
+      }
+    );
+
+    assert.ok(sent);
+    const sentMail: Pick<CapturedMail, 'text' | 'html'> = sent;
+    assert.equal(sentMail.text, 'Hey Casey, figured this might help.');
+    assert.equal(sentMail.html, 'Hey Casey, figured this might help.');
+  });
 });

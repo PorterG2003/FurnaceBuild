@@ -3,6 +3,7 @@ import {
   buildCampaignEmailContent,
   buildReferencesFromAncestorIds,
   buildStableSubmittedMessageId,
+  formatMessageId,
   formatReferencesHeader,
   normalizeMessageId,
   normalizeThreadTopic,
@@ -44,6 +45,28 @@ class CampaignAttemptError extends Error {
     super(message);
     this.name = 'CampaignAttemptError';
   }
+}
+
+/** Accept SendEmailResult or legacy bare Message-ID strings from test harnesses. */
+function normalizeCampaignSendResult(
+  result: SendEmailResult | string,
+  fallbackSubmittedMessageId: string,
+): SendEmailResult {
+  if (typeof result === 'string') {
+    return {
+      submittedMessageId: fallbackSubmittedMessageId,
+      providerMessageId: formatMessageId(result) || fallbackSubmittedMessageId,
+    };
+  }
+  const submittedMessageId =
+    formatMessageId(result.submittedMessageId) || fallbackSubmittedMessageId;
+  return {
+    submittedMessageId,
+    providerMessageId:
+      formatMessageId(result.providerMessageId) ||
+      submittedMessageId ||
+      fallbackSubmittedMessageId,
+  };
 }
 
 type SentThreadMessageRecord = {
@@ -1172,7 +1195,7 @@ export class SendWorker {
 
         try {
           // 5. Send email (with optional threading headers for follow-ups)
-          sendResult = await this.campaignEmailSender(
+          const rawSendResult = await this.campaignEmailSender(
             transporter,
             mailbox,
             messageJob,
@@ -1191,6 +1214,8 @@ export class SendWorker {
                   : {}),
             },
           );
+          // Tests/harnesses may still return a bare Message-ID string.
+          sendResult = normalizeCampaignSendResult(rawSendResult, submittedMessageId);
           
           // Mark message sent (for maxMessages tracking)
           this.smtpPool.markMessageSent(mailbox.id);

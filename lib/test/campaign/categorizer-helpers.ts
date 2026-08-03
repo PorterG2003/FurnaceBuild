@@ -172,7 +172,8 @@ export function createTestSendWorker(
         throw new Error('Synthetic provider failure');
       }
       options?.onSend?.(job.id);
-      return `<${job.id}@furnace.test>`;
+      const id = `<${job.id}@furnace.test>`;
+      return { submittedMessageId: id, providerMessageId: id };
     },
   });
   (sendWorker as any).smtpPool = {

@@ -435,7 +435,8 @@ test('production-like campaign lifecycle stays internally consistent across mixe
       if (failingJobIds.has(job.id)) {
         throw new Error('Synthetic provider failure');
       }
-      return `<${job.id}@furnace.test>`;
+      const id = `<${job.id}@furnace.test>`;
+      return { submittedMessageId: id, providerMessageId: id };
     },
   });
   (sendWorker as any).smtpPool = {

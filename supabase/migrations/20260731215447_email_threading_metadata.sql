@@ -51,6 +51,10 @@ COMMENT ON TABLE public.pending_inbound_replies IS
 
 ALTER TABLE public.pending_inbound_replies ENABLE ROW LEVEL SECURITY;
 
+-- Replace the 3-arg overload; adding a param via CREATE OR REPLACE alone would
+-- leave the old signature in place and confuse PostgREST.
+DROP FUNCTION IF EXISTS public.finalize_message_job_sent(UUID, TEXT, TIMESTAMPTZ);
+
 CREATE OR REPLACE FUNCTION public.finalize_message_job_sent(
   p_message_job_id UUID,
   p_provider_message_id TEXT,

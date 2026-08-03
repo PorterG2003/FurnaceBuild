@@ -42,6 +42,7 @@ WORKDIR /app
 # Copy libs so file:../../lib/* from worker dir resolves
 COPY --from=builder /app/lib/email/package.json ./lib/email/
 COPY --from=builder /app/lib/email/dist ./lib/email/dist
+COPY --from=builder /app/lib/email/node_modules ./lib/email/node_modules
 COPY --from=builder /app/lib/mailbox/package.json ./lib/mailbox/
 COPY --from=builder /app/lib/mailbox/dist ./lib/mailbox/dist
 COPY --from=builder /app/lib/slack/package.json ./lib/slack/

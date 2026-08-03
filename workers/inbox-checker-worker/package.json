@@ -12,20 +12,21 @@
     "test": "npm --prefix ../../lib/mailbox run build && node --import tsx --test ../../lib/mailbox/connectionErrors.test.ts ../../lib/mailbox/connectionHealth.test.ts ../../lib/mailbox/bulkConnectionTest.test.ts ../../lib/mailbox/imapRecoveryAlert.test.ts ../../lib/mailbox/imapSchedule.test.ts src/thread-manager.test.ts src/worker.test.ts src/message-processor.test.ts src/imap-recovery.test.ts"
   },
   "dependencies": {
-    "@furnace/mailbox-lib": "file:../../lib/mailbox",
-    "@furnace/slack-lib": "file:../../lib/slack",
     "@aws-sdk/client-sqs": "^3.0.0",
     "@aws-sdk/client-ssm": "^3.0.0",
+    "@furnace/email-lib": "file:../../lib/email",
+    "@furnace/mailbox-lib": "file:../../lib/mailbox",
+    "@furnace/slack-lib": "file:../../lib/slack",
     "@supabase/supabase-js": "^2.77.0",
+    "dotenv": "^16.0.0",
     "imapflow": "^1.0.0",
     "mailparser": "^3.7.0",
-    "p-limit": "^5.0.0",
-    "dotenv": "^16.0.0"
+    "p-limit": "^5.0.0"
   },
   "devDependencies": {
     "@types/mailparser": "^3.4.6",
     "@types/node": "^20.0.0",
-    "typescript": "^5.9.0",
-    "tsx": "^4.0.0"
+    "tsx": "^4.0.0",
+    "typescript": "^5.9.0"
   }
 }

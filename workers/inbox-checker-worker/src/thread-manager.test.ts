@@ -52,6 +52,10 @@ class MockQueryBuilder implements PromiseLike<Response> {
     return this;
   }
 
+  delete() {
+    return this;
+  }
+
   eq(column: string, value: unknown) {
     this.call.filters.push({ op: 'eq', column, value });
     return this;
@@ -121,8 +125,20 @@ class MockSupabase {
   constructor(private readonly responses: Response[]) {}
 
   from(table: string) {
-    const response = this.responses.shift();
-    if (!response) throw new Error(`No mock response queued for table ${table}`);
+    let response = this.responses.shift();
+    // New optional tables / best-effort cleanup should not force every fixture to grow.
+    if (!response) {
+      if (
+        table === 'pending_inbound_replies' ||
+        table === 'message_jobs' ||
+        table === 'email_threads' ||
+        table === 'email_messages'
+      ) {
+        response = { data: null, error: null };
+      } else {
+        throw new Error(`No mock response queued for table ${table}`);
+      }
+    }
 
     const call: QueryCall = {
       kind: 'query',
@@ -435,6 +451,9 @@ function createProcessedMessage(overrides: Partial<ProcessedMessage> = {}): Proc
     messageId: '<reply@example.com>',
     inReplyTo: '<abc@example.com>',
     references: null,
+    referenceMessageIds: [],
+    threadTopic: null,
+    threadIndex: null,
     from: { address: 'lead@example.com', name: 'Lead' },
     to: [{ address: 'porterg@furnaceoutbound.com', name: 'Porter' }],
     subject: 'Re: Hello',
@@ -827,6 +846,8 @@ test('backfillSentMessages stores rendered event payloads for sent campaign mess
     message_id: 'abc@example.com',
     in_reply_to: null,
     message_references: null,
+    reference_message_ids: null,
+    thread_topic: 'Hello Casey',
     received_at: '2026-04-05T01:00:00.000Z',
     headers: {},
     attachments: [],
@@ -1140,6 +1161,7 @@ test('handleReply external In-Reply-To still backfills later sends via reply cut
   const supabase = new MockSupabase([
     { data: [] }, // dup check
     { data: [] }, // Outlook IRT — no job
+    { data: [] }, // References newest (msg3) — no job
     { data: [job1] }, // References msg1 match
     { data: [] }, // getOrCreateThread: no thread by message_job_id
     { data: [] }, // getOrCreateThread: no campaign+lead thread
@@ -1156,7 +1178,7 @@ test('handleReply external In-Reply-To still backfills later sends via reply cut
       },
       error: null,
     }, // create thread
-    // backfill all 3 under reply cutoff
+  // backfill all 3 under reply cutoff
     {
       data: [
         {

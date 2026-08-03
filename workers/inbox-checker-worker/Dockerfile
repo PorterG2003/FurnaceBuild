@@ -3,8 +3,16 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
+# Copy and build @furnace/email-lib (worker depends on file:../../lib/email)
+RUN mkdir -p /app/lib/email /app/lib/mailbox /app/lib/slack /app/workers/inbox-checker-worker
+COPY lib/email/package*.json lib/email/tsconfig.build.json ./lib/email/
+COPY lib/email/*.ts ./lib/email/
+COPY lib/email/transactional ./lib/email/transactional
+WORKDIR /app/lib/email
+RUN npm install && npm run build
+
 # Copy and build @furnace/mailbox-lib (worker depends on file:../../lib/mailbox)
-RUN mkdir -p /app/lib/mailbox /app/lib/slack /app/workers/inbox-checker-worker
+WORKDIR /app
 COPY lib/mailbox/package*.json lib/mailbox/tsconfig.build.json lib/mailbox/*.ts ./lib/mailbox/
 WORKDIR /app/lib/mailbox
 RUN npm install && npm run build
@@ -15,7 +23,7 @@ COPY lib/slack/package.json lib/slack/package-lock.json lib/slack/tsconfig.build
 WORKDIR /app/lib/slack
 RUN npm install && npm run build
 
-# Worker: package files and install (file:../../lib/slack resolves to /app/lib/slack)
+# Worker: package files and install (file:../../lib/* resolve)
 WORKDIR /app
 COPY workers/inbox-checker-worker/package*.json ./workers/inbox-checker-worker/
 WORKDIR /app/workers/inbox-checker-worker
@@ -26,12 +34,14 @@ COPY workers/inbox-checker-worker/src ./src
 COPY workers/inbox-checker-worker/tsconfig.json ./
 RUN npm run build
 
-# Production stage (path layout so file:../../lib/slack resolves)
+# Production stage (path layout so file:../../lib/* resolves)
 FROM node:20-alpine
 
 WORKDIR /app
 
-# Copy slack-lib so file:../../lib/slack from worker dir resolves
+# Copy libs so file:../../lib/* from worker dir resolves
+COPY --from=builder /app/lib/email/package.json ./lib/email/
+COPY --from=builder /app/lib/email/dist ./lib/email/dist
 COPY --from=builder /app/lib/mailbox/package.json ./lib/mailbox/
 COPY --from=builder /app/lib/mailbox/dist ./lib/mailbox/dist
 COPY --from=builder /app/lib/slack/package.json ./lib/slack/

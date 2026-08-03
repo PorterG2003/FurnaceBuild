@@ -272,6 +272,18 @@ export class InboxCheckerWorker {
       const messages = await this.imapClient.fetchNewMessages(mailbox, lastSyncedAt);
       console.log(`[INBOX CHECKER] Found ${messages.length} new message(s) in mailbox ${mailbox.id}`);
 
+      // Retry child-before-parent staged replies after IMAP is healthy
+      try {
+        const stagedAttached = await this.threadManager.retryPendingInboundReplies(mailbox);
+        if (stagedAttached > 0) {
+          console.log(
+            `[INBOX CHECKER] Attached ${stagedAttached} previously staged inbound reply(ies) for mailbox ${mailbox.id}`,
+          );
+        }
+      } catch (err) {
+        console.error(`[INBOX CHECKER] Failed retrying pending inbound replies for ${mailbox.id}:`, err);
+      }
+
       if (messages.length === 0) {
         await this.supabase
           .from('mailboxes')
@@ -296,24 +308,21 @@ export class InboxCheckerWorker {
             continue;
           }
 
-          // Check for reply
-          if (this.messageProcessor.isReply(message)) {
-            const handled = await this.threadManager.handleReply(mailbox, message, { isUnsubscribe });
-            if (handled) {
-              replies++;
-              if (isUnsubscribe) {
-                await this.threadManager.autoBlockUnsubscribe(mailbox, message);
-                unsubscribes++;
-              }
-            } else {
-              // Not a reply to our message - might be spam or unrelated
-              console.log(`[INBOX CHECKER] Message ${message.messageId} has threading headers but doesn't match any sent message`);
-              if (isUnsubscribe) {
-                await this.threadManager.autoBlockUnsubscribe(mailbox, message);
-                unsubscribes++;
-              }
+          // Try reply attach for threading-header replies and clearly-ours fallbacks
+          const handled = await this.threadManager.handleReply(mailbox, message, { isUnsubscribe });
+          if (handled) {
+            replies++;
+            if (isUnsubscribe) {
+              await this.threadManager.autoBlockUnsubscribe(mailbox, message);
+              unsubscribes++;
             }
             continue;
+          }
+
+          if (this.messageProcessor.isReply(message)) {
+            console.log(
+              `[INBOX CHECKER] Message ${message.messageId} looks like a reply but does not match our outbound`,
+            );
           }
 
           // Check for unsubscribe

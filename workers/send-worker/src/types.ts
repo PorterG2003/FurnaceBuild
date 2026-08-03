@@ -61,6 +61,7 @@ export interface MessageJob {
   sending_started_at?: string | null;
   sent_at: string | null;
   provider_message_id: string | null;
+  submitted_message_id?: string | null;
   error_message: string | null;
   retry_count: number;
   message_data: {
@@ -82,6 +83,9 @@ export interface MessageJob {
     cc?: string[];
     in_reply_to?: string;
     message_references?: string;
+    reference_message_ids?: string[];
+    thread_topic?: string;
+    submitted_message_id?: string;
     attachments?: Array<{ filename: string; contentType?: string; content: string }>;
     /** Test harness flag: skip SMTP and still finalize as sent. */
     skip_smtp?: boolean;

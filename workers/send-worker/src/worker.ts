@@ -1,6 +1,13 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import {
   buildCampaignEmailContent,
+  buildReferencesFromAncestorIds,
+  buildStableSubmittedMessageId,
+  formatReferencesHeader,
+  normalizeMessageId,
+  normalizeThreadTopic,
+  parseMessageIds,
+  pickWireMessageId,
   resolveCampaignFollowUpSubject,
   type LeadLike,
 } from '../../../lib/email/dist/index.js';
@@ -15,7 +22,7 @@ import {
 } from '@furnace/mailbox-lib';
 import { DatabaseClient } from './database.js';
 import { sendEmail, sendReplyEmail } from './email.js';
-import type { ReplyEmailOptions } from './email.js';
+import type { ReplyEmailOptions, SendEmailResult } from './email.js';
 import { SmtpPool } from './smtp-pool.js';
 import { emitWebhookEvent } from './emit-webhook-event.js';
 import type { MessageJob, Mailbox, Lead } from './types.js';
@@ -53,8 +60,19 @@ type SentThreadMessageRecord = {
   messageId: string;
   inReplyTo: string | null;
   references: string | null;
+  referenceMessageIds?: string[] | null;
+  threadTopic?: string | null;
   receivedAt?: string;
   attachments?: unknown[] | null;
+};
+
+type SentThreadAncestorJob = {
+  id: string;
+  provider_message_id: string | null;
+  submitted_message_id?: string | null;
+  message_data: any;
+  sent_at?: string | null;
+  scheduled_at?: string | null;
 };
 
 export interface WorkerConfig {
@@ -458,11 +476,41 @@ export class SendWorker {
   private async finalizeCampaignMessageJobSent(
     messageJobId: string,
     providerMessageId: string,
+    submittedMessageId?: string | null,
   ): Promise<void> {
-    const { data, error } = await this.supabase.rpc('finalize_message_job_sent', {
-      p_message_job_id: messageJobId,
-      p_provider_message_id: providerMessageId,
-    });
+    // Prefer extended signature when migration is applied; fall back for older DBs.
+    let data: unknown;
+    let error: { message: string } | null = null;
+    if (submittedMessageId) {
+      const extended = await this.supabase.rpc('finalize_message_job_sent', {
+        p_message_job_id: messageJobId,
+        p_provider_message_id: providerMessageId,
+        p_submitted_message_id: submittedMessageId,
+      });
+      data = extended.data;
+      error = extended.error;
+      if (error?.message?.includes('Could not find the function') || error?.message?.includes('schema cache')) {
+        const legacy = await this.supabase.rpc('finalize_message_job_sent', {
+          p_message_job_id: messageJobId,
+          p_provider_message_id: providerMessageId,
+        });
+        data = legacy.data;
+        error = legacy.error;
+        if (!legacy.error && submittedMessageId) {
+          await this.supabase
+            .from('message_jobs')
+            .update({ submitted_message_id: submittedMessageId })
+            .eq('id', messageJobId);
+        }
+      }
+    } else {
+      const legacy = await this.supabase.rpc('finalize_message_job_sent', {
+        p_message_job_id: messageJobId,
+        p_provider_message_id: providerMessageId,
+      });
+      data = legacy.data;
+      error = legacy.error;
+    }
 
     if (error) {
       throw new Error(`Failed to finalize sent message job ${messageJobId}: ${error.message}`);
@@ -545,9 +593,11 @@ export class SendWorker {
             subject: params.subject,
             body_text: params.bodyText,
             body_html: params.bodyHtml,
-            message_id: params.messageId,
-            in_reply_to: params.inReplyTo,
+            message_id: normalizeMessageId(params.messageId),
+            in_reply_to: normalizeMessageId(params.inReplyTo),
             message_references: params.references,
+            reference_message_ids: params.referenceMessageIds ?? parseMessageIds(params.references),
+            thread_topic: params.threadTopic ?? null,
             received_at: now,
             attachments: params.attachments ?? null,
           });
@@ -998,11 +1048,13 @@ export class SendWorker {
 
       // Throttle check passed - proceed with sending
 
-      // 2b. Get first sent message for this campaign+lead (for thread continuation)
-      const threadFirst = await this.getFirstSentMessageForCampaignLead(
+      // 2b. Prior sent jobs for subject continuity + cumulative RFC threading
+      const priorSentJobs = await this.getSentJobsForCampaignLeadThread(
         messageJob.campaign_id,
         messageJob.lead_id,
       );
+      const threadFirst = priorSentJobs[0] ?? null;
+      const threadingHeaders = this.buildOutboundThreadingHeaders(priorSentJobs);
 
       // 3. Generate email content from template (shared pipeline with preview)
       let content;
@@ -1043,13 +1095,10 @@ export class SendWorker {
       // Subject: use current node's subject; if follow-up and continuing (empty /
       // mistaken "(No subject)"), reuse the exact first sent subject.
       let subject: string;
-      let inReplyTo: string | null = null;
-      let references: string | null = null;
+      const inReplyTo = threadingHeaders?.inReplyTo ?? null;
+      const references = threadingHeaders?.references ?? null;
+      const referenceMessageIds = threadingHeaders?.referenceMessageIds ?? null;
       if (threadFirst) {
-        if (threadFirst.provider_message_id) {
-          inReplyTo = threadFirst.provider_message_id;
-          references = threadFirst.provider_message_id;
-        }
         const nc = threadFirst.message_data?.node_config;
         const firstSubjectTemplate = (nc?.subject ?? nc?.template ?? '') as string;
         let firstSentSubject: string | null = null;
@@ -1096,19 +1145,25 @@ export class SendWorker {
         subject = currentSubject;
       }
 
+      const threadTopic = normalizeThreadTopic(subject);
+      const submittedMessageId = buildStableSubmittedMessageId(message_job_id);
+
       // Check if this is a test mode job (skip SMTP sending)
       // Test mailboxes are identified by @furnace.test email domain
       const isTestMailbox = mailbox.email_address.endsWith('@furnace.test');
       const skipSmtp = isTestMailbox || (messageJob.message_data as any)?.skip_smtp === true;
-      let providerMessageId: string;
+      let sendResult: SendEmailResult;
 
       if (skipSmtp) {
-        // Test mode: Skip SMTP sending, generate fake message ID
+        // Test mode: Skip SMTP sending, reuse stable submitted ID as provider ID
         const testReason = isTestMailbox 
           ? `test mailbox detected (${mailbox.email_address})`
           : 'skip_smtp flag set';
         console.log(`[TEST MODE] Processing message job ${message_job_id} (SMTP sending skipped - ${testReason})`);
-        providerMessageId = `test-${Date.now()}-${Math.random().toString(36).substring(2, 15)}@furnace.test`;
+        sendResult = {
+          submittedMessageId,
+          providerMessageId: submittedMessageId,
+        };
       } else {
         // Production mode: Send via SMTP
         console.log(`[SEND WORKER] Sending email via SMTP for message job ${message_job_id}`);
@@ -1117,7 +1172,7 @@ export class SendWorker {
 
         try {
           // 5. Send email (with optional threading headers for follow-ups)
-          providerMessageId = await this.campaignEmailSender(
+          sendResult = await this.campaignEmailSender(
             transporter,
             mailbox,
             messageJob,
@@ -1126,17 +1181,21 @@ export class SendWorker {
             emailBody,
             inReplyTo,
             references,
-            isHtmlBody
-              ? { bodyHtml: emailBody, bodyText: emailBodyText ?? undefined }
-              : emailBodyText
-                ? { bodyText: emailBodyText }
-                : undefined
+            {
+              messageId: submittedMessageId,
+              threadTopic,
+              ...(isHtmlBody
+                ? { bodyHtml: emailBody, bodyText: emailBodyText ?? undefined }
+                : emailBodyText
+                  ? { bodyText: emailBodyText }
+                  : {}),
+            },
           );
           
           // Mark message sent (for maxMessages tracking)
           this.smtpPool.markMessageSent(mailbox.id);
           
-          console.log(`[SEND WORKER] Email sent successfully for message job ${message_job_id} (provider_message_id: ${providerMessageId})`);
+          console.log(`[SEND WORKER] Email sent successfully for message job ${message_job_id} (provider_message_id: ${sendResult.providerMessageId})`);
         } catch (error: any) {
           // On connection/auth errors, remove transporter from cache so it gets recreated
           if (error.code === 'EAUTH' || error.code === 'ECONNECTION' || error.code === 'ETIMEDOUT') {
@@ -1148,9 +1207,22 @@ export class SendWorker {
         }
       }
 
+      const providerMessageId = sendResult.providerMessageId;
+
       // 6. Atomically finalize sent state and mailbox throttle accounting.
-      await this.finalizeCampaignMessageJobSent(message_job_id, providerMessageId);
-      await this.persistSentSubjectOnMessageJob(messageJob, subject);
+      await this.finalizeCampaignMessageJobSent(
+        message_job_id,
+        providerMessageId,
+        sendResult.submittedMessageId,
+      );
+      await this.persistSentThreadingMetadataOnMessageJob(messageJob, {
+        subject,
+        inReplyTo,
+        references,
+        referenceMessageIds,
+        threadTopic,
+        submittedMessageId: sendResult.submittedMessageId,
+      });
 
       await this.reconcileLeadMailboxAfterSuccessfulSend(messageJob, lead.mailbox_id);
 
@@ -1169,6 +1241,8 @@ export class SendWorker {
           providerMessageId,
           inReplyTo,
           references,
+          referenceMessageIds,
+          threadTopic,
         );
       }
 
@@ -1404,6 +1478,8 @@ export class SendWorker {
     providerMessageId: string,
     inReplyTo: string | null,
     references: string | null,
+    referenceMessageIds: string[] | null = null,
+    threadTopic: string | null = null,
   ): Promise<void> {
     const threadId = (messageJob.message_data || {}).thread_id;
     if (!threadId) {
@@ -1438,6 +1514,8 @@ export class SendWorker {
         messageId: providerMessageId,
         inReplyTo,
         references,
+        referenceMessageIds,
+        threadTopic,
         receivedAt: new Date().toISOString(),
       });
     } catch (error) {
@@ -1524,6 +1602,12 @@ export class SendWorker {
     const rawAttachments = Array.isArray(md.attachments) ? md.attachments : [];
     const fileAttachments = await resolveSendAttachments(this.supabase, rawAttachments);
     console.log(`[SEND WORKER] Reply job ${message_job_id} attachments: ${fileAttachments.length} (raw: ${rawAttachments.length})`);
+    const replyRefIds = Array.isArray(md.reference_message_ids)
+      ? md.reference_message_ids
+      : parseMessageIds(md.message_references ?? null);
+    const replyThreadTopic =
+      (typeof md.thread_topic === 'string' && md.thread_topic) ||
+      normalizeThreadTopic(md.subject || null);
     const replyOptions: ReplyEmailOptions = {
       toEmail: md.to_email || '',
       toName: md.to_name ?? null,
@@ -1532,7 +1616,9 @@ export class SendWorker {
       bodyText: md.body_text || md.body_html || '',
       bodyHtml: md.body_html ?? null,
       inReplyTo: md.in_reply_to ?? null,
-      references: md.message_references ?? null,
+      references: md.message_references ?? formatReferencesHeader(replyRefIds),
+      threadTopic: replyThreadTopic,
+      messageId: buildStableSubmittedMessageId(message_job_id),
       attachments: fileAttachments.length > 0 ? fileAttachments : undefined,
     };
     const replyBodyEmpty = !(replyOptions.bodyText || '').trim() && !(replyOptions.bodyHtml || '').trim();
@@ -1548,9 +1634,9 @@ export class SendWorker {
         },
       });
     }
-    let providerMessageId: string;
+    let sendResult: SendEmailResult;
     try {
-      providerMessageId = await sendReplyEmail(transporter, mailbox as Mailbox, messageJob, replyOptions);
+      sendResult = await sendReplyEmail(transporter, mailbox as Mailbox, messageJob, replyOptions);
       this.smtpPool.markMessageSent(mailbox.id);
     } catch (err: any) {
       if (err.code === 'EAUTH' || err.code === 'ECONNECTION' || err.code === 'ETIMEDOUT') {
@@ -1559,6 +1645,7 @@ export class SendWorker {
       await this.markMailboxSmtpFailureIfPermanent(mailbox.id, err);
       throw err;
     }
+    const providerMessageId = sendResult.providerMessageId;
 
     // 4. Load thread for participants, message count, and account_id
     const { data: thread, error: threadError } = await this.supabase
@@ -1597,9 +1684,11 @@ export class SendWorker {
         subject: replyOptions.subject,
         body_text: replyOptions.bodyText,
         body_html: replyOptions.bodyHtml,
-        message_id: providerMessageId,
-        in_reply_to: replyOptions.inReplyTo,
+        message_id: normalizeMessageId(providerMessageId),
+        in_reply_to: normalizeMessageId(replyOptions.inReplyTo),
         message_references: replyOptions.references,
+        reference_message_ids: replyRefIds,
+        thread_topic: replyThreadTopic,
         received_at: now,
         attachments: replyAttachmentMeta,
       });
@@ -1631,6 +1720,7 @@ export class SendWorker {
         status_reason: 'sent_successfully',
         sent_at: now,
         provider_message_id: providerMessageId,
+        submitted_message_id: sendResult.submittedMessageId,
         updated_at: now,
       })
       .eq('id', message_job_id);
@@ -1710,6 +1800,7 @@ export class SendWorker {
       bodyHtml: md.body_html ?? null,
       inReplyTo: null,
       references: null,
+      messageId: buildStableSubmittedMessageId(message_job_id),
       attachments: forwardFileAttachments.length > 0 ? forwardFileAttachments : undefined,
     };
     const forwardBodyEmpty = !(forwardOptions.bodyText || '').trim() && !(forwardOptions.bodyHtml || '').trim();
@@ -1725,9 +1816,9 @@ export class SendWorker {
         },
       });
     }
-    let providerMessageId: string;
+    let sendResult: SendEmailResult;
     try {
-      providerMessageId = await sendReplyEmail(transporter, mailbox as Mailbox, messageJob, forwardOptions);
+      sendResult = await sendReplyEmail(transporter, mailbox as Mailbox, messageJob, forwardOptions);
       this.smtpPool.markMessageSent(mailbox.id);
     } catch (err: any) {
       if (err.code === 'EAUTH' || err.code === 'ECONNECTION' || err.code === 'ETIMEDOUT') {
@@ -1736,6 +1827,7 @@ export class SendWorker {
       await this.markMailboxSmtpFailureIfPermanent(mailbox.id, err);
       throw err;
     }
+    const providerMessageId = sendResult.providerMessageId;
 
     const forwardAttachmentMeta =
       forwardFileAttachments.length > 0
@@ -1771,6 +1863,7 @@ export class SendWorker {
         status_reason: 'sent_successfully',
         sent_at: now,
         provider_message_id: providerMessageId,
+        submitted_message_id: sendResult.submittedMessageId,
         updated_at: now,
       })
       .eq('id', message_job_id);
@@ -1779,26 +1872,47 @@ export class SendWorker {
   }
 
   /**
-   * Get the first sent campaign email for this campaign+lead (for thread continuation).
-   * Returns null if this is the first email or no previous sent job exists.
+   * Prior sent campaign / priority jobs for this campaign+lead (oldest first).
+   * Used for subject continuity (first) and cumulative RFC threading (all).
    */
-  private async getFirstSentMessageForCampaignLead(
+  private async getSentJobsForCampaignLeadThread(
     campaignId: string,
-    leadId: string
-  ): Promise<{ id: string; provider_message_id: string | null; message_data: any } | null> {
+    leadId: string,
+  ): Promise<SentThreadAncestorJob[]> {
     const { data, error } = await this.supabase
       .from('message_jobs')
-      .select('id, provider_message_id, message_data')
+      .select('id, provider_message_id, submitted_message_id, message_data, sent_at, scheduled_at')
       .eq('campaign_id', campaignId)
       .eq('lead_id', leadId)
       .eq('status', 'sent')
-      .or('message_type.is.null,message_type.eq.campaign')
-      .order('scheduled_at', { ascending: true })
-      .limit(1)
-      .maybeSingle();
+      .or(
+        'message_type.is.null,message_type.eq.campaign,message_type.eq.campaign_priority,message_type.eq.campaign_reply',
+      )
+      .order('sent_at', { ascending: true, nullsFirst: false })
+      .order('scheduled_at', { ascending: true });
 
-    if (error || !data) return null;
-    return data as { id: string; provider_message_id: string | null; message_data: any };
+    if (error || !data) return [];
+    return data as SentThreadAncestorJob[];
+  }
+
+  /**
+   * Build In-Reply-To + cumulative References from ordered prior wire Message-IDs.
+   * Degrades to root-only when only the first ancestor has an ID.
+   */
+  private buildOutboundThreadingHeaders(
+    priorSentJobs: SentThreadAncestorJob[],
+  ): { inReplyTo: string; references: string; referenceMessageIds: string[] } | null {
+    const ancestorIds = priorSentJobs
+      .map((job) =>
+        pickWireMessageId({
+          providerMessageId: job.provider_message_id,
+          submittedMessageId: job.submitted_message_id ?? job.message_data?.submitted_message_id,
+        }),
+      )
+      .filter((id): id is string => Boolean(id));
+
+    if (ancestorIds.length === 0) return null;
+    return buildReferencesFromAncestorIds(ancestorIds);
   }
 
   /**
@@ -1835,9 +1949,16 @@ export class SendWorker {
     return fromEvent || null;
   }
 
-  private async persistSentSubjectOnMessageJob(
+  private async persistSentThreadingMetadataOnMessageJob(
     messageJob: MessageJob,
-    sentSubject: string,
+    meta: {
+      subject: string;
+      inReplyTo: string | null;
+      references: string | null;
+      referenceMessageIds: string[] | null;
+      threadTopic: string | null;
+      submittedMessageId: string;
+    },
   ): Promise<void> {
     const existing =
       messageJob.message_data && typeof messageJob.message_data === 'object'
@@ -1845,7 +1966,12 @@ export class SendWorker {
         : {};
     const nextMessageData: MessageJob['message_data'] = {
       ...existing,
-      sent_subject: sentSubject,
+      sent_subject: meta.subject,
+      in_reply_to: meta.inReplyTo ?? undefined,
+      message_references: meta.references ?? undefined,
+      reference_message_ids: meta.referenceMessageIds ?? undefined,
+      thread_topic: meta.threadTopic ?? undefined,
+      submitted_message_id: meta.submittedMessageId,
     };
     const { error } = await this.supabase
       .from('message_jobs')
@@ -1854,7 +1980,7 @@ export class SendWorker {
 
     if (error) {
       console.error(
-        `[SEND WORKER] Failed to persist sent_subject on message job ${messageJob.id}:`,
+        `[SEND WORKER] Failed to persist sent threading metadata on message job ${messageJob.id}:`,
         error,
       );
       reportErrorToSlack('Send-worker: failed to persist sent_subject on message_jobs.message_data', {

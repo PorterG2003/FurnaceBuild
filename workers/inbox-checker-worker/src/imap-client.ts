@@ -4,6 +4,7 @@ import {
   createImapFlowErrorGuard,
 } from '@furnace/mailbox-lib';
 import { openImapInbox } from '@furnace/mailbox-lib';
+import { normalizeThreadTopic, parseMessageIds } from '@furnace/email-lib';
 import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
 import { countReferenceTokens, getHeaderCi, logParseDiagnostics } from './parse-diagnostics.js';
@@ -201,7 +202,18 @@ export class ImapClient {
       ? extractAttachments(message.bodyStructure.childNodes)
       : [];
 
-    const references = refs == null ? null : Array.isArray(refs) ? refs[0] ?? null : refs;
+    // Preserve every References token (mailparser may return string | string[]).
+    const references =
+      refs == null
+        ? null
+        : Array.isArray(refs)
+          ? refs.filter(Boolean).join(' ')
+          : String(refs);
+    const referenceMessageIds = parseMessageIds(refs ?? null);
+
+    const threadTopic = normalizeThreadTopic(getHeaderCi(headers, 'thread-topic'));
+    const threadIndexRaw = getHeaderCi(headers, 'thread-index');
+    const threadIndex = threadIndexRaw?.trim() || null;
 
     const textBody = typeof mail.text === 'string' ? mail.text.trim() : null;
     const htmlBody = typeof mail.html === 'string' ? mail.html.trim() : null;
@@ -211,6 +223,9 @@ export class ImapClient {
       messageId: mail.messageId ?? null,
       inReplyTo: mail.inReplyTo ?? null,
       references,
+      referenceMessageIds,
+      threadTopic,
+      threadIndex,
       from: fromHeader,
       to: toHeader,
       subject: mail.subject ?? '(No Subject)',

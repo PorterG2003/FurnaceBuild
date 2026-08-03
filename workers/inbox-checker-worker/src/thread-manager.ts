@@ -18,6 +18,12 @@ import { emitClassifyReplyJob } from './emit-classify-reply-job.js';
 import { emitEmailReceivedNotification } from './emit-notification-event.js';
 import { emitWebhookEvent } from './emit-webhook-event.js';
 import {
+  formatReferencesHeader,
+  normalizeMessageId as normalizeMessageIdShared,
+  normalizeThreadTopic,
+  parseMessageIds,
+} from '@furnace/email-lib';
+import {
   backfillSentMessages as backfillCampaignSentMessages,
   normalizeMessageId,
 } from './backfill-sent-messages.js';
@@ -125,7 +131,11 @@ export class ThreadManager {
     mailbox: Mailbox,
     searchId: string
   ): MessageJob | null {
-    const exactMatches = jobs.filter((job) => this.normalizeMessageId(job.provider_message_id) === searchId);
+    const exactMatches = jobs.filter(
+      (job) =>
+        this.normalizeMessageId(job.provider_message_id) === searchId ||
+        this.normalizeMessageId(job.submitted_message_id) === searchId,
+    );
     if (exactMatches.length === 0) return null;
 
     return exactMatches.sort((a, b) => {
@@ -227,38 +237,21 @@ export class ThreadManager {
     const normalizedMessageId = this.normalizeMessageId(message.messageId);
     if (!normalizedMessageId) {
       console.warn(`[INBOX CHECKER] Message has no Message-ID, skipping reply processing`);
+      this.logReplyMatch(false, 'missing_message_id', mailbox, message);
       return false;
     }
 
-    // Extract Message-IDs to search for (from In-Reply-To and References)
-    // Some email clients (especially Outlook) use References instead of In-Reply-To
+    // Confidence order: In-Reply-To first, then References newest → oldest
+    const inReplyToId = this.normalizeMessageId(message.inReplyTo);
+    const referenceIds =
+      message.referenceMessageIds?.length > 0
+        ? message.referenceMessageIds.map((id) => normalizeMessageIdShared(id)).filter((id): id is string => Boolean(id))
+        : parseMessageIds(message.references);
     const messageIdsToSearch: string[] = [];
-
-    // Add In-Reply-To if present
-    const inReplyToRaw = message.inReplyTo?.trim();
-    if (inReplyToRaw) {
-      const normalized = this.normalizeMessageId(inReplyToRaw);
-      if (normalized) {
-        messageIdsToSearch.push(normalized);
-      }
-    }
-
-    // Add all Message-IDs from References header (contains full thread history)
-    // References format: "msg1@example.com <msg2@example.com> msg3@example.com"
-    if (message.references) {
-      // Split by whitespace and extract Message-IDs (with or without brackets)
-      const refParts = message.references.split(/\s+/);
-      for (const part of refParts) {
-        const normalized = this.normalizeMessageId(part);
-        if (normalized && !messageIdsToSearch.includes(normalized)) {
-          messageIdsToSearch.push(normalized);
-        }
-      }
-    }
-
-    if (messageIdsToSearch.length === 0) {
-      // No In-Reply-To or References - can't determine if this is a reply
-      return false;
+    if (inReplyToId) messageIdsToSearch.push(inReplyToId);
+    for (let i = referenceIds.length - 1; i >= 0; i--) {
+      const id = referenceIds[i]!;
+      if (!messageIdsToSearch.includes(id)) messageIdsToSearch.push(id);
     }
 
     // Check if this message already exists (duplicate check)
@@ -274,6 +267,7 @@ export class ThreadManager {
 
     if (existingMessage) {
       console.log(`[INBOX CHECKER] Message ${normalizedMessageId} already processed, skipping duplicate`);
+      this.logReplyMatch(true, 'duplicate', mailbox, message);
       return true; // Already processed, return success
     }
 
@@ -283,32 +277,11 @@ export class ThreadManager {
     // Backfill ceiling: all campaign sends that existed by the time of this reply
     const replyCutoffTime = message.date.toISOString();
 
-    // First, try to find if this is a reply to an original sent message
-    // Check all Message-IDs from In-Reply-To and References against message_jobs
-    // Use case-insensitive matching to handle both normalized and non-normalized values
+    // Exact header match against outbound jobs (provider or submitted Message-ID)
     let foundJob: MessageJob | null = null;
     for (const searchId of messageIdsToSearch) {
-      const { data: jobs, error: jobError } = await this.supabase
-        .from('message_jobs')
-        .select(`
-          *,
-          enrollments(*),
-          campaigns(*),
-          leads(*),
-          mailboxes(account_id, email_address)
-        `)
-        .eq('account_id', mailbox.account_id)
-        .eq('status', 'sent')
-        .or(`provider_message_id.ilike.%${searchId}%,provider_message_id.ilike.%<${searchId}>%`)
-        .limit(10);
-
-      if (!jobError && jobs && jobs.length > 0) {
-        foundJob = this.selectReplyJobCandidate(jobs as MessageJob[], mailbox, searchId);
-      }
-
-      if (foundJob) {
-        break; // Found a match, stop searching
-      }
+      foundJob = await this.findSentJobByMessageId(mailbox, searchId);
+      if (foundJob) break;
     }
 
     if (foundJob) {
@@ -332,6 +305,7 @@ export class ThreadManager {
           .single();
         if (threadError || !existingThread) {
           console.error('[INBOX CHECKER] Inbox reply job references missing thread:', existingThreadId, threadError);
+          this.logReplyMatch(false, 'inbox_job_missing_thread', mailbox, message);
           return false;
         }
         thread = existingThread;
@@ -352,10 +326,9 @@ export class ThreadManager {
           replyCutoffTime
         );
       }
+      this.logReplyMatch(true, 'exact_job', mailbox, message);
     } else {
-      // Not a reply to original sent message - check if it's a reply to a received message
-      // Check all Message-IDs from In-Reply-To and References against email_messages
-      // Since we normalize when storing, we can use eq() for exact match
+      // Match against existing email_messages Message-IDs
       let parentMessage: ParentMessageCandidate | null = null;
       for (const searchId of messageIdsToSearch) {
         const { data: messages, error: messageError } = await this.supabase
@@ -391,35 +364,119 @@ export class ThreadManager {
         }
       }
 
-      if (!parentMessage || !parentMessage.thread_id) {
-        // Checked all Message-IDs from In-Reply-To and References, no match found
-        return false; // Not a reply to any message we know about
+      // Exact Outlook conversation key (Thread-Index) when present
+      if ((!parentMessage || !parentMessage.thread_id) && message.threadIndex) {
+        const { data: byIndex } = await this.supabase
+          .from('email_messages')
+          .select(`
+            id,
+            thread_id,
+            message_id,
+            received_at,
+            created_at,
+            email_threads!inner(
+              id,
+              account_id,
+              mailbox_id,
+              created_at,
+              last_message_at
+            )
+          `)
+          .eq('account_id', mailbox.account_id)
+          .eq('thread_index', message.threadIndex)
+          .order('created_at', { ascending: true })
+          .limit(10);
+        if (byIndex && byIndex.length > 0) {
+          parentMessage = this.selectParentMessageCandidate(
+            byIndex as ParentMessageCandidate[],
+            mailbox,
+          );
+        }
       }
 
-      // Found a parent message - get its thread
-      const { data: existingThread, error: threadError } = await this.supabase
-        .from('email_threads')
-        .select('*')
-        .eq('id', parentMessage.thread_id)
-        .single();
+      if (parentMessage?.thread_id) {
+        const { data: existingThread, error: threadError } = await this.supabase
+          .from('email_threads')
+          .select('*')
+          .eq('id', parentMessage.thread_id)
+          .single();
 
-      if (threadError || !existingThread) {
-        console.error('Error loading thread for reply-to-reply:', threadError);
-        return false;
-      }
+        if (threadError || !existingThread) {
+          console.error('Error loading thread for reply-to-reply:', threadError);
+          this.logReplyMatch(false, 'parent_thread_missing', mailbox, message);
+          return false;
+        }
 
-      thread = existingThread;
-      // Heal sticky incomplete backfills when a later reply lands on an existing campaign thread
-      if (existingThread.campaign_id && existingThread.lead_id) {
-        await this.backfillSentMessages(
-          existingThread,
-          existingThread.campaign_id,
-          existingThread.lead_id,
-          replyCutoffTime,
-          mailbox
-        );
+        thread = existingThread;
+        if (existingThread.campaign_id && existingThread.lead_id) {
+          await this.backfillSentMessages(
+            existingThread,
+            existingThread.campaign_id,
+            existingThread.lead_id,
+            replyCutoffTime,
+            mailbox
+          );
+        }
+        this.logReplyMatch(true, 'exact_message', mailbox, message);
+      } else {
+        // Headers point at our outbound domain but parent not present yet → stage
+        const looksLikeOurs = messageIdsToSearch.some((id) => id.endsWith('@furnace.build'));
+        if (looksLikeOurs && messageIdsToSearch.length > 0) {
+          await this.stagePendingInboundReply(mailbox, message, normalizedMessageId, inReplyToId, referenceIds);
+          this.logReplyMatch(false, 'parent_not_found_staged', mailbox, message);
+          return false;
+        }
+
+        // No usable headers / no exact match: attach only if clearly a reply to our outbound
+        const guessed = await this.findBestGuessThreadForOutboundReply(mailbox, message);
+        if (!guessed) {
+          this.logReplyMatch(
+            false,
+            messageIdsToSearch.length === 0 ? 'no_outbound_relationship' : 'headers_unresolved',
+            mailbox,
+            message,
+          );
+          return false;
+        }
+        thread = guessed;
+        if (guessed.campaign_id && guessed.lead_id) {
+          await this.backfillSentMessages(
+            guessed,
+            guessed.campaign_id,
+            guessed.lead_id,
+            replyCutoffTime,
+            mailbox,
+          );
+        }
+        // Best-guess among our threads: treat like original-match for enrollment side effects
+        // when the thread still has a root campaign message_job_id.
+        if (guessed.message_job_id) {
+          const { data: rootJob } = await this.supabase
+            .from('message_jobs')
+            .select(`
+              *,
+              enrollments(*),
+              campaigns(*),
+              leads(*),
+              mailboxes(account_id, email_address)
+            `)
+            .eq('id', guessed.message_job_id)
+            .maybeSingle();
+          if (rootJob) {
+            originalJob = rootJob as MessageJob;
+            isReplyToOriginal = true;
+          }
+        }
+        this.logReplyMatch(true, 'best_guess', mailbox, message);
       }
     }
+
+    const referenceMessageIds =
+      referenceIds.length > 0 ? referenceIds : parseMessageIds(message.references);
+    const messageReferencesHeader =
+      formatReferencesHeader(referenceMessageIds) ?? message.references;
+    const threadTopic =
+      message.threadTopic ?? normalizeThreadTopic(message.subject);
 
     // Create email_message for the reply
     // Store normalized message_id for consistent matching
@@ -439,8 +496,11 @@ export class ThreadManager {
         body_text: message.bodyText,
         body_html: message.bodyHtml,
         message_id: normalizedMessageId, // Store normalized version
-        in_reply_to: this.normalizeMessageId(message.inReplyTo),
-        message_references: message.references ? this.normalizeMessageId(message.references) : null,
+        in_reply_to: inReplyToId,
+        message_references: messageReferencesHeader,
+        reference_message_ids: referenceMessageIds.length > 0 ? referenceMessageIds : null,
+        thread_topic: threadTopic,
+        thread_index: message.threadIndex,
         received_at: message.date.toISOString(),
         headers: message.headers as any,
         attachments: message.attachments as any, // Includes part and imapUid for on-demand fetching
@@ -704,7 +764,262 @@ export class ThreadManager {
       });
     }
 
+    await this.clearPendingInboundReply(mailbox.account_id, normalizedMessageId);
     return true;
+  }
+
+  private logReplyMatch(
+    matched: boolean,
+    reason: string,
+    mailbox: Mailbox,
+    message: ProcessedMessage,
+  ): void {
+    console.log(
+      JSON.stringify({
+        tag: matched ? 'reply_matched' : 'reply_unmatched',
+        reason,
+        mailbox_id: mailbox.id,
+        account_id: mailbox.account_id,
+        message_id: message.messageId,
+        in_reply_to: message.inReplyTo,
+        references_count: message.referenceMessageIds?.length ?? 0,
+        subject: message.subject,
+      }),
+    );
+  }
+
+  private async findSentJobByMessageId(
+    mailbox: Mailbox,
+    searchId: string,
+  ): Promise<MessageJob | null> {
+    const { data: jobs, error: jobError } = await this.supabase
+      .from('message_jobs')
+      .select(`
+        *,
+        enrollments(*),
+        campaigns(*),
+        leads(*),
+        mailboxes(account_id, email_address)
+      `)
+      .eq('account_id', mailbox.account_id)
+      .eq('status', 'sent')
+      .or(
+        [
+          `provider_message_id.ilike.%${searchId}%`,
+          `provider_message_id.ilike.%<${searchId}>%`,
+          `submitted_message_id.ilike.%${searchId}%`,
+          `submitted_message_id.ilike.%<${searchId}>%`,
+        ].join(','),
+      )
+      .limit(10);
+
+    if (jobError || !jobs || jobs.length === 0) return null;
+    return this.selectReplyJobCandidate(jobs as MessageJob[], mailbox, searchId);
+  }
+
+  private async stagePendingInboundReply(
+    mailbox: Mailbox,
+    message: ProcessedMessage,
+    normalizedMessageId: string,
+    inReplyToId: string | null,
+    referenceIds: string[],
+  ): Promise<void> {
+    const payload = {
+      uid: message.uid,
+      messageId: message.messageId,
+      inReplyTo: message.inReplyTo,
+      references: message.references,
+      referenceMessageIds: referenceIds,
+      threadTopic: message.threadTopic,
+      threadIndex: message.threadIndex,
+      from: message.from,
+      to: message.to,
+      subject: message.subject,
+      bodyText: message.bodyText,
+      bodyHtml: message.bodyHtml,
+      date: message.date.toISOString(),
+      headers: message.headers,
+      attachments: message.attachments,
+    };
+
+    const { error } = await this.supabase.from('pending_inbound_replies').upsert(
+      {
+        account_id: mailbox.account_id,
+        mailbox_id: mailbox.id,
+        message_id: normalizedMessageId,
+        in_reply_to: inReplyToId,
+        reference_message_ids: referenceIds,
+        payload,
+        reason: 'parent_not_found',
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'account_id,message_id' },
+    );
+
+    if (error) {
+      console.error('[INBOX CHECKER] Failed to stage pending inbound reply:', error);
+    } else {
+      console.log(
+        `[INBOX CHECKER] Staged pending inbound reply ${normalizedMessageId} (parent not found yet)`,
+      );
+    }
+  }
+
+  private async clearPendingInboundReply(accountId: string, messageId: string): Promise<void> {
+    await this.supabase
+      .from('pending_inbound_replies')
+      .delete()
+      .eq('account_id', accountId)
+      .eq('message_id', messageId);
+  }
+
+  /**
+   * Retry child-before-parent staged replies for this mailbox.
+   */
+  async retryPendingInboundReplies(mailbox: Mailbox): Promise<number> {
+    const { data: rows, error } = await this.supabase
+      .from('pending_inbound_replies')
+      .select('*')
+      .eq('mailbox_id', mailbox.id)
+      .order('created_at', { ascending: true })
+      .limit(25);
+
+    if (error || !rows?.length) return 0;
+
+    let attached = 0;
+    for (const row of rows) {
+      const payload = row.payload as Record<string, unknown>;
+      const processed: ProcessedMessage = {
+        uid: Number(payload.uid ?? 0),
+        messageId: (payload.messageId as string) ?? row.message_id,
+        inReplyTo: (payload.inReplyTo as string) ?? row.in_reply_to,
+        references: (payload.references as string) ?? null,
+        referenceMessageIds: Array.isArray(payload.referenceMessageIds)
+          ? (payload.referenceMessageIds as string[])
+          : (row.reference_message_ids as string[]) ?? [],
+        threadTopic: (payload.threadTopic as string) ?? null,
+        threadIndex: (payload.threadIndex as string) ?? null,
+        from: (payload.from as ProcessedMessage['from']) ?? { address: '' },
+        to: (payload.to as ProcessedMessage['to']) ?? [],
+        subject: String(payload.subject ?? ''),
+        bodyText: (payload.bodyText as string) ?? null,
+        bodyHtml: (payload.bodyHtml as string) ?? null,
+        date: new Date(String(payload.date ?? row.created_at)),
+        headers: (payload.headers as ProcessedMessage['headers']) ?? {},
+        attachments: (payload.attachments as ProcessedMessage['attachments']) ?? [],
+      };
+
+      await this.supabase
+        .from('pending_inbound_replies')
+        .update({
+          attempts: (row.attempts ?? 0) + 1,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', row.id);
+
+      const ok = await this.handleReply(mailbox, processed);
+      if (ok) attached += 1;
+    }
+    return attached;
+  }
+
+  /**
+   * When headers are missing/unusable: attach only if clearly a reply to mail we sent
+   * from this mailbox to this participant. If multiple of our threads fit, pick best guess.
+   */
+  private async findBestGuessThreadForOutboundReply(
+    mailbox: Mailbox,
+    message: ProcessedMessage,
+  ): Promise<any | null> {
+    const fromEmail = this.normalizeEmail(message.from.address);
+    if (!fromEmail) return null;
+
+    const since = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+    const { data: recentJobs } = await this.supabase
+      .from('message_jobs')
+      .select('id, campaign_id, lead_id, mailbox_id, sent_at, message_data, provider_message_id, leads(email)')
+      .eq('account_id', mailbox.account_id)
+      .eq('mailbox_id', mailbox.id)
+      .eq('status', 'sent')
+      .gte('sent_at', since)
+      .or(
+        'message_type.is.null,message_type.eq.campaign,message_type.eq.campaign_priority,message_type.eq.campaign_reply,message_type.eq.inbox_reply',
+      )
+      .order('sent_at', { ascending: false })
+      .limit(50);
+
+    if (!recentJobs?.length) return null;
+
+    const matchingJobs = recentJobs.filter((job: any) => {
+      const leadEmail = this.normalizeEmail(job.leads?.email);
+      const toEmail = this.normalizeEmail(job.message_data?.to_email);
+      return leadEmail === fromEmail || toEmail === fromEmail;
+    });
+    if (matchingJobs.length === 0) return null;
+
+    const inboundTopic = normalizeThreadTopic(message.subject);
+    const scored = matchingJobs.map((job: any) => {
+      const sentSubject =
+        typeof job.message_data?.sent_subject === 'string'
+          ? job.message_data.sent_subject
+          : typeof job.message_data?.subject === 'string'
+            ? job.message_data.subject
+            : '';
+      const sentTopic = normalizeThreadTopic(sentSubject);
+      let score = 1;
+      if (inboundTopic && sentTopic && inboundTopic === sentTopic) score += 5;
+      else if (
+        inboundTopic &&
+        sentTopic &&
+        (inboundTopic.includes(sentTopic) || sentTopic.includes(inboundTopic))
+      ) {
+        score += 2;
+      }
+      const ageMs = Date.now() - new Date(job.sent_at).getTime();
+      score += Math.max(0, 3 - ageMs / (7 * 24 * 60 * 60 * 1000));
+      return { job, score };
+    });
+    scored.sort((a, b) => b.score - a.score);
+    const best = scored[0]!;
+    // Prefer subject agreement when available; still allow recency-only when clearly ours
+    if (inboundTopic && best.score < 2) return null;
+
+    const bestJob = best.job;
+    const threadIdFromMd = bestJob.message_data?.thread_id as string | undefined;
+    if (threadIdFromMd) {
+      const { data: thread } = await this.supabase
+        .from('email_threads')
+        .select('*')
+        .eq('id', threadIdFromMd)
+        .eq('account_id', mailbox.account_id)
+        .maybeSingle();
+      if (thread) return thread;
+    }
+
+    const { data: byJob } = await this.supabase
+      .from('email_threads')
+      .select('*')
+      .eq('account_id', mailbox.account_id)
+      .eq('message_job_id', bestJob.id)
+      .maybeSingle();
+    if (byJob) return byJob;
+
+    // Campaign thread may be keyed by first send — look up by campaign+lead
+    if (bestJob.campaign_id && bestJob.lead_id) {
+      const { data: byLead } = await this.supabase
+        .from('email_threads')
+        .select('*')
+        .eq('account_id', mailbox.account_id)
+        .eq('mailbox_id', mailbox.id)
+        .eq('campaign_id', bestJob.campaign_id)
+        .eq('lead_id', bestJob.lead_id)
+        .order('last_message_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (byLead) return byLead;
+    }
+
+    return null;
   }
 
   /**

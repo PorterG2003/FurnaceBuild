@@ -37,7 +37,12 @@ export interface ProcessedMessage {
   uid: number;
   messageId: string | null;
   inReplyTo: string | null;
+  /** Space-joined References header for legacy storage / diagnostics. */
   references: string | null;
+  /** Parsed ordered Message-IDs from References (normalized, unbracketed). */
+  referenceMessageIds: string[];
+  threadTopic: string | null;
+  threadIndex: string | null;
   from: { name?: string; address: string };
   to: Array<{ name?: string; address: string }>;
   subject: string;
@@ -68,6 +73,7 @@ export interface MessageJob {
   reserved_at: string | null;
   sent_at: string | null;
   provider_message_id: string | null;
+  submitted_message_id?: string | null;
   error_message: string | null;
   message_data: {
     subject?: string;

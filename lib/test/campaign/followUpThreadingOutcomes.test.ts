@@ -104,7 +104,7 @@ function createSendWorker(
     campaignEmailSender: async (
       _transporter: unknown,
       _mailbox: unknown,
-      _messageJob: unknown,
+      messageJob: { id: string },
       _lead: unknown,
       subject: string,
       _emailBody: string,
@@ -114,7 +114,10 @@ function createSendWorker(
       captures.push({ subject, inReplyTo, references });
       const id = providerMessageIdFactory(callIndex);
       callIndex += 1;
-      return id;
+      return {
+        submittedMessageId: `<${messageJob.id}@furnace.build>`,
+        providerMessageId: id,
+      };
     },
   });
   (sendWorker as any).smtpPool = {

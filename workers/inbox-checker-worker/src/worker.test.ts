@@ -274,6 +274,11 @@ test('InboxCheckerWorker advances schedule on successful empty sync', async () =
       return [];
     },
   };
+  (worker as any).threadManager = {
+    async retryPendingInboundReplies() {
+      return 0;
+    },
+  };
 
   await (worker as any).processMailbox(mailbox);
 

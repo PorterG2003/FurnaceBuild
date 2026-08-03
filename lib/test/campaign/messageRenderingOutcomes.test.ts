@@ -17,6 +17,9 @@ function createProcessedMessage(overrides: Partial<ProcessedMessage> = {}): Proc
     messageId: `<reply-${randomUUID()}@example.com>`,
     inReplyTo: '<provider@example.com>',
     references: '<provider@example.com>',
+    referenceMessageIds: ['provider@example.com'],
+    threadTopic: null,
+    threadIndex: null,
     from: { address: 'lead@example.com', name: 'Lead' },
     to: [{ address: 'sender@example.com', name: 'Sender' }],
     subject: 'Re: Render test',
@@ -103,7 +106,10 @@ test('rendered campaign content stays aligned through sent event persistence and
     const sendWorker = new SendWorker({
       supabase: harness.supabase as any,
       databaseClient: {} as any,
-      campaignEmailSender: async () => '<provider@example.com>',
+      campaignEmailSender: async () => ({
+        submittedMessageId: '<provider@example.com>',
+        providerMessageId: '<provider@example.com>',
+      }),
     });
     (sendWorker as any).smtpPool = {
       getTransporter: async () => ({}),
@@ -257,7 +263,10 @@ test('html-mode campaign content preserves full-document markup through sent per
     const sendWorker = new SendWorker({
       supabase: harness.supabase as any,
       databaseClient: {} as any,
-      campaignEmailSender: async () => '<provider@example.com>',
+      campaignEmailSender: async () => ({
+        submittedMessageId: '<provider@example.com>',
+        providerMessageId: '<provider@example.com>',
+      }),
     });
     (sendWorker as any).smtpPool = {
       getTransporter: async () => ({}),
@@ -383,7 +392,10 @@ test('empty body_html with populated template still renders campaign copy (API/M
         options
       ) => {
         capturedSmtpBody = options?.bodyHtml ?? body;
-        return '<provider@example.com>';
+        return {
+          submittedMessageId: '<provider@example.com>',
+          providerMessageId: '<provider@example.com>',
+        };
       },
     });
     (sendWorker as any).smtpPool = {

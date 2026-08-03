@@ -70,7 +70,11 @@ export class MessageProcessor {
    * Check if message is a reply (has threading headers: In-Reply-To or References)
    */
   isReply(message: ProcessedMessage): boolean {
-    return !!message.inReplyTo?.trim() || !!message.references?.trim();
+    return (
+      !!message.inReplyTo?.trim() ||
+      !!message.references?.trim() ||
+      (Array.isArray(message.referenceMessageIds) && message.referenceMessageIds.length > 0)
+    );
   }
 
   /**

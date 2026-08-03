@@ -84,8 +84,10 @@ describe('processInlineImagesForEmail', () => {
 describe('sendEmail', () => {
   it('sends aligned rendered text and html parts for html emails', async () => {
     let sent: CapturedMail | null = null;
+    let capturedMail: SendMailOptions | null = null;
     const transporter = {
       async sendMail(options: SendMailOptions) {
+        capturedMail = options;
         sent = {
           subject: options.subject,
           text: options.text,
@@ -95,27 +97,34 @@ describe('sendEmail', () => {
       },
     };
 
-    const messageId = await sendEmail(
+    const result = await sendEmail(
       transporter as any,
       createMailbox(),
-      createJob(),
+      createJob({ id: '11111111-1111-1111-1111-111111111111' }),
       createLead(),
       'Checking in',
       'Hello Casey Thanks, Porter',
-      null,
-      null,
+      '<parent@furnace.build>',
+      '<root@furnace.build> <parent@furnace.build>',
       {
         bodyHtml: 'Hello Casey<br><br>Thanks,<br>Porter',
         bodyText: 'Hello Casey Thanks, Porter',
+        threadTopic: 'Checking in',
       }
     );
 
-    assert.equal(messageId, '<provider@example.com>');
+    assert.equal(result.providerMessageId, '<provider@example.com>');
+    assert.equal(result.submittedMessageId, '<11111111-1111-1111-1111-111111111111@furnace.build>');
     assert.ok(sent);
     const sentMail: CapturedMail = sent;
     assert.equal(sentMail.subject, 'Checking in');
     assert.equal(sentMail.text, 'Hello Casey Thanks, Porter');
     assert.equal(sentMail.html, 'Hello Casey<br><br>Thanks,<br>Porter');
+    assert.equal(capturedMail!.messageId, result.submittedMessageId);
+    assert.equal(capturedMail!.inReplyTo, '<parent@furnace.build>');
+    assert.equal(capturedMail!.references, '<root@furnace.build> <parent@furnace.build>');
+    assert.equal((capturedMail!.headers as any)['Thread-Topic'], 'Checking in');
+    assert.equal((capturedMail!.headers as any)['In-Reply-To'], undefined);
   });
 
   it('derives text from rendered html when explicit bodyText is absent', async () => {

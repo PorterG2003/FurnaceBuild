@@ -83,6 +83,9 @@ function createProcessedMessage(overrides: Partial<ProcessedMessage> = {}): Proc
     messageId: '<reply@example.com>',
     inReplyTo: '<abc@example.com>',
     references: null,
+    referenceMessageIds: [],
+    threadTopic: null,
+    threadIndex: null,
     from: { address: 'lead@example.com', name: 'Lead' },
     to: [{ address: 'porterg@furnaceoutbound.com', name: 'Porter' }],
     subject: 'Re: Hello',
@@ -432,7 +435,8 @@ test('production-like campaign lifecycle stays internally consistent across mixe
       if (failingJobIds.has(job.id)) {
         throw new Error('Synthetic provider failure');
       }
-      return `<${job.id}@furnace.test>`;
+      const id = `<${job.id}@furnace.test>`;
+      return { submittedMessageId: id, providerMessageId: id };
     },
   });
   (sendWorker as any).smtpPool = {

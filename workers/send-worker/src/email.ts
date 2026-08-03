@@ -2,6 +2,13 @@ import * as nodemailer from 'nodemailer';
 import type { Transporter } from 'nodemailer';
 import type { Mailbox, MessageJob, Lead } from './types.js';
 import { randomBytes } from 'crypto';
+import {
+  buildStableSubmittedMessageId,
+  formatMessageId,
+  formatReferencesHeader,
+  normalizeMessageId,
+  parseMessageIds,
+} from '@furnace/email-lib';
 
 /**
  * Convert data URL images in HTML to CID inline attachments.
@@ -70,10 +77,42 @@ export function stripHtml(html: string): string {
   return html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+export type SendEmailResult = {
+  submittedMessageId: string;
+  providerMessageId: string;
+};
+
+export type SendEmailOptions = {
+  bodyHtml?: string;
+  bodyText?: string;
+  /** Stable Message-ID to submit (defaults to job-derived ID). */
+  messageId?: string | null;
+  /** Outlook Thread-Topic (textual). Never synthesize Thread-Index. */
+  threadTopic?: string | null;
+};
+
+function resolveSubmittedMessageId(job: MessageJob, explicit?: string | null): string {
+  if (explicit) {
+    const formatted = formatMessageId(explicit);
+    if (formatted) return formatted;
+  }
+  return buildStableSubmittedMessageId(job.id);
+}
+
+function buildThreadingMailFields(params: {
+  inReplyTo?: string | null;
+  references?: string | null;
+}): Pick<nodemailer.SendMailOptions, 'inReplyTo' | 'references'> {
+  const inReplyTo = formatMessageId(params.inReplyTo) ?? undefined;
+  const refIds = parseMessageIds(params.references ?? null);
+  const references = formatReferencesHeader(refIds) ?? undefined;
+  return { inReplyTo, references };
+}
+
 /**
  * Send email via SMTP.
  * Accepts body (plain) or bodyHtml+bodyText for rich emails.
- * Optional inReplyTo/references set In-Reply-To and References headers for thread continuation.
+ * Uses Nodemailer messageId / inReplyTo / references (not custom protected headers).
  */
 export async function sendEmail(
   transporter: Transporter,
@@ -84,17 +123,14 @@ export async function sendEmail(
   body: string,
   inReplyTo?: string | null,
   references?: string | null,
-  options?: { bodyHtml?: string; bodyText?: string }
-): Promise<string> {
-  const messageId = generateMessageId();
+  options?: SendEmailOptions
+): Promise<SendEmailResult> {
+  const submittedMessageId = resolveSubmittedMessageId(job, options?.messageId);
   const headers: Record<string, string> = {
     'X-Message-ID': job.id, // Track our internal message_job_id
   };
-  if (inReplyTo) {
-    headers['In-Reply-To'] = inReplyTo;
-  }
-  if (references) {
-    headers['References'] = references;
+  if (options?.threadTopic) {
+    headers['Thread-Topic'] = options.threadTopic;
   }
 
   let text: string;
@@ -118,6 +154,8 @@ export async function sendEmail(
     attachments = undefined;
   }
 
+  const threading = buildThreadingMailFields({ inReplyTo, references });
+
   const mailOptions: nodemailer.SendMailOptions = {
     from: `"${mailbox.display_name}" <${mailbox.email_address}>`,
     to: lead.email,
@@ -125,17 +163,21 @@ export async function sendEmail(
     text,
     html,
     attachments,
-    messageId: messageId,
+    messageId: submittedMessageId,
+    ...threading,
     headers,
   };
 
   const info = await transporter.sendMail(mailOptions);
+  const providerMessageId =
+    formatMessageId(info.messageId) ||
+    normalizeMessageId(info.messageId) ||
+    submittedMessageId;
 
-  if (!info.messageId) {
-    return messageId;
-  }
-
-  return info.messageId;
+  return {
+    submittedMessageId,
+    providerMessageId: formatMessageId(providerMessageId) || submittedMessageId,
+  };
 }
 
 export interface ReplyEmailOptions {
@@ -147,6 +189,8 @@ export interface ReplyEmailOptions {
   bodyHtml?: string | null;
   inReplyTo?: string | null;
   references?: string | null;
+  messageId?: string | null;
+  threadTopic?: string | null;
   /** File attachments (content = base64). Merged with inline image attachments when sending. */
   attachments?: Array<{ filename: string; contentType?: string; content: string }>;
 }
@@ -160,16 +204,13 @@ export async function sendReplyEmail(
   mailbox: Mailbox,
   job: MessageJob,
   options: ReplyEmailOptions
-): Promise<string> {
-  const messageId = generateMessageId();
+): Promise<SendEmailResult> {
+  const submittedMessageId = resolveSubmittedMessageId(job, options.messageId);
   const headers: Record<string, string> = {
     'X-Message-ID': job.id,
   };
-  if (options.inReplyTo) {
-    headers['In-Reply-To'] = options.inReplyTo;
-  }
-  if (options.references) {
-    headers['References'] = options.references;
+  if (options.threadTopic) {
+    headers['Thread-Topic'] = options.threadTopic;
   }
 
   const bodyHtml = options.bodyHtml || options.bodyText;
@@ -190,6 +231,11 @@ export async function sendReplyEmail(
   }
   console.log(`[SEND WORKER] sendReplyEmail: ${options.attachments?.length ?? 0} file attachment(s), ${allAttachments.length} total (incl. inline)`);
 
+  const threading = buildThreadingMailFields({
+    inReplyTo: options.inReplyTo,
+    references: options.references,
+  });
+
   const mailOptions: nodemailer.SendMailOptions = {
     from: `"${mailbox.display_name || mailbox.email_address}" <${mailbox.email_address}>`,
     to: options.toName ? `"${options.toName}" <${options.toEmail}>` : options.toEmail,
@@ -198,11 +244,19 @@ export async function sendReplyEmail(
     text: options.bodyText,
     html: processedHtml,
     attachments: allAttachments.length > 0 ? allAttachments : undefined,
-    messageId,
+    messageId: submittedMessageId,
+    ...threading,
     headers,
   };
 
   const info = await transporter.sendMail(mailOptions);
-  return info.messageId || messageId;
-}
+  const providerMessageId =
+    formatMessageId(info.messageId) ||
+    normalizeMessageId(info.messageId) ||
+    submittedMessageId;
 
+  return {
+    submittedMessageId,
+    providerMessageId: formatMessageId(providerMessageId) || submittedMessageId,
+  };
+}

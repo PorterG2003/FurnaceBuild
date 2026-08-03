@@ -3,6 +3,13 @@ import {
   isRetryableSupabaseReadError,
   reportErrorToSlack,
 } from '@furnace/slack-lib';
+import {
+  buildReferencesFromAncestorIds,
+  formatReferencesHeader,
+  normalizeMessageId,
+  normalizeThreadTopic,
+  pickWireMessageId,
+} from '@furnace/email-lib';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 export type BackfillMailbox = {
@@ -16,14 +23,7 @@ export type BackfillThread = {
   account_id: string;
 };
 
-/**
- * Normalize Message-ID for consistent storage and matching.
- * Removes angle brackets, lowercases; returns null if empty.
- */
-export function normalizeMessageId(messageId: string | null | undefined): string | null {
-  if (!messageId) return null;
-  return messageId.trim().replace(/^<|>$/g, '').toLowerCase() || null;
-}
+export { normalizeMessageId };
 
 export type BackfillSentMessagesResult = {
   insertedCount: number;
@@ -33,10 +33,9 @@ export type BackfillSentMessagesResult = {
 /**
  * Backfill sent campaign messages into email_messages for a thread.
  *
- * Includes all sent campaign message_jobs for campaign+lead with
- * sent_at <= cutoffTime (typically the inbound reply received_at), loads
- * merged content from the sent event when available, and inserts any missing
- * email_messages (direction = 'sent').
+ * Includes paced campaign + priority sends for campaign+lead with
+ * sent_at <= cutoffTime. Reconstructs cumulative References from ordered
+ * ancestor Message-IDs without changing historical wire data.
  */
 export async function backfillSentMessages(
   supabase: SupabaseClient,
@@ -51,11 +50,13 @@ export async function backfillSentMessages(
 
   const { data: sentJobs, error: jobsError } = await supabase
     .from('message_jobs')
-    .select('id, provider_message_id, sent_at, created_at, message_data, mailbox_id, lead_id')
+    .select('id, provider_message_id, submitted_message_id, sent_at, created_at, message_data, mailbox_id, lead_id')
     .eq('campaign_id', campaignId)
     .eq('lead_id', leadId)
     .eq('status', 'sent')
-    .or('message_type.is.null,message_type.eq.campaign')
+    .or(
+      'message_type.is.null,message_type.eq.campaign,message_type.eq.campaign_priority,message_type.eq.campaign_reply',
+    )
     .lte('sent_at', cutoffTime)
     .order('sent_at', { ascending: true });
 
@@ -100,11 +101,16 @@ export async function backfillSentMessages(
   const leadEmail = leadRow?.email || '';
   const leadName = leadRow?.name || null;
 
-  const firstNormalized = normalizeMessageId(sentJobs[0]?.provider_message_id);
-
+  const wireIds: string[] = [];
   let insertedCount = 0;
   for (let i = 0; i < sentJobs.length; i++) {
     const job = sentJobs[i];
+    const wireId = pickWireMessageId({
+      providerMessageId: job.provider_message_id,
+      submittedMessageId: job.submitted_message_id ?? job.message_data?.submitted_message_id,
+    });
+    if (wireId) wireIds.push(wireId);
+
     if (existingJobIds.has(job.id)) continue;
 
     const evtData = eventByJobId.get(job.id);
@@ -115,14 +121,18 @@ export async function backfillSentMessages(
     const jobBodyHtml = evtData?.sent_body_html || nc.body || nc.template || '';
     const jobBodyText = evtData?.sent_body_text || nc.body || nc.template || '';
 
-    const normalizedProviderId = normalizeMessageId(job.provider_message_id);
-
-    let inReplyTo: string | null = null;
-    let msgReferences: string | null = null;
-    if (i > 0 && firstNormalized) {
-      inReplyTo = firstNormalized;
-      msgReferences = firstNormalized;
-    }
+    const normalizedProviderId = wireId;
+    const ancestors = wireIds.slice(0, -1);
+    const threading = ancestors.length > 0 ? buildReferencesFromAncestorIds(ancestors) : null;
+    const inReplyTo = threading?.inReplyTo ? normalizeMessageId(threading.inReplyTo) : null;
+    const msgReferences =
+      threading?.references ??
+      (md.message_references as string | null) ??
+      formatReferencesHeader(ancestors);
+    const referenceMessageIds = threading?.referenceMessageIds ?? ancestors;
+    const threadTopic =
+      (typeof md.thread_topic === 'string' && md.thread_topic) ||
+      normalizeThreadTopic(jobSubject);
 
     const { error: insertError } = await supabase.from('email_messages').insert({
       thread_id: thread.id,
@@ -139,6 +149,8 @@ export async function backfillSentMessages(
       message_id: normalizedProviderId,
       in_reply_to: inReplyTo,
       message_references: msgReferences,
+      reference_message_ids: referenceMessageIds.length > 0 ? referenceMessageIds : null,
+      thread_topic: threadTopic,
       received_at: job.sent_at || job.created_at,
       headers: {},
       attachments: [],

@@ -106,11 +106,20 @@ export function buildProcessedReply(params: {
   headers?: Record<string, string | string[] | undefined>;
 }): ProcessedMessage {
   const bodyText = params.bodyText ?? 'Reply body';
+  const references = params.references ?? params.inReplyTo;
   return {
     uid: Math.floor(Math.random() * 1_000_000),
     messageId: `<reply-${randomUUID()}@furnace.test>`,
     inReplyTo: params.inReplyTo,
-    references: params.references ?? params.inReplyTo,
+    references,
+    referenceMessageIds: references
+      ? references
+          .split(/\s+/)
+          .map((t) => t.replace(/^<|>$/g, '').trim().toLowerCase())
+          .filter((t) => t.includes('@'))
+      : [],
+    threadTopic: null,
+    threadIndex: null,
     from: { address: params.leadEmail, name: 'Test Lead' },
     to: [{ address: params.mailboxEmail, name: 'Test Mailbox' }],
     subject: params.subject ?? 'Re: Quick check-in',
@@ -163,7 +172,8 @@ export function createTestSendWorker(
         throw new Error('Synthetic provider failure');
       }
       options?.onSend?.(job.id);
-      return `<${job.id}@furnace.test>`;
+      const id = `<${job.id}@furnace.test>`;
+      return { submittedMessageId: id, providerMessageId: id };
     },
   });
   (sendWorker as any).smtpPool = {

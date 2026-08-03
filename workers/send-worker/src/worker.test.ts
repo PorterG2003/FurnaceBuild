@@ -735,7 +735,7 @@ for (const messageType of ['campaign_priority', 'campaign_reply'] as const) {
       (call) => call.table === 'email_messages' && call.updates?.message_job_id === 'reply-job-1',
     );
     assert.ok(insertCall, `${messageType} should create an email_messages row`);
-    assert.equal(insertCall?.updates?.message_id, '<provider@furnace.test>');
+    assert.equal(insertCall?.updates?.message_id, 'provider@furnace.test');
     assert.equal(insertCall?.updates?.thread_id, 'thread-1');
     assert.equal(insertCall?.updates?.subject, 'Hello');
     assert.equal(insertCall?.updates?.in_reply_to, null);
@@ -840,7 +840,7 @@ test('SendWorker persists successful inbox_forward jobs into thread history', as
   );
   assert.ok(insertCall, 'inbox_forward should create an email_messages row');
   assert.equal(insertCall?.updates?.thread_id, 'thread-1');
-  assert.equal(insertCall?.updates?.message_id, '<forward@furnace.test>');
+  assert.equal(insertCall?.updates?.message_id, 'forward@furnace.test');
   assert.equal(insertCall?.updates?.in_reply_to, null);
   assert.equal(insertCall?.updates?.message_references, null);
   assert.deepEqual(insertCall?.updates?.attachments, [
@@ -946,7 +946,7 @@ test('SendWorker persists rendered text and html payloads for campaign sends', a
     campaignEmailSender: async (_transporter, _mailbox, _job, _lead, _subject, _body, _inReplyTo, _references, options) => {
       assert.equal(options?.bodyHtml, 'Hey Casey,<br>Appreciate it for your time.');
       assert.equal(options?.bodyText, 'Hey Casey, Appreciate it for your time.');
-      return '<provider@example.com>';
+      return { submittedMessageId: '<job-1@furnace.build>', providerMessageId: '<provider@example.com>' };
     },
   });
   const messageJob = createCampaignMessageJob({
@@ -975,7 +975,7 @@ test('SendWorker persists rendered text and html payloads for campaign sends', a
     nodeConfig: (messageJob.message_data as any).node_config,
   });
   (worker as any).isEmailBlocked = async () => false;
-  (worker as any).getFirstSentMessageForCampaignLead = async () => null;
+  (worker as any).getSentJobsForCampaignLeadThread = async () => [];
   (worker as any).finalizeCampaignMessageJobSent = async () => {};
   (worker as any).reconcileLeadMailboxAfterSuccessfulSend = async () => {};
   (worker as any).smtpPool = {
@@ -1015,7 +1015,7 @@ test('SendWorker preserves html-mode full-document payloads', async () => {
       assert.match(String(options?.bodyHtml), /<html>/i);
       assert.match(String(options?.bodyHtml), /<table>/i);
       assert.equal(options?.bodyText, 'Hello Casey');
-      return '<provider@example.com>';
+      return { submittedMessageId: '<job-1@furnace.build>', providerMessageId: '<provider@example.com>' };
     },
   });
   const messageJob = createCampaignMessageJob({
@@ -1045,7 +1045,7 @@ test('SendWorker preserves html-mode full-document payloads', async () => {
     nodeConfig: (messageJob.message_data as any).node_config,
   });
   (worker as any).isEmailBlocked = async () => false;
-  (worker as any).getFirstSentMessageForCampaignLead = async () => null;
+  (worker as any).getSentJobsForCampaignLeadThread = async () => [];
   (worker as any).finalizeCampaignMessageJobSent = async () => {};
   (worker as any).reconcileLeadMailboxAfterSuccessfulSend = async () => {};
   (worker as any).smtpPool = {
@@ -1089,20 +1089,23 @@ function stubCampaignSendWorker(
     nodeConfig: (messageJob.message_data as any).node_config,
   });
   (worker as any).isEmailBlocked = async () => false;
-  (worker as any).getFirstSentMessageForCampaignLead = async () => {
-    if (!options?.firstSent) return null;
-    return {
-      id: 'first-job-1',
-      provider_message_id: options.firstSent.provider_message_id,
-      message_data: {
-        sent_subject: options.firstSent.sent_subject,
-        node_config: {
-          subject:
-            options.firstSent.subjectTemplate ??
-            '{Alpha {{first_name}}|Beta {{first_name}}|Gamma {{first_name}}}',
+  (worker as any).getSentJobsForCampaignLeadThread = async () => {
+    if (!options?.firstSent) return [];
+    return [
+      {
+        id: 'first-job-1',
+        provider_message_id: options.firstSent.provider_message_id,
+        submitted_message_id: options.firstSent.provider_message_id,
+        message_data: {
+          sent_subject: options.firstSent.sent_subject,
+          node_config: {
+            subject:
+              options.firstSent.subjectTemplate ??
+              '{Alpha {{first_name}}|Beta {{first_name}}|Gamma {{first_name}}}',
+          },
         },
       },
-    };
+    ];
   };
   (worker as any).finalizeCampaignMessageJobSent = async () => {};
   (worker as any).reconcileLeadMailboxAfterSuccessfulSend = async () => {};
@@ -1133,7 +1136,7 @@ test('SendWorker follow-up with empty subject reuses exact first sent_subject an
       references,
     ) => {
       captured = { subject, inReplyTo, references };
-      return '<followup@example.com>';
+      return { submittedMessageId: '<followup-job@furnace.build>', providerMessageId: '<followup@example.com>' };
     },
   });
   const messageJob = createCampaignMessageJob({
@@ -1180,7 +1183,7 @@ test('SendWorker follow-up with (No subject) reuses exact first sent_subject', a
       subject,
     ) => {
       capturedSubject = subject;
-      return '<followup@example.com>';
+      return { submittedMessageId: '<followup-job@furnace.build>', providerMessageId: '<followup@example.com>' };
     },
   });
   const messageJob = createCampaignMessageJob({
@@ -1231,7 +1234,7 @@ test('SendWorker follow-up with intentional subject keeps it and still sets thre
       references,
     ) => {
       captured = { subject, inReplyTo, references };
-      return '<followup@example.com>';
+      return { submittedMessageId: '<followup-job@furnace.build>', providerMessageId: '<followup@example.com>' };
     },
   });
   const messageJob = createCampaignMessageJob({
@@ -1262,7 +1265,7 @@ test('SendWorker persists sent_subject onto message_jobs.message_data', async ()
   const worker = new SendWorker({
     supabase: supabase as any,
     databaseClient: {} as any,
-    campaignEmailSender: async () => '<provider@example.com>',
+    campaignEmailSender: async () => ({ submittedMessageId: '<job-1@furnace.build>', providerMessageId: '<provider@example.com>' }),
   });
   const messageJob = createCampaignMessageJob({
     message_data: {

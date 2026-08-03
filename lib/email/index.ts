@@ -68,6 +68,23 @@ export {
 } from './followUpSubject.js';
 
 export {
+  DEFAULT_MESSAGE_ID_DOMAIN,
+  DEFAULT_REFERENCES_MAX_BYTES,
+  buildReferencesFromAncestorIds,
+  buildReplyThreadingHeaders,
+  buildStableSubmittedMessageId,
+  capReferenceChain,
+  formatMessageId,
+  formatReferencesHeader,
+  normalizeMessageId,
+  normalizeThreadTopic,
+  parseMessageIds,
+  pickWireMessageId,
+  type BuildReplyThreadingHeadersInput,
+  type ReplyThreadingHeaders,
+} from './threadHeaders.js';
+
+export {
   generateEmailVariantId,
   labelForVariantIndex,
   normalizeLegacyEmailNodeData,

@@ -104,6 +104,8 @@ export function buildProcessedReply(params: {
   date?: Date;
   references?: string | null;
   headers?: Record<string, string | string[] | undefined>;
+  to?: Array<{ name?: string; address: string }>;
+  cc?: Array<{ name?: string; address: string }>;
 }): ProcessedMessage {
   const bodyText = params.bodyText ?? 'Reply body';
   const references = params.references ?? params.inReplyTo;
@@ -121,7 +123,8 @@ export function buildProcessedReply(params: {
     threadTopic: null,
     threadIndex: null,
     from: { address: params.leadEmail, name: 'Test Lead' },
-    to: [{ address: params.mailboxEmail, name: 'Test Mailbox' }],
+    to: params.to ?? [{ address: params.mailboxEmail, name: 'Test Mailbox' }],
+    cc: params.cc ?? [],
     subject: params.subject ?? 'Re: Quick check-in',
     bodyText,
     bodyHtml: params.bodyHtml === undefined ? `<p>${bodyText}</p>` : params.bodyHtml,

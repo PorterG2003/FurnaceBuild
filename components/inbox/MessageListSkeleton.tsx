@@ -134,17 +134,21 @@ function MessageCardSkeleton({
   const mxRule = mobile ? 'mx-4' : 'mx-5';
   const cardInner = (
     <>
-      <View className={`${hPad} pt-4 pb-3 flex-row items-center`}>
-        <Skeleton style={{ width: 40, height: 40, borderRadius: 20 }} />
-        <View className="ml-3 flex-1 min-w-0">
-          <Skeleton className="h-4 mb-1.5" style={{ width: '70%', borderRadius: 4 }} />
-          <Skeleton className="h-3" style={{ width: '52%', borderRadius: 4 }} />
+      <View className={`${hPad} pt-3 pb-2.5`}>
+        <View className="flex-row items-start">
+          <Skeleton style={{ width: 40, height: 40, borderRadius: 20 }} />
+          <View className="ml-3 flex-1 min-w-0 gap-0.5">
+            <View className="flex-row items-center gap-2">
+              <Skeleton className="h-4 flex-1" style={{ borderRadius: 4 }} />
+              {mobile ? (
+                <Skeleton style={{ width: 20, height: 20, borderRadius: 10 }} className="flex-shrink-0" />
+              ) : (
+                <Skeleton className="h-3 flex-shrink-0" style={{ width: 72, borderRadius: 4 }} />
+              )}
+            </View>
+            <Skeleton className="h-3" style={{ width: '70%', borderRadius: 4 }} />
+          </View>
         </View>
-        {mobile ? (
-          <Skeleton style={{ width: 20, height: 20, borderRadius: 10 }} className="flex-shrink-0 ml-2" />
-        ) : (
-          <Skeleton className="h-3 flex-shrink-0" style={{ width: 72, borderRadius: 4 }} />
-        )}
       </View>
       <View className={`${mxRule} border-b border-[#2A2A2A]`} style={{ borderBottomWidth: 1 }} />
       <View className={`${hPad} py-4`}>

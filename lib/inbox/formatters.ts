@@ -124,3 +124,75 @@ export function getInitials(name: string | null, email: string): string {
   const local = email.split('@')[0] || '';
   return (local.slice(0, 2) || '?').toUpperCase();
 }
+
+function trimAddress(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
+}
+
+/** Plain-text address: `Name <email>` or just `email`. */
+export function formatAddressDisplay(
+  name: string | null | undefined,
+  email: string | null | undefined
+): string {
+  const trimmedEmail = trimAddress(email) ?? '';
+  const trimmedName = trimAddress(name);
+  if (trimmedName && trimmedEmail) {
+    return `${trimmedName} <${trimmedEmail}>`;
+  }
+  return trimmedEmail || trimmedName || '';
+}
+
+export type ResolveToAddressesInput = {
+  toName?: string | null;
+  toEmail?: string | null;
+  toEmails?: string[] | null;
+};
+
+/**
+ * Normalized To recipient list shared by UI and forward quotes.
+ * Prefers `to_emails` when present; falls back to `[to_email]`.
+ */
+export function resolveToAddresses(input: ResolveToAddressesInput): string[] {
+  const seen = new Set<string>();
+  const fromArray: string[] = [];
+  for (const email of input.toEmails ?? []) {
+    const trimmed = trimAddress(email);
+    if (!trimmed) continue;
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    fromArray.push(trimmed);
+  }
+  if (fromArray.length > 0) {
+    return fromArray;
+  }
+  const fallback = trimAddress(input.toEmail);
+  return fallback ? [fallback] : [];
+}
+
+/** Plain-text To line for MessageBubble. Multi-To shows emails only. */
+export function formatToDisplay(input: ResolveToAddressesInput): string {
+  const addresses = resolveToAddresses(input);
+  if (addresses.length === 0) return '';
+  if (addresses.length === 1) {
+    return formatAddressDisplay(input.toName, addresses[0]);
+  }
+  return addresses.join(', ');
+}
+
+/** Plain-text Cc line, or null when empty after trim. Dedupes case-insensitively. */
+export function formatCcDisplay(cc: string[] | null | undefined): string | null {
+  if (!cc?.length) return null;
+  const seen = new Set<string>();
+  const cleaned: string[] = [];
+  for (const raw of cc) {
+    const trimmed = trimAddress(raw);
+    if (!trimmed) continue;
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    cleaned.push(trimmed);
+  }
+  return cleaned.length > 0 ? cleaned.join(', ') : null;
+}

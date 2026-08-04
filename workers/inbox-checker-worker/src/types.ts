@@ -45,6 +45,8 @@ export interface ProcessedMessage {
   threadIndex: string | null;
   from: { name?: string; address: string };
   to: Array<{ name?: string; address: string }>;
+  /** Cc addresses parsed from the inbound Cc header (empty when absent). */
+  cc: Array<{ name?: string; address: string }>;
   subject: string;
   bodyText: string | null;
   bodyHtml: string | null;

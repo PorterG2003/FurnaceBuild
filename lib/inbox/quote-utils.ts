@@ -8,7 +8,7 @@ import {
   sanitizeEmailHtmlForForwardEmbed,
 } from '@/lib/email';
 import type { EmailMessage } from '@/lib/supabase/types';
-import { formatMessageDate } from './formatters';
+import { formatMessageDate, resolveToAddresses } from './formatters';
 
 const FORWARD_DELIMITER_LINE = '---------- Forwarded message ---------';
 
@@ -30,11 +30,18 @@ function formatFromLineHtml(message: EmailMessage): string {
 }
 
 function formatToLineHtml(message: EmailMessage): string {
-  const email = escapeHtml(message.to_email);
-  if (message.to_name?.trim()) {
-    return `"${escapeHtml(message.to_name.trim())}" &lt;${email}&gt;`;
+  const addresses = resolveToAddresses({
+    toName: message.to_name,
+    toEmail: message.to_email,
+    toEmails: message.to_emails,
+  });
+  if (addresses.length === 0) {
+    return escapeHtml(message.to_email);
   }
-  return email;
+  if (addresses.length === 1 && message.to_name?.trim()) {
+    return `"${escapeHtml(message.to_name.trim())}" &lt;${escapeHtml(addresses[0])}&gt;`;
+  }
+  return addresses.map((email) => escapeHtml(email)).join(', ');
 }
 
 function formatCcLineHtml(message: EmailMessage): string | null {

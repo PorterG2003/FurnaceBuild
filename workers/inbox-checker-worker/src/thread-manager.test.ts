@@ -456,6 +456,7 @@ function createProcessedMessage(overrides: Partial<ProcessedMessage> = {}): Proc
     threadIndex: null,
     from: { address: 'lead@example.com', name: 'Lead' },
     to: [{ address: 'porterg@furnaceoutbound.com', name: 'Porter' }],
+    cc: [],
     subject: 'Re: Hello',
     bodyText: 'Reply body',
     bodyHtml: '<p>Reply body</p>',
@@ -840,6 +841,7 @@ test('backfillSentMessages stores rendered event payloads for sent campaign mess
     from_name: 'Porter',
     to_email: 'lead@example.com',
     to_name: 'Lead',
+    to_emails: ['lead@example.com'],
     subject: 'Hello Casey',
     body_text: 'Hello Casey Thanks, Porter',
     body_html: 'Hello Casey<br><br>Thanks,<br>Porter',
@@ -1710,4 +1712,285 @@ test('handleBounce skips bounce side effects when the bounce RPC reports a dupli
     rpcCalls.map((c) => c.fn),
     ['record_bounced_event_and_increment'],
   );
+});
+
+test('handleReply persists multi-To, Cc, and normalized participants', async () => {
+  const existingThread = {
+    id: 'thread-1',
+    account_id: 'account-1',
+    mailbox_id: 'mailbox-1',
+    message_count: 1,
+    participants: ['PorterG@furnaceoutbound.com', 'lead@example.com'],
+    category: null,
+    category_source: null,
+  };
+  const supabase = new MockSupabase([
+    { data: [] },
+    { data: [createMessageJob()] },
+    { data: [existingThread] },
+    { data: [] },
+    { data: { id: 'email-message-1', received_at: '2026-04-06T02:58:50.000Z' }, error: null },
+    { count: 2, error: null },
+    { data: null, error: null },
+    { data: [{ id: 'node-categorizer' }], error: null },
+    { data: 'held', error: null },
+    { data: true, error: null },
+    { data: { id: 'notification-event-1' }, error: null },
+    { data: { id: 'webhook-event-1' }, error: null },
+  ]);
+  const manager = new ThreadManager(supabase as any);
+  const mailbox = createMailbox();
+  const handled = await manager.handleReply(
+    mailbox,
+    createProcessedMessage({
+      to: [
+        { address: 'porterg@furnaceoutbound.com', name: 'Porter' },
+        { address: 'other@example.com', name: 'Other' },
+        { address: '  ', name: 'Blank' },
+      ],
+      cc: [
+        { address: 'Cc@Example.com', name: 'Cc' },
+        { address: 'porterg@furnaceoutbound.com', name: 'Dup' },
+        { address: '  ' },
+      ],
+    }),
+  );
+
+  assert.equal(handled, true);
+  const insertCall = supabase.calls.find(
+    (call) =>
+      (call as QueryCall).table === 'email_messages' &&
+      (call as QueryCall).insertPayloads.length > 0
+  ) as QueryCall | undefined;
+  assert.ok(insertCall);
+  const payload = insertCall!.insertPayloads[0] as Record<string, unknown>;
+  assert.equal(payload.to_email, 'porterg@furnaceoutbound.com');
+  assert.equal(payload.to_name, 'Porter');
+  assert.deepEqual(payload.to_emails, ['porterg@furnaceoutbound.com', 'other@example.com']);
+  assert.deepEqual(payload.cc, ['Cc@Example.com', 'porterg@furnaceoutbound.com']);
+
+  const threadUpdate = supabase.calls.find(
+    (call): call is QueryCall =>
+      (call as QueryCall).kind === 'query' &&
+      (call as QueryCall).table === 'email_threads' &&
+      (call as QueryCall).insertPayloads.length > 0 &&
+      typeof (call as QueryCall).insertPayloads[0] === 'object' &&
+      (call as QueryCall).insertPayloads[0] !== null &&
+      'has_reply' in ((call as QueryCall).insertPayloads[0] as object)
+  );
+  assert.ok(threadUpdate);
+  const participants = (threadUpdate!.insertPayloads[0] as { participants: string[] }).participants;
+  assert.deepEqual(participants, [
+    'PorterG@furnaceoutbound.com',
+    'lead@example.com',
+    'other@example.com',
+    'Cc@Example.com',
+  ]);
+});
+
+test('handleReply writes to_emails null when source To is empty', async () => {
+  const existingThread = {
+    id: 'thread-1',
+    account_id: 'account-1',
+    mailbox_id: 'mailbox-1',
+    message_count: 1,
+    participants: ['porterg@furnaceoutbound.com'],
+    category: null,
+    category_source: null,
+  };
+  const supabase = new MockSupabase([
+    { data: [] },
+    { data: [createMessageJob()] },
+    { data: [existingThread] },
+    { data: [] },
+    { data: { id: 'email-message-1', received_at: '2026-04-06T02:58:50.000Z' }, error: null },
+    { count: 2, error: null },
+    { data: null, error: null },
+    { data: [{ id: 'node-categorizer' }], error: null },
+    { data: 'held', error: null },
+    { data: true, error: null },
+    { data: { id: 'notification-event-1' }, error: null },
+    { data: { id: 'webhook-event-1' }, error: null },
+  ]);
+  const manager = new ThreadManager(supabase as any);
+  const mailbox = createMailbox();
+  const handled = await manager.handleReply(
+    mailbox,
+    createProcessedMessage({
+      to: [],
+      cc: [],
+    }),
+  );
+  assert.equal(handled, true);
+  const insertCall = supabase.calls.find(
+    (call) =>
+      (call as QueryCall).table === 'email_messages' &&
+      (call as QueryCall).insertPayloads.length > 0
+  ) as QueryCall | undefined;
+  assert.ok(insertCall);
+  const payload = insertCall!.insertPayloads[0] as Record<string, unknown>;
+  assert.equal(payload.to_email, mailbox.email_address);
+  assert.equal(payload.to_emails, null);
+  assert.equal(payload.cc, null);
+});
+
+test('stagePendingInboundReply stores Cc and replay restores it', async () => {
+  const stageSupabase = new MockSupabase([{ data: null, error: null }]);
+  const manager = new ThreadManager(stageSupabase as any);
+  const mailbox = createMailbox();
+  const message = createProcessedMessage({
+    cc: [{ address: 'staged-cc@example.com', name: 'Staged' }],
+    to: [
+      { address: mailbox.email_address, name: 'Box' },
+      { address: 'also@example.com' },
+    ],
+  });
+
+  await (manager as any).stagePendingInboundReply(
+    mailbox,
+    message,
+    'reply@example.com',
+    '<abc@example.com>',
+    [],
+  );
+
+  const upsertCall = stageSupabase.calls.find(
+    (call) => (call as QueryCall).table === 'pending_inbound_replies'
+  ) as QueryCall | undefined;
+  assert.ok(upsertCall);
+  const stagedRow = upsertCall!.insertPayloads[0] as {
+    payload: { cc: Array<{ address: string }>; to: Array<{ address: string }> };
+  };
+  assert.deepEqual(
+    stagedRow.payload.cc.map((entry) => entry.address),
+    ['staged-cc@example.com'],
+  );
+  assert.equal(stagedRow.payload.to.length, 2);
+
+  const existingThread = {
+    id: 'thread-1',
+    account_id: 'account-1',
+    mailbox_id: 'mailbox-1',
+    message_count: 1,
+    participants: [mailbox.email_address],
+    category: null,
+    category_source: null,
+  };
+  const replaySupabase = new MockSupabase([
+    {
+      data: [
+        {
+          id: 'pending-1',
+          account_id: 'account-1',
+          mailbox_id: 'mailbox-1',
+          message_id: 'reply@example.com',
+          in_reply_to: '<abc@example.com>',
+          reference_message_ids: [],
+          attempts: 0,
+          created_at: '2026-04-06T02:58:50.000Z',
+          payload: stagedRow.payload,
+        },
+      ],
+      error: null,
+    },
+    { data: null, error: null }, // attempts update
+    { data: [] }, // dup check
+    { data: [createMessageJob()] },
+    { data: [existingThread] },
+    { data: [] },
+    { data: { id: 'email-message-1', received_at: '2026-04-06T02:58:50.000Z' }, error: null },
+    { count: 2, error: null },
+    { data: null, error: null },
+    { data: [{ id: 'node-categorizer' }], error: null },
+    { data: 'held', error: null },
+    { data: true, error: null },
+    { data: { id: 'notification-event-1' }, error: null },
+    { data: { id: 'webhook-event-1' }, error: null },
+    { data: null, error: null }, // clear pending
+  ]);
+  const replayManager = new ThreadManager(replaySupabase as any);
+  const attached = await replayManager.retryPendingInboundReplies(mailbox);
+  assert.equal(attached, 1);
+
+  const insertCall = replaySupabase.calls.find(
+    (call) =>
+      (call as QueryCall).table === 'email_messages' &&
+      (call as QueryCall).insertPayloads.length > 0
+  ) as QueryCall | undefined;
+  assert.ok(insertCall);
+  const payload = insertCall!.insertPayloads[0] as Record<string, unknown>;
+  assert.deepEqual(payload.cc, ['staged-cc@example.com']);
+  assert.deepEqual(payload.to_emails, [mailbox.email_address, 'also@example.com']);
+});
+
+test('retryPendingInboundReplies tolerates legacy staged payloads without cc', async () => {
+  const existingThread = {
+    id: 'thread-1',
+    account_id: 'account-1',
+    mailbox_id: 'mailbox-1',
+    message_count: 1,
+    participants: ['porterg@furnaceoutbound.com'],
+    category: null,
+    category_source: null,
+  };
+  const supabase = new MockSupabase([
+    {
+      data: [
+        {
+          id: 'pending-legacy',
+          account_id: 'account-1',
+          mailbox_id: 'mailbox-1',
+          message_id: 'legacy@example.com',
+          in_reply_to: '<abc@example.com>',
+          reference_message_ids: [],
+          attempts: 0,
+          created_at: '2026-04-06T02:58:50.000Z',
+          payload: {
+            uid: 1,
+            messageId: '<legacy@example.com>',
+            inReplyTo: '<abc@example.com>',
+            references: null,
+            referenceMessageIds: [],
+            threadTopic: null,
+            threadIndex: null,
+            from: { address: 'lead@example.com', name: 'Lead' },
+            to: [{ address: 'porterg@furnaceoutbound.com', name: 'Porter' }],
+            subject: 'Re: Hello',
+            bodyText: 'Legacy',
+            bodyHtml: null,
+            date: '2026-04-06T02:58:50.000Z',
+            headers: {},
+            attachments: [],
+          },
+        },
+      ],
+      error: null,
+    },
+    { data: null, error: null },
+    { data: [] },
+    { data: [createMessageJob()] },
+    { data: [existingThread] },
+    { data: [] },
+    { data: { id: 'email-message-1', received_at: '2026-04-06T02:58:50.000Z' }, error: null },
+    { count: 2, error: null },
+    { data: null, error: null },
+    { data: [{ id: 'node-categorizer' }], error: null },
+    { data: 'held', error: null },
+    { data: true, error: null },
+    { data: { id: 'notification-event-1' }, error: null },
+    { data: { id: 'webhook-event-1' }, error: null },
+    { data: null, error: null },
+  ]);
+  const manager = new ThreadManager(supabase as any);
+  const attached = await manager.retryPendingInboundReplies(createMailbox());
+  assert.equal(attached, 1);
+  const insertCall = supabase.calls.find(
+    (call) =>
+      (call as QueryCall).table === 'email_messages' &&
+      (call as QueryCall).insertPayloads.length > 0
+  ) as QueryCall | undefined;
+  assert.ok(insertCall);
+  const payload = insertCall!.insertPayloads[0] as Record<string, unknown>;
+  assert.equal(payload.cc, null);
+  assert.deepEqual(payload.to_emails, ['porterg@furnaceoutbound.com']);
 });

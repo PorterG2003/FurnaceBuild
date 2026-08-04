@@ -1496,6 +1496,19 @@ export function buildClientApiComponents() {
           from_email: { type: 'string', format: 'email', nullable: true },
           from_name: { type: 'string', nullable: true },
           to_email: { type: 'string', format: 'email', nullable: true },
+          to_name: { type: 'string', nullable: true },
+          to_emails: {
+            type: 'array',
+            items: { type: 'string', format: 'email' },
+            nullable: true,
+            description:
+              'All To addresses when known. to_email remains the primary/first recipient.',
+          },
+          cc: {
+            type: 'array',
+            items: { type: 'string', format: 'email' },
+            nullable: true,
+          },
           received_at: { type: 'string', format: 'date-time', nullable: true },
         },
         required: ['id', 'thread_id'],

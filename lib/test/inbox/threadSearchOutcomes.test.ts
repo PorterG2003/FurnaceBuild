@@ -53,7 +53,9 @@ test('inbox search matches subject, lead, body, tag, and campaign name', async (
   const subjectToken = `subj${unique}`;
   const bodyToken = `bodyphrase${unique}`;
   const tagName = `tag${unique}`;
-  const participantEmail = `part-${unique}@furnace.test`;
+  // Keep the local-part alphanumeric so prefix FTS does not split on hyphens.
+  const participantToken = `part${unique}`;
+  const participantEmail = `${participantToken}@furnace.test`;
 
   try {
     if (!(await ensureInboxSearchSchema(harness, t))) return;
@@ -65,7 +67,7 @@ test('inbox search matches subject, lead, body, tag, and campaign name', async (
       leads: [
         buildCampaignLead({
           key: 'search-target',
-          email: `lead-${unique}@furnace.test`,
+          email: `lead${unique}@furnace.test`,
           firstName: leadFirst,
           lastName: 'Solo',
           companyName: `Corp${unique}`,
@@ -125,7 +127,7 @@ test('inbox search matches subject, lead, body, tag, and campaign name', async (
 
     await harness.supabase
       .from('email_threads')
-      .update({ participants: [participantEmail, `lead-${unique}@furnace.test`] })
+      .update({ participants: [participantEmail, `lead${unique}@furnace.test`] })
       .eq('id', targetThreadId);
 
     const { data: tagRow, error: tagError } = await harness.supabase
@@ -147,26 +149,29 @@ test('inbox search matches subject, lead, body, tag, and campaign name', async (
       p_thread_id: targetThreadId,
     });
 
-    const cases: Array<{ q: string; label: string }> = [
+    const cases: Array<{ q: string; label: string; allowNoise?: boolean }> = [
       { q: subjectToken, label: 'subject' },
       { q: leadFirst, label: 'lead first name' },
       { q: bodyToken, label: 'message body' },
       { q: tagName, label: 'thread tag' },
-      { q: 'SearchCamp', label: 'campaign name prefix' },
-      { q: `part-${unique}`, label: 'participant email prefix' },
+      // Both threads share one campaign in this graph, so campaign-name hits are not exclusive.
+      { q: 'SearchCamp', label: 'campaign name prefix', allowNoise: true },
+      { q: participantToken, label: 'participant email prefix' },
     ];
 
-    for (const { q, label } of cases) {
+    for (const { q, label, allowNoise } of cases) {
       const threads = await searchThreads(harness, accountId, q);
       assert.ok(
         threads.some((row) => row.id === targetThreadId),
         `expected hit for ${label} query "${q}"`,
       );
-      assert.equal(
-        threads.some((row) => row.id === noiseThreadId),
-        false,
-        `noise thread should not match ${label}`,
-      );
+      if (!allowNoise) {
+        assert.equal(
+          threads.some((row) => row.id === noiseThreadId),
+          false,
+          `noise thread should not match ${label}`,
+        );
+      }
     }
 
     const miss = await searchThreads(harness, accountId, `zzzmiss${unique}`);
@@ -174,6 +179,117 @@ test('inbox search matches subject, lead, body, tag, and campaign name', async (
 
     await harness.supabase.from('thread_tag_assignments').delete().eq('tag_id', tagId);
     await harness.supabase.from('thread_tags').delete().eq('id', tagId);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test('inbox search matches secondary to_emails recipients', async (t) => {
+  const harness = new CampaignDbHarness({
+    namespace: createCampaignTestNamespace('thread-search-to-emails'),
+  });
+  const now = Date.now();
+  const unique = harness.namespace.replace(/[^a-z0-9]/gi, '').slice(-8);
+  const secondaryToToken = `secto${unique}`;
+  const secondaryToEmail = `${secondaryToToken}@furnace.test`;
+
+  try {
+    if (!(await ensureInboxSearchSchema(harness, t))) return;
+
+    const graph = await harness.createCampaignGraph({
+      name: `ToEmailsCamp ${unique}`,
+      status: 'running',
+      flowKind: 'emailOnly',
+      leads: [
+        buildCampaignLead({
+          key: 'to-emails-target',
+          email: `lead-to-${unique}@furnace.test`,
+          firstName: 'Target',
+          lastName: 'Lead',
+          mailboxKey: 'mailbox-1',
+          enrollment: buildCampaignEnrollment(),
+          thread: buildCampaignThread({
+            subject: `To emails ${unique}`,
+            lastMessageAt: new Date(now).toISOString(),
+            messages: [
+              buildThreadMessage({
+                direction: 'sent',
+                receivedAt: new Date(now - 60_000).toISOString(),
+                readAt: new Date(now - 60_000).toISOString(),
+                bodyText: 'Campaign outreach',
+              }),
+              buildThreadMessage({
+                direction: 'received',
+                receivedAt: new Date(now).toISOString(),
+                readAt: null,
+                bodyText: 'Prospect reply content',
+              }),
+            ],
+          }),
+        }),
+        buildCampaignLead({
+          key: 'to-emails-noise',
+          email: `noise-to-${unique}@furnace.test`,
+          firstName: 'Noise',
+          lastName: 'Lead',
+          mailboxKey: 'mailbox-1',
+          enrollment: buildCampaignEnrollment(),
+          thread: buildCampaignThread({
+            subject: 'Unrelated noise thread',
+            lastMessageAt: new Date(now - 120_000).toISOString(),
+            messages: [
+              buildThreadMessage({
+                direction: 'sent',
+                receivedAt: new Date(now - 180_000).toISOString(),
+                readAt: new Date(now - 180_000).toISOString(),
+              }),
+              buildThreadMessage({
+                direction: 'received',
+                receivedAt: new Date(now - 120_000).toISOString(),
+                readAt: null,
+                bodyText: 'Completely different reply content',
+              }),
+            ],
+          }),
+        }),
+      ],
+    });
+
+    const targetThreadId = graph.leadsByKey.get('to-emails-target')!.threadId!;
+    const noiseThreadId = graph.leadsByKey.get('to-emails-noise')!.threadId!;
+
+    const { data: targetMessages, error: listError } = await harness.supabase
+      .from('email_messages')
+      .select('id, to_email')
+      .eq('thread_id', targetThreadId)
+      .eq('direction', 'received')
+      .limit(1);
+    assert.equal(listError, null, listError?.message);
+    const targetMessage = targetMessages?.[0] as { id: string; to_email: string } | undefined;
+    assert.ok(targetMessage?.id);
+
+    const { error: toEmailsError } = await harness.supabase
+      .from('email_messages')
+      .update({
+        to_emails: [targetMessage!.to_email, secondaryToEmail],
+      } as any)
+      .eq('id', targetMessage!.id);
+    if (toEmailsError && /to_emails|schema cache|column/i.test(toEmailsError.message)) {
+      t.skip(`email_messages.to_emails not applied in shared test DB: ${toEmailsError.message}`);
+      return;
+    }
+    assert.equal(toEmailsError, null, toEmailsError?.message);
+
+    const threads = await searchThreads(harness, graph.accountId, secondaryToToken);
+    assert.ok(
+      threads.some((row) => row.id === targetThreadId),
+      `expected hit for secondary to_emails query "${secondaryToToken}"`,
+    );
+    assert.equal(
+      threads.some((row) => row.id === noiseThreadId),
+      false,
+      'noise thread should not match secondary to_emails recipient',
+    );
   } finally {
     await harness.cleanup();
   }

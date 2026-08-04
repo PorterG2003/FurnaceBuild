@@ -36,6 +36,8 @@ export type CampaignThreadMessageSpec = {
   fromName?: string | null;
   toEmail?: string;
   toName?: string | null;
+  toEmails?: string[] | null;
+  cc?: string[] | null;
   receivedAt: string;
   readAt?: string | null;
   messageId?: string | null;
@@ -917,6 +919,8 @@ function resolveThreadMessages(params: {
     to_name:
       message.toName ??
       (message.direction === 'sent' ? lead.name ?? leadEmail : mailboxDisplayName),
+    ...(message.toEmails !== undefined ? { to_emails: message.toEmails } : {}),
+    ...(message.cc !== undefined ? { cc: message.cc } : {}),
     subject: message.subject ?? thread.subject,
     body_text: message.bodyText,
     body_html: message.bodyHtml ?? null,

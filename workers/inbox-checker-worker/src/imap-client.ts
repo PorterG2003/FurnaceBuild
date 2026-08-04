@@ -10,6 +10,27 @@ import { simpleParser } from 'mailparser';
 import { countReferenceTokens, getHeaderCi, logParseDiagnostics } from './parse-diagnostics.js';
 import type { Mailbox, ProcessedMessage } from './types.js';
 
+/** Normalize mailparser address objects into trimmed non-empty address entries. */
+export function normalizeMailAddresses(
+  addr: { value?: Array<{ address?: string; name?: string } | string> } | null | undefined
+): Array<{ name?: string; address: string }> {
+  if (!addr?.value) return [];
+  return addr.value
+    .map((v) => {
+      if (typeof v === 'string') {
+        const address = v.trim();
+        return address ? { address } : null;
+      }
+      const address = (v.address || '').trim();
+      if (!address) return null;
+      return {
+        name: v.name || undefined,
+        address,
+      };
+    })
+    .filter((entry): entry is { name?: string; address: string } => !!entry);
+}
+
 /**
  * IMAP client for connecting to mailboxes and fetching messages
  */
@@ -134,7 +155,8 @@ export class ImapClient {
     const mail = await simpleParser(rawBuffer);
 
     const fromHeader = this.addressToFrom(mail.from);
-    const toHeader = this.addressesToTo(mail.to);
+    const toHeader = normalizeMailAddresses(mail.to as any);
+    const ccHeader = normalizeMailAddresses(mail.cc as any);
     const headers = this.mailHeadersToRecord(mail.headers);
 
     const refs = mail.references;
@@ -228,6 +250,7 @@ export class ImapClient {
       threadIndex,
       from: fromHeader,
       to: toHeader,
+      cc: ccHeader,
       subject: mail.subject ?? '(No Subject)',
       bodyText: textBody || null,
       bodyHtml: htmlBody || null,
@@ -244,14 +267,6 @@ export class ImapClient {
       name: v.name || undefined,
       address: v.address || (typeof v === 'string' ? v : ''),
     };
-  }
-
-  private addressesToTo(addr: any): Array<{ name?: string; address: string }> {
-    if (!addr?.value) return [];
-    return addr.value.map((v: any) => ({
-      name: v.name || undefined,
-      address: v.address || (typeof v === 'string' ? v : ''),
-    }));
   }
 
   private mailHeadersToRecord(headers: Map<string, any>): Record<string, string | string[]> {

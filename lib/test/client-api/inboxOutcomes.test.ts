@@ -484,3 +484,65 @@ test('client api inbox rejects missing threads', async () => {
     await harness.cleanup();
   }
 });
+
+test('client api thread messages return to_name, cc, and to_emails', async (t) => {
+  const harness = new ClientApiDbHarness({
+    namespace: createClientApiTestNamespace('inbox-message-recipients'),
+  });
+
+  try {
+    const graph = await createInboxGraph(harness);
+    const apiKey = await harness.createApiKey();
+    const threadId = graph.leadsByKey.get('lead-1')!.threadId!;
+
+    const { data: messages, error: listError } = await harness.supabase
+      .from('email_messages')
+      .select('id')
+      .eq('thread_id', threadId)
+      .eq('direction', 'received')
+      .limit(1);
+    assert.equal(listError, null, listError?.message);
+    assert.ok(messages?.[0]?.id);
+    const messageId = messages![0]!.id as string;
+
+    const primaryTo = `primary-${harness.namespace}@example.com`;
+    const secondaryTo = `secondary-${harness.namespace}@example.com`;
+    const ccAddress = `cc-${harness.namespace}@example.com`;
+    const { error: updateError } = await harness.supabase
+      .from('email_messages')
+      .update({
+        to_name: 'Casey Prospect',
+        to_email: primaryTo,
+        to_emails: [primaryTo, secondaryTo],
+        cc: [ccAddress],
+      } as any)
+      .eq('id', messageId);
+    if (updateError && /to_emails|schema cache|column/i.test(updateError.message)) {
+      t.skip(`email_messages.to_emails not applied in shared test DB: ${updateError.message}`);
+      return;
+    }
+    assert.equal(updateError, null, updateError?.message);
+
+    const response = await harness.request(`/v1/threads/${threadId}/messages`, {
+      apiKey: apiKey.secret,
+    });
+    assert.equal(response.status, 200);
+    const body = await response.json() as {
+      data: Array<{
+        id: string;
+        to_name: string | null;
+        to_email: string;
+        to_emails: string[] | null;
+        cc: string[] | null;
+      }>;
+    };
+    const row = body.data.find((message) => message.id === messageId);
+    assert.ok(row);
+    assert.equal(row!.to_name, 'Casey Prospect');
+    assert.equal(row!.to_email, primaryTo);
+    assert.deepEqual(row!.to_emails, [primaryTo, secondaryTo]);
+    assert.deepEqual(row!.cc, [ccAddress]);
+  } finally {
+    await harness.cleanup();
+  }
+});

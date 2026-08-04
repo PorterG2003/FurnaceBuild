@@ -61,6 +61,20 @@ test('client api openapi spec documents auth, schemas, and request contracts', (
   assert.ok('ApiError' in spec.components.schemas);
   assert.ok('ThreadUpdate' in spec.components.schemas);
   assert.ok('MessageJob' in spec.components.schemas);
+  assert.ok('Message' in spec.components.schemas);
+  const messageSchema = spec.components.schemas.Message as {
+    properties?: Record<string, { type?: string; nullable?: boolean; items?: { type?: string } }>;
+    additionalProperties?: boolean;
+  };
+  assert.equal(messageSchema.additionalProperties, false);
+  assert.ok(messageSchema.properties?.to_name);
+  assert.equal(messageSchema.properties?.to_name?.nullable, true);
+  assert.ok(messageSchema.properties?.cc);
+  assert.equal(messageSchema.properties?.cc?.type, 'array');
+  assert.equal(messageSchema.properties?.cc?.nullable, true);
+  assert.ok(messageSchema.properties?.to_emails);
+  assert.equal(messageSchema.properties?.to_emails?.type, 'array');
+  assert.equal(messageSchema.properties?.to_emails?.nullable, true);
   assert.ok('ForwardRequest' in spec.components.schemas);
   assert.ok('ReplaceLeadRequest' in spec.components.schemas);
   assert.ok('ReplaceLeadPreview' in spec.components.schemas);

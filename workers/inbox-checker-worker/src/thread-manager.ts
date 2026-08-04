@@ -97,6 +97,40 @@ export class ThreadManager {
     return email.trim().toLowerCase() || null;
   }
 
+  private collectTrimmedAddresses(
+    entries: Array<{ name?: string; address: string }> | null | undefined
+  ): string[] {
+    if (!entries?.length) return [];
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const entry of entries) {
+      const trimmed = entry.address?.trim();
+      if (!trimmed) continue;
+      const key = trimmed.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(trimmed);
+    }
+    return out;
+  }
+
+  private mergeThreadParticipants(
+    existing: string[],
+    additions: Array<string | null | undefined>
+  ): string[] {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const raw of [...existing, ...additions]) {
+      const trimmed = raw?.trim();
+      if (!trimmed) continue;
+      const key = trimmed.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(trimmed);
+    }
+    return out;
+  }
+
   private unwrapRelation<T>(value: T | T[] | null | undefined): T | null {
     if (Array.isArray(value)) return value[0] ?? null;
     return value ?? null;
@@ -478,6 +512,9 @@ export class ThreadManager {
     const threadTopic =
       message.threadTopic ?? normalizeThreadTopic(message.subject);
 
+    const toEmails = this.collectTrimmedAddresses(message.to);
+    const ccEmails = this.collectTrimmedAddresses(message.cc);
+
     // Create email_message for the reply
     // Store normalized message_id for consistent matching
     // Store imap_uid for on-demand attachment fetching
@@ -492,6 +529,8 @@ export class ThreadManager {
         from_name: message.from.name || null,
         to_email: message.to[0]?.address || mailbox.email_address,
         to_name: message.to[0]?.name || null,
+        to_emails: toEmails.length > 0 ? toEmails : null,
+        cc: ccEmails.length > 0 ? ccEmails : null,
         subject: message.subject,
         body_text: message.bodyText,
         body_html: message.bodyHtml,
@@ -558,11 +597,14 @@ export class ThreadManager {
       has_reply: true,
       last_message_at: inboundAt,
       last_inbound_at: inboundAt,
-      participants: Array.from(new Set([
-        ...(thread.participants || []),
-        message.from.address,
-        ...message.to.map((t) => t.address),
-      ])),
+      participants: this.mergeThreadParticipants(
+        thread.participants || [],
+        [
+          message.from.address,
+          ...message.to.map((t) => t.address),
+          ...(message.cc ?? []).map((c) => c.address),
+        ],
+      ),
       conversation_status: inboundIsAutoReply ? 'closed' : 'open',
       conversation_status_source: 'system',
       classification_status: inboundIsAutoReply ? 'complete' : 'pending',
@@ -834,6 +876,7 @@ export class ThreadManager {
       threadIndex: message.threadIndex,
       from: message.from,
       to: message.to,
+      cc: message.cc ?? [],
       subject: message.subject,
       bodyText: message.bodyText,
       bodyHtml: message.bodyHtml,
@@ -901,6 +944,9 @@ export class ThreadManager {
         threadIndex: (payload.threadIndex as string) ?? null,
         from: (payload.from as ProcessedMessage['from']) ?? { address: '' },
         to: (payload.to as ProcessedMessage['to']) ?? [],
+        cc: Array.isArray(payload.cc)
+          ? (payload.cc as ProcessedMessage['cc'])
+          : [],
         subject: String(payload.subject ?? ''),
         bodyText: (payload.bodyText as string) ?? null,
         bodyHtml: (payload.bodyHtml as string) ?? null,

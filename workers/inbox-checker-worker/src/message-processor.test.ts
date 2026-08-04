@@ -14,6 +14,7 @@ function createProcessedMessage(overrides: Partial<ProcessedMessage> = {}): Proc
     threadIndex: null,
     from: { address: 'lead@example.com', name: 'Lead' },
     to: [{ address: 'sender@example.com', name: 'Sender' }],
+    cc: [],
     subject: 'Re: Hello',
     bodyText: 'Reply body',
     bodyHtml: null,

@@ -262,9 +262,7 @@ export function InboxMessageList({
                       pendingSecondaryLabel={
                         pendingInfo?.kind === 'campaign_priority'
                           ? pendingInfo.campaignName ?? null
-                          : pendingInfo?.kind === 'forward'
-                            ? message.to_email
-                            : undefined
+                          : undefined
                       }
                       cancelLabel={
                         pendingInfo?.kind === 'campaign_priority'

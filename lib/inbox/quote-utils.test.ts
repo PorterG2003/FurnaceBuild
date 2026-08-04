@@ -15,6 +15,7 @@ function msg(partial: Partial<EmailMessage> & Pick<EmailMessage, 'id' | 'receive
     from_name: 'From User',
     to_email: 'to@example.com',
     to_name: null,
+    to_emails: null,
     cc: null,
     subject: 'Thread subject',
     body_text: null,
@@ -22,14 +23,19 @@ function msg(partial: Partial<EmailMessage> & Pick<EmailMessage, 'id' | 'receive
     message_id: 'mid-' + partial.id,
     in_reply_to: null,
     message_references: null,
+    reference_message_ids: null,
+    thread_topic: null,
+    thread_index: null,
     read_at: null,
     headers: {},
     attachments: [],
     imap_uid: null,
+    parse_version: 1,
+    search_vector: null,
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
     ...partial,
-  } as EmailMessage;
+  };
 }
 
 describe('buildForwardedConversationHtml', () => {
@@ -126,6 +132,35 @@ describe('buildForwardedConversationHtml', () => {
     const html = buildForwardedConversationHtml([early, later], later, 'Fallback Subject');
     assert.ok(html.includes('Fallback Subject'));
     assert.ok(html.includes('Actual Subject'));
+  });
+
+  it('includes all To addresses and HTML-escapes hostile characters', () => {
+    const m = msg({
+      id: 'm1',
+      received_at: '2026-04-01T12:00:00.000Z',
+      to_name: 'Ignored For Multi',
+      to_email: 'primary@example.com',
+      to_emails: ['primary@example.com', 'other@example.com'],
+      cc: ['cc&evil@example.com', '<script>@x.com'],
+      body_html: '<p>body</p>',
+    });
+    const html = buildForwardedConversationHtml([m], m, 'sub');
+    assert.ok(html.includes('To: primary@example.com, other@example.com'));
+    assert.ok(html.includes('Cc: cc&amp;evil@example.com, &lt;script&gt;@x.com'));
+    assert.ok(!html.includes('<script>@x.com'));
+  });
+
+  it('keeps a named single To in the forward header', () => {
+    const m = msg({
+      id: 'm1',
+      received_at: '2026-04-01T12:00:00.000Z',
+      to_name: 'Casey',
+      to_email: 'casey@example.com',
+      to_emails: ['casey@example.com'],
+      body_html: '<p>body</p>',
+    });
+    const html = buildForwardedConversationHtml([m], m, 'sub');
+    assert.ok(html.includes('To: "Casey" &lt;casey@example.com&gt;'));
   });
 });
 

@@ -203,3 +203,111 @@ test('exact In-Reply-To attaches once; unrelated inbound is ignored', async () =
     await harness.cleanup();
   }
 });
+
+test('inbound reply persists multi-To and Cc on the final email_messages row', async (t) => {
+  const harness = new CampaignDbHarness({
+    namespace: createCampaignTestNamespace('thread-ingest-recipients'),
+  });
+
+  try {
+    const { error: schemaProbeError } = await harness.supabase
+      .from('email_messages')
+      .select('to_emails')
+      .limit(1);
+    if (
+      schemaProbeError &&
+      /to_emails|schema cache|column/i.test(schemaProbeError.message)
+    ) {
+      t.skip(`email_messages.to_emails not applied in shared test DB: ${schemaProbeError.message}`);
+      return;
+    }
+
+    const graph = await harness.createCampaignGraph({
+      name: 'Thread Ingestion Recipients',
+      status: 'running',
+      flowKind: 'emailWaitEmail',
+      mailboxes: [
+        {
+          key: 'mailbox-1',
+          emailAddress: `sender-${harness.namespace}@example.com`,
+          displayName: 'Sender',
+        },
+      ],
+      leads: [
+        buildCampaignLead({
+          key: 'ingest-lead',
+          email: `lead-recipients-${harness.namespace}@example.com`,
+          firstName: 'Casey',
+          enrollment: buildCampaignEnrollment({
+            state: 'active',
+            currentFlowNodeId: 'email-1',
+            nextRunAt: new Date(Date.now() - 60_000).toISOString(),
+          }),
+        }),
+      ],
+    });
+    const lead = graph.leadsByKey.get('ingest-lead')!;
+    const leadEmail = `lead-recipients-${harness.namespace}@example.com`;
+    const mailboxId = graph.mailboxIdsByKey.get('mailbox-1')!;
+    const providerId = `<root-recipients-${harness.namespace}@furnace.build>`;
+    await seedSentJob({
+      harness,
+      graph,
+      lead,
+      mailboxId,
+      providerMessageId: providerId,
+    });
+
+    const mailbox = asMailbox(graph, mailboxId);
+    const secondaryTo = `also-${harness.namespace}@example.com`;
+    const ccAddress = `cc-${harness.namespace}@example.com`;
+    const manager = new ThreadManager(harness.supabase as any);
+    const handled = await manager.handleReply(
+      mailbox,
+      buildProcessedReply({
+        leadEmail,
+        mailboxEmail: mailbox.email_address,
+        inReplyTo: providerId,
+        subject: 'Re: Quick check-in',
+        to: [
+          { address: mailbox.email_address, name: 'Sender' },
+          { address: secondaryTo, name: 'Also' },
+        ],
+        cc: [{ address: ccAddress, name: 'Cc' }],
+      }),
+    );
+    assert.equal(handled, true);
+
+    const { data: receivedRows, error } = await harness.supabase
+      .from('email_messages')
+      .select('id, thread_id, to_email, to_emails, cc')
+      .eq('account_id', graph.accountId)
+      .eq('direction', 'received')
+      .eq('from_email', leadEmail);
+    assert.equal(error, null, error?.message);
+    assert.equal(receivedRows?.length, 1);
+    const row = receivedRows![0]!;
+    graph.manifest.threadIds.push(row.thread_id as string);
+    graph.manifest.messageIds.push(row.id as string);
+
+    assert.equal(row.to_email, mailbox.email_address);
+    assert.deepEqual(row.to_emails, [mailbox.email_address, secondaryTo]);
+    assert.deepEqual(row.cc, [ccAddress]);
+
+    const { data: threadRow, error: threadError } = await harness.supabase
+      .from('email_threads')
+      .select('participants')
+      .eq('id', row.thread_id)
+      .single();
+    assert.equal(threadError, null, threadError?.message);
+    const participants = (threadRow?.participants ?? []) as string[];
+    const normalized = participants.map((email) => email.toLowerCase());
+    assert.equal(new Set(normalized).size, normalized.length);
+    assert.ok(normalized.includes(leadEmail.toLowerCase()));
+    assert.ok(normalized.includes(mailbox.email_address.toLowerCase()));
+    assert.ok(normalized.includes(secondaryTo.toLowerCase()));
+    assert.ok(normalized.includes(ccAddress.toLowerCase()));
+  } finally {
+    await harness.cleanup();
+  }
+});

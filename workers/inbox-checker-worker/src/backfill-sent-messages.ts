@@ -143,6 +143,7 @@ export async function backfillSentMessages(
       from_name: mailboxDisplayName,
       to_email: leadEmail,
       to_name: leadName,
+      to_emails: leadEmail?.trim() ? [leadEmail.trim()] : null,
       subject: jobSubject,
       body_text: jobBodyText,
       body_html: jobBodyHtml,

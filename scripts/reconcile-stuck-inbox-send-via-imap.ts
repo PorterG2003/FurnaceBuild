@@ -324,6 +324,7 @@ async function reconcileFoundSend(
     from_name: mailbox.display_name,
     to_email: toEmail,
     to_name: (md.to_name as string) || null,
+    to_emails: toEmail?.trim() ? [toEmail.trim()] : null,
     cc: cc.length > 0 ? cc : null,
     subject: String(md.subject ?? '(No subject)'),
     body_text: String(md.body_text ?? ''),

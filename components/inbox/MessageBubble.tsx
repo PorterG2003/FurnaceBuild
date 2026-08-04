@@ -6,13 +6,30 @@ import {
   ArrowPathIcon,
   ExclamationCircleIcon,
   EllipsisVerticalIcon,
+  InformationCircleIcon,
 } from 'react-native-heroicons/outline';
 import type { EmailMessage } from '@/lib/supabase/types';
 import { getDisplayBody } from '@/lib/email/index';
-import { formatMessageDate, getInitials } from '@/lib/inbox';
+import { buildMessageHeaderDisplay, formatMessageDate, getInitials } from '@/lib/inbox';
 import { BottomSheet, ConfirmModal } from '@/components/ui/modals';
 import { MessageBody } from './MessageBody';
 import { MessageAttachments } from './MessageAttachments';
+
+function MessageAddressRow({ label, value }: { label: string; value: string }) {
+  return (
+    <View className="flex-row items-start gap-2 min-w-0">
+      <Text
+        className="text-gray-400 font-instrument-medium text-xs"
+        style={{ width: 36 }}
+      >
+        {label}
+      </Text>
+      <Text className="text-gray-300 font-instrument text-xs flex-1 min-w-0">
+        {value}
+      </Text>
+    </View>
+  );
+}
 
 export type MessageBubbleActionsLayout = 'inline' | 'overflowSheet';
 
@@ -95,6 +112,16 @@ export function MessageBubble({
     format: message.body_text ? 'text' : 'html',
   });
   const sender = message.from_name || message.from_email;
+  const headerDisplay = buildMessageHeaderDisplay({
+    message,
+    pendingSecondaryLabel,
+  });
+  const [addressesExpanded, setAddressesExpanded] = useState(
+    headerDisplay.defaultExpanded,
+  );
+  useEffect(() => {
+    setAddressesExpanded(headerDisplay.defaultExpanded);
+  }, [message.id, headerDisplay.defaultExpanded]);
   const isSent = message.direction === 'sent';
   const canReply = onReply != null && !isPending && !isFailed;
   const canForward = onForward != null && !isPending && !isFailed;
@@ -208,9 +235,9 @@ export function MessageBubble({
           }}
         />
       ) : null}
-      <View className="px-5 pt-4 pb-3">
-        <View className="flex-row items-center justify-between flex-wrap gap-2">
-          <View className="flex-row items-center flex-1 min-w-0">
+      <View className="px-5 pt-3 pb-2.5">
+        <View className="flex-row items-start justify-between flex-wrap gap-2">
+          <View className="flex-row items-start flex-1 min-w-0">
             <View
               className="w-10 h-10 rounded-full items-center justify-center flex-shrink-0"
               style={{ backgroundColor: '#2A2A2A' }}
@@ -219,38 +246,96 @@ export function MessageBubble({
                 {getInitials(message.from_name, message.from_email)}
               </Text>
             </View>
-            <View className="ml-3 items-start flex-1 min-w-0">
-              <Text className="text-white font-instrument-semibold text-base" numberOfLines={1}>
-                {pendingDisplayLabel ?? (isSent ? 'You' : sender)}
-              </Text>
-              <Text className="text-gray-400 font-instrument text-xs mt-0.5" numberOfLines={1}>
-                {pendingSecondaryLabel ?? message.from_email}
-              </Text>
-            </View>
-            {(!fullWidthCard || isFailed || isPending) && (
-              <View className="flex-row items-center gap-2 flex-shrink-0 ml-2">
-                {showHeaderCancelButton ? (
-                  <Pressable
-                    onPress={() => setCancelConfirmOpen(true)}
-                    className="rounded-lg px-3 py-2"
-                    hitSlop={8}
-                    style={{ backgroundColor: 'rgba(239, 68, 68, 0.14)' }}
-                  >
-                    <Text className="font-instrument-medium text-sm" style={{ color: '#FCA5A5' }}>
-                      {cancelLabel ?? 'Cancel'}
-                    </Text>
-                  </Pressable>
-                ) : null}
-                <Text className="text-gray-500 font-instrument text-xs">
-                  {headerStatusText}
+            <View className="ml-3 items-start flex-1 min-w-0 gap-0.5">
+              <View className="flex-row items-center w-full min-w-0 gap-2">
+                <Text
+                  className="text-white font-instrument-semibold text-base flex-1 min-w-0"
+                  numberOfLines={1}
+                >
+                  {pendingDisplayLabel ?? (isSent ? 'You' : sender)}
                 </Text>
+                {(!fullWidthCard || isFailed || isPending) && (
+                  <View className="flex-row items-center gap-2 flex-shrink-0">
+                    {showHeaderCancelButton ? (
+                      <Pressable
+                        onPress={() => setCancelConfirmOpen(true)}
+                        className="rounded-lg px-3 py-1.5"
+                        hitSlop={8}
+                        style={{ backgroundColor: 'rgba(239, 68, 68, 0.14)' }}
+                      >
+                        <Text className="font-instrument-medium text-sm" style={{ color: '#FCA5A5' }}>
+                          {cancelLabel ?? 'Cancel'}
+                        </Text>
+                      </Pressable>
+                    ) : null}
+                    <Text className="text-gray-500 font-instrument text-xs">
+                      {headerStatusText}
+                    </Text>
+                  </View>
+                )}
               </View>
-            )}
+              {headerDisplay.pendingSecondaryLabel ? (
+                <Text className="text-gray-400 font-instrument text-xs" numberOfLines={1}>
+                  {headerDisplay.pendingSecondaryLabel}
+                </Text>
+              ) : null}
+              <View className="gap-0.5 min-w-0 w-full">
+                <Pressable
+                  onPress={() => setAddressesExpanded((open) => !open)}
+                  className="flex-row items-center gap-1 min-w-0 self-start max-w-full"
+                  hitSlop={6}
+                  accessibilityRole="button"
+                  accessibilityState={{ expanded: addressesExpanded }}
+                  accessibilityLabel={
+                    addressesExpanded
+                      ? 'Hide details'
+                      : `${headerDisplay.summaryLine || 'Recipients'}. Show details`
+                  }
+                >
+                  {addressesExpanded ? (
+                    <Text className="text-gray-400 font-instrument text-xs">
+                      Hide details
+                    </Text>
+                  ) : (
+                    <>
+                      <Text
+                        className="text-gray-400 font-instrument text-xs"
+                        numberOfLines={1}
+                        style={{ flexShrink: 1 }}
+                      >
+                        {headerDisplay.summaryLine || 'Recipients'}
+                      </Text>
+                      <InformationCircleIcon
+                        size={14}
+                        color="#9CA3AF"
+                        style={{ flexShrink: 0 }}
+                      />
+                    </>
+                  )}
+                </Pressable>
+                {addressesExpanded ? (
+                  <View
+                    className="gap-0.5 min-w-0"
+                    accessible
+                    accessibilityRole="text"
+                    accessibilityLabel={headerDisplay.accessibilityLabel}
+                  >
+                    <MessageAddressRow label="From" value={headerDisplay.fromDisplay} />
+                    {headerDisplay.toDisplay ? (
+                      <MessageAddressRow label="To" value={headerDisplay.toDisplay} />
+                    ) : null}
+                    {headerDisplay.ccDisplay ? (
+                      <MessageAddressRow label="Cc" value={headerDisplay.ccDisplay} />
+                    ) : null}
+                  </View>
+                ) : null}
+              </View>
+            </View>
           </View>
           {showRetry && (
             <Pressable
               onPress={onRetry}
-              className="flex-row items-center gap-2 rounded-lg px-3 py-2 flex-shrink-0"
+              className="flex-row items-center gap-2 rounded-lg px-3 py-1.5 flex-shrink-0"
               hitSlop={8}
               style={{ backgroundColor: 'rgba(239, 68, 68, 0.12)' }}
             >
@@ -263,7 +348,7 @@ export function MessageBubble({
           {showOverflowActions && (
             <Pressable
               onPress={() => setActionSheetOpen(true)}
-              className="flex-row items-center justify-center rounded-lg p-2 flex-shrink-0"
+              className="flex-row items-center justify-center rounded-lg p-1.5 flex-shrink-0"
               hitSlop={8}
               accessibilityLabel="Message actions"
               style={{ backgroundColor: 'rgba(107, 114, 128, 0.2)' }}
@@ -274,7 +359,7 @@ export function MessageBubble({
           {showInlineActions && canReply && (
             <Pressable
               onPress={() => onReply(message)}
-              className="flex-row items-center gap-2 rounded-lg px-3 py-2 flex-shrink-0"
+              className="flex-row items-center gap-2 rounded-lg px-3 py-1.5 flex-shrink-0"
               hitSlop={8}
               style={{ backgroundColor: 'rgba(243, 68, 13, 0.12)' }}
             >
@@ -287,7 +372,7 @@ export function MessageBubble({
           {showInlineActions && canForward && (
             <Pressable
               onPress={() => onForward(message)}
-              className="flex-row items-center gap-2 rounded-lg px-3 py-2 flex-shrink-0"
+              className="flex-row items-center gap-2 rounded-lg px-3 py-1.5 flex-shrink-0"
               hitSlop={8}
               style={{ backgroundColor: 'rgba(107, 114, 128, 0.2)' }}
             >

@@ -19,6 +19,7 @@ function message(
     from_name: 'Sender',
     to_email: 'team@example.com',
     to_name: null,
+    to_emails: null,
     cc: null,
     subject: 'Thread subject',
     body_text: 'Hello',
@@ -26,15 +27,20 @@ function message(
     message_id: `<${partial.id}@example.com>`,
     in_reply_to: null,
     message_references: null,
+    reference_message_ids: null,
+    thread_topic: null,
+    thread_index: null,
     received_at: partial.received_at,
     read_at: null,
     headers: {},
     attachments: [],
     imap_uid: null,
+    parse_version: 1,
+    search_vector: null,
     created_at: partial.received_at,
     updated_at: partial.received_at,
     ...partial,
-  } as EmailMessage;
+  };
 }
 
 test('buildReplaceLeadFollowUpAction returns null for replace-only completion', () => {

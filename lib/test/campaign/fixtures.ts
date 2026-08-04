@@ -60,6 +60,8 @@ export function buildThreadMessage(
     fromName: null,
     toEmail: undefined,
     toName: null,
+    toEmails: undefined,
+    cc: null,
     receivedAt,
     readAt: receivedAt,
     messageId: null,

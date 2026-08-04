@@ -843,6 +843,8 @@ test('SendWorker persists successful inbox_forward jobs into thread history', as
   assert.equal(insertCall?.updates?.message_id, 'forward@furnace.test');
   assert.equal(insertCall?.updates?.in_reply_to, null);
   assert.equal(insertCall?.updates?.message_references, null);
+  assert.deepEqual(insertCall?.updates?.to_emails, ['target@example.com']);
+  assert.equal(insertCall?.updates?.to_email, 'target@example.com');
   assert.deepEqual(insertCall?.updates?.attachments, [
     {
       filename: 'note.txt',

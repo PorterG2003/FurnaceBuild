@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createClient } from '@supabase/supabase-js';
+import { loadSeedEnv } from '../../../scripts/seed/env';
 import { ClientApiDbHarness, createClientApiTestNamespace } from '../client-api/harness';
 import {
   buildCampaignEnrollment,
@@ -9,6 +10,10 @@ import {
   buildCampaignThread,
   buildThreadMessage,
 } from '../campaign/fixtures';
+
+// Must load before reading publishableKey — `{ skip: !publishableKey }` is
+// evaluated at module load, before any harness constructor runs.
+loadSeedEnv();
 
 const publishableKey =
   process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY?.trim() ||

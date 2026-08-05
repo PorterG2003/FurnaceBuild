@@ -132,7 +132,8 @@ class MockSupabase {
         table === 'pending_inbound_replies' ||
         table === 'message_jobs' ||
         table === 'email_threads' ||
-        table === 'email_messages'
+        table === 'email_messages' ||
+        table === 'enrollments'
       ) {
         response = { data: null, error: null };
       } else {
@@ -675,6 +676,7 @@ test('handleReply routes campaign replies on categorizer flows through the park 
     { count: 2, error: null }, // email_messages count
     { data: null, error: null }, // email_threads update
     { data: [{ id: 'node-categorizer' }], error: null }, // nodes (campaignHasCategorizer)
+    { data: { reply_thread_id: null }, error: null }, // enrollments reply_thread_id check
     { data: 'held', error: null }, // rpc park_or_advance_enrollment_on_reply
     { data: true, error: null }, // rpc record_replied_event_and_increment
     { data: { id: 'notification-event-1' }, error: null }, // notification_events
@@ -693,11 +695,13 @@ test('handleReply routes campaign replies on categorizer flows through the park 
   assert.equal(rpcCalls[0].args.p_enrollment_id, 'enrollment-1');
   assert.equal(rpcCalls[0].args.p_thread_id, 'thread-1');
 
-  // Parked, never stopped: no enrollments update of any kind.
-  assert.ok(!supabase.calls.some((c) => (c as QueryCall).table === 'enrollments'));
+  // Never hard-stop: no enrollments UPDATE with stopped_reason.
+  const enrollUpdates = (supabase.calls.filter((c) => (c as QueryCall).table === 'enrollments') as QueryCall[])
+    .filter((c) => c.insertPayloads.some((p) => p && typeof p === 'object' && 'stopped_reason' in (p as object)));
+  assert.equal(enrollUpdates.length, 0);
 });
 
-test('handleReply falls back to the legacy hard stop (with held-job hygiene) when the park RPC fails', async () => {
+test('handleReply leaves enrollment active (no hard-stop) when the park RPC fails on a categorizer campaign', async () => {
   const existingThread = {
     id: 'thread-1',
     account_id: 'account-1',
@@ -716,9 +720,8 @@ test('handleReply falls back to the legacy hard stop (with held-job hygiene) whe
     { count: 2, error: null }, // email_messages count
     { data: null, error: null }, // email_threads update
     { data: [{ id: 'node-categorizer' }], error: null }, // nodes (campaignHasCategorizer)
+    { data: { reply_thread_id: null }, error: null }, // enrollments reply_thread_id check
     { data: null, error: { message: 'park exploded' } }, // rpc park (FAILS)
-    { data: null, error: null }, // enrollments legacy stop
-    { data: 0, error: null }, // rpc cancel_held_jobs_for_enrollment
     { data: true, error: null }, // rpc record_replied_event_and_increment
     { data: { id: 'notification-event-1' }, error: null }, // notification_events
     { data: { id: 'webhook-event-1' }, error: null }, // webhook_events
@@ -731,17 +734,55 @@ test('handleReply falls back to the legacy hard stop (with held-job hygiene) whe
   const rpcCalls = supabase.calls.filter((c) => (c as RpcCall).kind === 'rpc') as RpcCall[];
   assert.deepEqual(
     rpcCalls.map((c) => c.fn),
-    [
-      'park_or_advance_enrollment_on_reply',
-      'cancel_held_jobs_for_enrollment',
-      'record_replied_event_and_increment',
-    ],
+    ['park_or_advance_enrollment_on_reply', 'record_replied_event_and_increment'],
   );
 
-  // Fail-safe: halting outbound for someone who replied is always safe.
-  const enrollCalls = supabase.calls.filter((c) => (c as QueryCall).table === 'enrollments') as QueryCall[];
-  assert.equal(enrollCalls.length, 1);
-  assert.match(JSON.stringify(enrollCalls[0].insertPayloads[0]), /"stopped_reason":"replied"/);
+  // Must NOT hard-stop or cancel holds on park failure.
+  assert.ok(!rpcCalls.some((c) => c.fn === 'cancel_held_jobs_for_enrollment'));
+  const enrollStopUpdates = (supabase.calls.filter((c) => (c as QueryCall).table === 'enrollments') as QueryCall[])
+    .filter((c) => c.insertPayloads.some((p) => p && typeof p === 'object' && 'stopped_reason' in (p as object)));
+  assert.equal(enrollStopUpdates.length, 0);
+});
+
+test('getCampaignCategorizerConfig caches successes only — errors retry on the next call', async () => {
+  let limitCalls = 0;
+  const supabase = {
+    from: (_table: string) => ({
+      select: () => ({
+        eq: () => ({
+          eq: () => ({
+            is: () => ({
+              limit: async () => {
+                limitCalls += 1;
+                // First getCampaignCategorizerConfig: load + immediate retry both fail.
+                if (limitCalls <= 2) {
+                  return { data: null, error: { message: 'transient' } };
+                }
+                return {
+                  data: [{ id: 'node-1', node_data: { use_ai: true } }],
+                  error: null,
+                };
+              },
+            }),
+          }),
+        }),
+      }),
+    }),
+  };
+  const manager = new ThreadManager(supabase as any);
+
+  const first = await (manager as any).getCampaignCategorizerConfig('campaign-cache-1');
+  assert.equal(first.status, 'error');
+  assert.equal(limitCalls, 2, 'error path retries once and does not cache');
+
+  const second = await (manager as any).getCampaignCategorizerConfig('campaign-cache-1');
+  assert.equal(second.status, 'ok');
+  assert.equal(second.hasCategorizer, true);
+  assert.equal(limitCalls, 3, 'uncached error allows a fresh load');
+
+  const third = await (manager as any).getCampaignCategorizerConfig('campaign-cache-1');
+  assert.equal(third.status, 'ok');
+  assert.equal(limitCalls, 3, 'successful result is cached');
 });
 
 test('getOrCreateThread reloads the canonical thread after a unique-violation race', async () => {
@@ -1733,6 +1774,7 @@ test('handleReply persists multi-To, Cc, and normalized participants', async () 
     { count: 2, error: null },
     { data: null, error: null },
     { data: [{ id: 'node-categorizer' }], error: null },
+    { data: { reply_thread_id: null }, error: null },
     { data: 'held', error: null },
     { data: true, error: null },
     { data: { id: 'notification-event-1' }, error: null },
@@ -1807,6 +1849,7 @@ test('handleReply writes to_emails null when source To is empty', async () => {
     { count: 2, error: null },
     { data: null, error: null },
     { data: [{ id: 'node-categorizer' }], error: null },
+    { data: { reply_thread_id: null }, error: null },
     { data: 'held', error: null },
     { data: true, error: null },
     { data: { id: 'notification-event-1' }, error: null },

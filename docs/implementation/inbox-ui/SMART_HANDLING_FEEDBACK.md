@@ -42,6 +42,8 @@ Current constants live in `lib/inbox/smartHandlingVersion.ts`:
 
 - `MANUAL_SMART_HANDLING_VERSION` for heuristic/manual smart handling changes
 - `CATEGORIZER_PROMPT_VERSION` for AI prompt/parser/model contract changes
+  (currently `categorizer-v2`: prior-outbound CTA context + decline-precedence /
+  empty-body Neutral rubric)
 
 When to bump:
 

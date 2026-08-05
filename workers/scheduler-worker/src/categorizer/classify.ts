@@ -29,12 +29,19 @@ export interface CategorizerClassification {
   returnDate: string | null;
 }
 
-export interface ClassifyReplyInput {
+export type CategorizerMessageSnippet = {
   subject: string | null;
   bodyText: string | null;
-  /** Date the reply was received; anchors relative phrases like "back next Monday". */
+};
+
+export type CategorizerThreadContext = {
   messageDate: Date;
-}
+  reply: CategorizerMessageSnippet;
+  priorOutbound?: CategorizerMessageSnippet | null;
+};
+
+/** @deprecated Prefer CategorizerThreadContext. */
+export type ClassifyReplyInput = CategorizerThreadContext;
 
 export type CategorizerTransportResult =
   | { ok: true; text: string }
@@ -63,17 +70,46 @@ export function truncateReplyBody(bodyText: string | null): string {
   return `${text.slice(0, CATEGORIZER_BODY_TRUNCATION_LIMIT)}\n[truncated]`;
 }
 
-export function buildCategorizerPrompt(input: ClassifyReplyInput): { system: string; user: string } {
+function formatSnippetBody(bodyText: string | null | undefined): string {
+  return truncateReplyBody(bodyText ?? null) || '(empty body)';
+}
+
+function formatSnippetBlock(
+  label: string,
+  snippet: CategorizerMessageSnippet | null | undefined,
+): string[] {
+  if (!snippet) {
+    return [`${label}:`, '(none)', ''];
+  }
+  return [
+    `${label}:`,
+    `Subject: ${(snippet.subject ?? '').trim() || '(no subject)'}`,
+    'Body:',
+    formatSnippetBody(snippet.bodyText),
+    '',
+  ];
+}
+
+export function buildCategorizerPrompt(input: CategorizerThreadContext): { system: string; user: string } {
   const messageDateIso = input.messageDate.toISOString().slice(0, 10);
 
   const system = [
     'You classify email replies to cold outreach campaigns.',
     '',
+    'You are given the prior outbound message (when available) and the inbound reply.',
+    'Use the outbound to understand any yes/no or permission CTA the sender may be answering.',
+    '',
     'Classify the reply into exactly one of these categories:',
-    '- "Interested": the sender shows interest, asks questions, wants a call/demo/pricing, or asks to learn more.',
-    '- "Neutral": ambiguous, non-committal, asks to reach out later, refers to a colleague, or cannot be judged.',
-    '- "Not Interested": the sender declines, asks to stop contacting, or is clearly negative.',
+    '- "Interested": the sender accepts a yes/no or permission CTA, asks for the offered next step (link, call, demo, pricing), or clearly wants to continue.',
+    '- "Neutral": ambiguous, non-committal, asks to reach out later, refers to a colleague, signature/thanks-only with no accept, or cannot be judged.',
+    '- "Not Interested": the sender declines, asks to stop contacting / unsubscribe / remove them, or is clearly negative.',
     '- "Auto Reply": automated responses - out-of-office, vacation, parental leave, autoresponders, "I am away" messages, ticket confirmations, or any machine-generated reply.',
+    '',
+    'Precedence rules (apply in order):',
+    '1. Clear decline / unsubscribe / stop-contacting / remove-me → "Not Interested" even if affirmative words like "yes" appear.',
+    '2. Affirmative answer to a permission/yes-no CTA, or an explicit ask for the offered next step → "Interested".',
+    '3. If the reply body is empty or has no substantive text → "Neutral" (or "Auto Reply" only when the message is clearly automated). Never infer Interested from the outbound alone.',
+    '4. Otherwise use Neutral for ambiguity / later / colleague; Auto Reply unchanged for machine replies.',
     '',
     'If (and only if) the category is "Auto Reply" and the message explicitly states a return date',
     `(e.g. "back on March 3rd", "returning next Monday"), resolve it to an ISO date using the message date ${messageDateIso} for relative phrases.`,
@@ -85,11 +121,12 @@ export function buildCategorizerPrompt(input: ClassifyReplyInput): { system: str
 
   const user = [
     `Reply received on: ${messageDateIso}`,
-    `Subject: ${(input.subject ?? '').trim() || '(no subject)'}`,
     '',
-    'Body:',
-    truncateReplyBody(input.bodyText) || '(empty body)',
-  ].join('\n');
+    ...formatSnippetBlock('Prior outbound', input.priorOutbound),
+    ...formatSnippetBlock('Inbound reply', input.reply),
+  ]
+    .join('\n')
+    .trimEnd();
 
   return { system, user };
 }
@@ -235,7 +272,7 @@ export const openRouterCategorizerTransport: CategorizerLlmTransport = async ({
  * best-effort return-date extraction for Auto Reply.
  */
 export async function classifyReply(
-  input: ClassifyReplyInput,
+  input: CategorizerThreadContext,
   options?: {
     model?: string;
     transport?: CategorizerLlmTransport;

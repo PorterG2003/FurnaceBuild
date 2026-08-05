@@ -639,6 +639,70 @@ test('terminal paths cancel holds: bounce and unsubscribe stops leave no restora
   }
 });
 
+test('park RPC error on categorizer campaign leaves enrollment active (no hard-stop orphan)', async () => {
+  const harness = new CampaignDbHarness({ namespace: createCampaignTestNamespace('cat-fail-park-rpc') });
+
+  try {
+    const seeded = await seedMidSequence(harness, { name: 'Categorizer Park RPC Fail', useAi: true });
+    const originalRpc = harness.supabase.rpc.bind(harness.supabase);
+    (harness.supabase as any).rpc = async (fn: string, args?: Record<string, unknown>) => {
+      if (fn === 'park_or_advance_enrollment_on_reply') {
+        return { data: null, error: { message: 'simulated park RPC failure' } };
+      }
+      return originalRpc(fn, args as any);
+    };
+
+    await deliverReply(harness, seeded, { bodyText: 'Yes please, send the link!' });
+
+    const enrollment = await getEnrollmentRow(harness, seeded.enrollmentId);
+    assert.equal(enrollment.state, 'active', 'must not hard-stop on park RPC failure');
+    assert.notEqual(enrollment.stopped_reason, 'replied');
+    assert.equal(enrollment.reply_thread_id, null, 'park never pinned the thread');
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test('config lookup error on categorizer campaign leaves enrollment active (no hard-stop orphan)', async () => {
+  const harness = new CampaignDbHarness({ namespace: createCampaignTestNamespace('cat-fail-config') });
+
+  try {
+    const seeded = await seedMidSequence(harness, { name: 'Categorizer Config Fail', useAi: true });
+    const originalFrom = harness.supabase.from.bind(harness.supabase);
+    const wrapFailing = (obj: any): any => {
+      if (!obj || typeof obj !== 'object') return obj;
+      return new Proxy(obj, {
+        get(target, prop) {
+          if (prop === 'then') {
+            return (onFulfilled: any, onRejected: any) =>
+              Promise.resolve({
+                data: null,
+                error: { message: 'simulated nodes lookup failure' },
+              }).then(onFulfilled, onRejected);
+          }
+          const value = target[prop];
+          if (typeof value === 'function') {
+            return (...args: unknown[]) => wrapFailing(value.apply(target, args));
+          }
+          return value;
+        },
+      });
+    };
+    (harness.supabase as any).from = (table: string) => {
+      const builder = originalFrom(table);
+      return table === 'nodes' ? wrapFailing(builder) : builder;
+    };
+
+    await deliverReply(harness, seeded, { bodyText: 'Yes please!' });
+
+    const enrollment = await getEnrollmentRow(harness, seeded.enrollmentId);
+    assert.equal(enrollment.state, 'active', 'must not hard-stop on categorizer config error');
+    assert.notEqual(enrollment.stopped_reason, 'replied');
+  } finally {
+    await harness.cleanup();
+  }
+});
+
 test('restore never reschedules sent or cancelled jobs (duplicate-send guard)', async () => {
   const harness = new CampaignDbHarness({ namespace: createCampaignTestNamespace('cat-fail-dupsend') });
   const now = Date.now();

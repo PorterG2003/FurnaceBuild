@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createClient } from '@supabase/supabase-js';
+import { loadSeedEnv } from '../../../scripts/seed/env';
 import { CampaignDbHarness } from '../campaign/harness';
 import { ClientApiDbHarness } from '../client-api/harness';
 import {
@@ -9,6 +10,8 @@ import {
   buildCampaignLead,
   createCampaignTestNamespace,
 } from '../campaign/fixtures';
+
+loadSeedEnv();
 
 async function seedThrottleRow(
   harness: CampaignDbHarness,
@@ -329,6 +332,7 @@ test('finalize_message_job_sent increments daily counters for reply-lane sends',
   }
 });
 
+// Must load before this check — skip option is evaluated at module load.
 const publishableKey =
   process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY?.trim() ||
   process.env.SUPABASE_ANON_KEY?.trim();

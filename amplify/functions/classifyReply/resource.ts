@@ -8,5 +8,6 @@ export const classifyReply = defineFunction({
   environment: {
     SUPABASE_SECRET_KEY: secret('SUPABASE_SECRET_KEY'),
     OPENROUTER_API_KEY: secret('OPENROUTER_API_KEY'),
+    SLACK_ERROR_WEBHOOK_URL: secret('SLACK_ERROR_WEBHOOK_URL'),
   },
 });

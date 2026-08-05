@@ -197,7 +197,12 @@ Client-side failures stay console-only; the sweep covers a lost manual wake with
 - Restore is position-faithful, not time-faithful: hold time counts toward elapsed waits.
 - Only `pending` jobs can be held; an in-flight (`reserved`/`sending`) email may still go out.
 - Parked enrollments read as `active` indefinitely (no distinct UI state in v1).
-- Recategorization after branch updates stats but never re-routes.
+- Recategorization after an automatic branch updates stats but does not re-route.
+  **User correction** (Master Inbox / API category write) may re-enter the categorizer via
+  `wake_enrollment_for_thread_category` when the enrollment completed at the categorizer
+  (e.g. Neutral with no edge) or hard-stopped as `replied`, the new category is branchable,
+  and no `campaign_priority` / `campaign_reply` has been sent yet. The scheduler still owns
+  edge following.
 - Old freeform-category draft nodes must be re-connected to the new fixed handles.
 - Auto-replies still count in `replied_count` (event recorded before classification).
 - Already-sent prod rows that predate the durable thread-write fix can be repaired with `scripts/repair-campaign-reply-inbox-rows.ts` (covers `campaign_priority` plus legacy `campaign_reply` rows).

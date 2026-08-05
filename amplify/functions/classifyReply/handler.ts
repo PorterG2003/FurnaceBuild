@@ -1,6 +1,13 @@
-import type { SQSEvent, SQSBatchResponse } from 'aws-lambda';
+import type { SQSEvent, SQSBatchResponse, SQSRecord } from 'aws-lambda';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import { type CategorizerCategory } from '../../../lib/categorizer/index';
+import { reportErrorToSlack, formatUnknownError } from '@furnace/slack-lib';
+import {
+  type CategorizerCategory,
+  resolveClassifyBody,
+  resolvePriorOutbound,
+  resolveClassifyFailureAction,
+  parseSqsApproximateReceiveCount,
+} from '../../../lib/categorizer/index';
 import {
   classifyReply as runCategorizer,
   type CategorizerLlmTransport,
@@ -41,6 +48,8 @@ type MessageRow = {
   body_text: string | null;
   body_html: string | null;
   received_at: string | null;
+  in_reply_to: string | null;
+  reference_message_ids: string[] | null;
 };
 
 function getSupabase() {
@@ -327,7 +336,9 @@ export async function processClassifyReplyPayload(
 
   const { data: messageData, error: messageError } = await supabase
     .from('email_messages')
-    .select('id, from_email, from_name, subject, body_text, body_html, received_at')
+    .select(
+      'id, from_email, from_name, subject, body_text, body_html, received_at, in_reply_to, reference_message_ids',
+    )
     .eq('id', payload.emailMessageId)
     .maybeSingle();
   if (messageError) throw messageError;
@@ -345,6 +356,11 @@ export async function processClassifyReplyPayload(
   let category: CategorizerCategory;
   let returnDate: string | null = null;
 
+  const replyBodyText = resolveClassifyBody({
+    body_text: message.body_text,
+    body_html: message.body_html,
+  });
+
   if (systemStampedAutoReply) {
     category = 'Auto Reply';
     const sourceText = message.body_text ?? message.body_html ?? '';
@@ -354,11 +370,24 @@ export async function processClassifyReplyPayload(
     );
     returnDate = parsed ? parsed.toISOString().slice(0, 10) : null;
   } else {
+    const priorOutbound = await resolvePriorOutbound(supabase, {
+      threadId: thread.id,
+      inbound: {
+        receivedAt: message.received_at,
+        inReplyTo: message.in_reply_to,
+        referenceMessageIds: message.reference_message_ids,
+      },
+      threadMessageJobId: thread.message_job_id,
+    });
+
     const result = await runCategorizer(
       {
-        subject: message.subject,
-        bodyText: message.body_text ?? message.body_html,
         messageDate: message.received_at ? new Date(message.received_at) : new Date(),
+        reply: {
+          subject: message.subject,
+          bodyText: replyBodyText,
+        },
+        priorOutbound,
       },
       { transport: options?.transport, now: options?.now },
     );
@@ -384,7 +413,7 @@ export async function processClassifyReplyPayload(
           fromName: message.from_name,
           leadEmail,
           subject: message.subject,
-          bodyText: message.body_text,
+          bodyText: replyBodyText ?? message.body_text,
         });
 
   const updatePatch: Record<string, unknown> = {
@@ -458,11 +487,44 @@ export const handler = async (event: SQSEvent): Promise<SQSBatchResponse> => {
   const batchItemFailures: Array<{ itemIdentifier: string }> = [];
 
   await Promise.all(
-    event.Records.map(async (record) => {
+    event.Records.map(async (record: SQSRecord) => {
       const payload = JSON.parse(record.body ?? '{}') as ClassifyReplyQueuePayload;
       const result = await processClassifyReplyPayloadSafely(payload, supabase);
       if (!result.ok) {
-        console.error('[classifyReply] failed to process record', record.messageId, result.error);
+        const receiveCount = parseSqsApproximateReceiveCount(record.attributes);
+        const action = resolveClassifyFailureAction(receiveCount);
+        console.error(
+          '[classifyReply] failed to process record',
+          record.messageId,
+          { receiveCount, action, error: result.error },
+        );
+
+        if (action === 'give_up') {
+          const errorText = formatUnknownError(result.error);
+          console.error(
+            '[classifyReply] giving up after exhausted retries; enrollment stays parked/held until manual category',
+            {
+              threadId: payload.threadId,
+              campaignId: payload.campaignId,
+              emailMessageId: payload.emailMessageId,
+              receiveCount,
+              error: errorText,
+              slackWebhookConfigured: Boolean(process.env.SLACK_ERROR_WEBHOOK_URL?.trim()),
+            },
+          );
+          reportErrorToSlack('classifyReply: classification failed after retries (giving up)', {
+            severity: 'critical',
+            thread_id: payload.threadId ?? undefined,
+            campaign_id: payload.campaignId ?? undefined,
+            error: errorText,
+            receive_count: receiveCount,
+            email_message_id: payload.emailMessageId ?? undefined,
+            note:
+              'Enrollment outbound stays parked/held until a human sets a category (or re-triggers classify). No auto re-classify after give_up.',
+          });
+          return;
+        }
+
         batchItemFailures.push({ itemIdentifier: record.messageId });
       }
     }),

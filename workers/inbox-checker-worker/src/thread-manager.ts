@@ -11,8 +11,12 @@ import {
 } from './bounce-detection/index.js';
 import {
   loadCampaignCategorizerConfig,
-  type CampaignCategorizerConfig,
+  type CampaignCategorizerConfigLoad,
 } from './campaign-categorizer-config.js';
+import {
+  resolveCampaignReplyDisposition,
+  shouldAttemptCategorizerPark,
+} from './campaign-reply-disposition.js';
 import { isAutoReplyMessage } from './message-processor.js';
 import { emitClassifyReplyJob } from './emit-classify-reply-job.js';
 import { emitEmailReceivedNotification } from './emit-notification-event.js';
@@ -62,23 +66,38 @@ const CATEGORIZER_CACHE_TTL_MS = 60 * 1000;
  * Thread manager for creating email threads and messages
  */
 export class ThreadManager {
-  /** Per-campaign "flow has a categorizer node" cache (TTL = one worker tick). */
-  private categorizerCache = new Map<string, { value: CampaignCategorizerConfig; expiresAt: number }>();
+  /**
+   * Per-campaign categorizer lookup cache (TTL = one worker tick).
+   * Only successful lookups are cached — never cache lookup errors as
+   * hasCategorizer=false (that fail-open orphaned Interested enrollments).
+   */
+  private categorizerCache = new Map<string, { value: CampaignCategorizerConfigLoad; expiresAt: number }>();
 
   constructor(private supabase: SupabaseClient) {}
 
   /**
    * Whether the campaign's flow contains a live categorizer node.
-   * Cached per campaign for roughly one worker tick.
+   * Successful results are cached; errors are not (retry next call).
    */
-  private async getCampaignCategorizerConfig(campaignId: string): Promise<CampaignCategorizerConfig> {
+  private async getCampaignCategorizerConfig(
+    campaignId: string,
+  ): Promise<CampaignCategorizerConfigLoad> {
     const cached = this.categorizerCache.get(campaignId);
     if (cached && cached.expiresAt > Date.now()) {
       return cached.value;
     }
 
-    const value = await loadCampaignCategorizerConfig(this.supabase, campaignId);
-    this.categorizerCache.set(campaignId, { value, expiresAt: Date.now() + CATEGORIZER_CACHE_TTL_MS });
+    let value = await loadCampaignCategorizerConfig(this.supabase, campaignId);
+    if (value.status === 'error') {
+      // One immediate retry before treating as configError.
+      value = await loadCampaignCategorizerConfig(this.supabase, campaignId);
+    }
+    if (value.status === 'ok') {
+      this.categorizerCache.set(campaignId, {
+        value,
+        expiresAt: Date.now() + CATEGORIZER_CACHE_TTL_MS,
+      });
+    }
     return value;
   }
 
@@ -653,19 +672,42 @@ export class ThreadManager {
         (originalJob as any).message_data?.source !== 'inbox_reply' &&
         (originalJob as any).message_data?.source !== 'inbox_forward';
 
-      // Categorizer flows: hold the outbound sequence and fast-forward to the
-      // categorizer instead of stopping. Unsubscribe replies keep the legacy
-      // hard stop. Any failure falls back to the legacy stop (safe: halts
-      // outbound for someone who replied).
+      // Categorizer flows: hold outbound and fast-forward to the categorizer.
+      // Unsubscribe keeps the legacy hard stop. Park/config misses must NOT
+      // fail open to hard-stop (that orphaned AI Interested threads).
       let parkStatus: string | null = null;
-      const categorizerConfig =
+      let parkRpcError = false;
+      let replyThreadIdAlreadySet = false;
+
+      const categorizerLoad =
         isCampaignReply && !!originalJob.enrollment_id && originalJob.campaign_id
           ? await this.getCampaignCategorizerConfig(originalJob.campaign_id)
-          : { hasCategorizer: false, useAi: false };
-      const categorizerFlow = isCampaignReply && !!originalJob.enrollment_id && categorizerConfig.hasCategorizer;
-      queueHasCategorizer = categorizerConfig.hasCategorizer;
-      queueUseAi = categorizerConfig.useAi;
-      if (categorizerFlow && !options?.isUnsubscribe) {
+          : ({ status: 'ok', hasCategorizer: false, useAi: false } as const);
+      const configError = categorizerLoad.status === 'error';
+      const hasCategorizer = categorizerLoad.status === 'ok' && categorizerLoad.hasCategorizer;
+      const useAi = categorizerLoad.status === 'ok' ? categorizerLoad.useAi : false;
+      queueHasCategorizer = hasCategorizer || configError;
+      queueUseAi = useAi;
+
+      if (isCampaignReply && originalJob.enrollment_id) {
+        const { data: enrollmentRow } = await this.supabase
+          .from('enrollments')
+          .select('reply_thread_id')
+          .eq('id', originalJob.enrollment_id)
+          .maybeSingle();
+        replyThreadIdAlreadySet = !!(enrollmentRow as { reply_thread_id?: string | null } | null)
+          ?.reply_thread_id;
+      }
+
+      const attemptPark = shouldAttemptCategorizerPark({
+        isCampaignReply,
+        hasEnrollmentId: !!originalJob.enrollment_id,
+        isUnsubscribe: !!options?.isUnsubscribe,
+        hasCategorizer,
+        configError,
+      });
+
+      if (attemptPark && originalJob.enrollment_id) {
         const { data: parkResult, error: parkError } = await this.supabase.rpc(
           'park_or_advance_enrollment_on_reply',
           {
@@ -675,6 +717,7 @@ export class ThreadManager {
         );
 
         if (parkError) {
+          parkRpcError = true;
           console.error(
             `[INBOX CHECKER] park_or_advance_enrollment_on_reply failed for enrollment ${originalJob.enrollment_id}:`,
             parkError
@@ -693,14 +736,51 @@ export class ThreadManager {
           });
         } else {
           parkStatus = (parkResult as string | null) ?? null;
+          if (parkStatus === 'branched') {
+            replyThreadIdAlreadySet = true;
+          }
         }
       }
 
-      if (parkStatus === 'held' || parkStatus === 'woken' || parkStatus === 'branched') {
-        console.log(
-          `[INBOX CHECKER] Reply routed to categorizer (${parkStatus}) for enrollment ${originalJob.enrollment_id}`
+      const disposition = resolveCampaignReplyDisposition({
+        isCampaignReply,
+        isUnsubscribe: !!options?.isUnsubscribe,
+        replyThreadIdAlreadySet,
+        hasCategorizer,
+        configError,
+        parkStatus,
+        parkError: parkRpcError,
+      });
+
+      console.log(
+        `[INBOX CHECKER] Reply disposition=${disposition} parkStatus=${parkStatus ?? 'null'} ` +
+          `configError=${configError} enrollment=${originalJob.enrollment_id}`
+      );
+
+      if (disposition === 'park_ok') {
+        if (parkStatus === 'held' || parkStatus === 'woken' || parkStatus === 'branched') {
+          console.log(
+            `[INBOX CHECKER] Reply routed to categorizer (${parkStatus}) for enrollment ${originalJob.enrollment_id}`
+          );
+        }
+      } else if (disposition === 'leave_active_alert') {
+        reportErrorToSlack(
+          'Inbox-checker: categorizer park missed — enrollment left active (not hard-stopped)',
+          {
+            severity: 'critical',
+            campaign_id: originalJob.campaign_id,
+            enrollment_id: originalJob.enrollment_id,
+            thread_id: thread.id,
+            error: `parkStatus=${parkStatus ?? 'null'} configError=${configError} parkError=${parkRpcError}`,
+            alertPolicy: 'critical_failure',
+            aggregationKey: `categorizer-park-miss:${originalJob.campaign_id}`,
+            summaryFields: {
+              campaign_id: originalJob.campaign_id,
+            },
+          },
         );
       } else {
+        // hard_stop — legacy non-categorizer or unsubscribe
         const stoppedAt = new Date().toISOString();
         await this.supabase
           .from('enrollments')
@@ -708,9 +788,7 @@ export class ThreadManager {
           .eq('id', originalJob.enrollment_id)
           .is('deleted_at', null);
 
-        // Held-job hygiene for categorizer flows that hard-stopped anyway
-        // (unsubscribe reply or park RPC failure with a prior hold in place).
-        if (categorizerFlow) {
+        if (hasCategorizer || configError) {
           const { error: heldCancelError } = await this.supabase.rpc('cancel_held_jobs_for_enrollment', {
             p_enrollment_id: originalJob.enrollment_id,
           });
@@ -755,7 +833,7 @@ export class ThreadManager {
       }
 
       console.log(
-        `Reply to original message detected and processed: message_job ${originalJob.id}, enrollment ${originalJob.enrollment_id} ${parkStatus ? `routed to categorizer (${parkStatus})` : 'stopped'}`
+        `Reply to original message detected and processed: message_job ${originalJob.id}, enrollment ${originalJob.enrollment_id} disposition=${disposition}`
       );
     } else {
       console.log(`Reply to reply detected and processed: added to thread ${thread.id}`);
@@ -774,8 +852,14 @@ export class ThreadManager {
 
     if (!queueHasCategorizer && thread.campaign_id) {
       const fallbackCategorizerConfig = await this.getCampaignCategorizerConfig(thread.campaign_id);
-      queueHasCategorizer = fallbackCategorizerConfig.hasCategorizer;
-      queueUseAi = fallbackCategorizerConfig.useAi;
+      if (fallbackCategorizerConfig.status === 'ok') {
+        queueHasCategorizer = fallbackCategorizerConfig.hasCategorizer;
+        queueUseAi = fallbackCategorizerConfig.useAi;
+      } else {
+        // Lookup failed: still queue classify so AI can run; useAi unknown → false.
+        queueHasCategorizer = true;
+        queueUseAi = false;
+      }
     }
     await emitClassifyReplyJob({
       emailMessageId: emailMessage.id,

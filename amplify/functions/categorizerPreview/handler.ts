@@ -3,7 +3,10 @@ import {
   buildCategorizerPrompt,
   parseCategorizerResponse,
   DEFAULT_CATEGORIZER_MODEL,
+  resolveClassifyBody,
+  resolvePriorOutbound,
   type CategorizerCategory,
+  type CategorizerThreadContext,
 } from '../../../lib/categorizer/index';
 
 /**
@@ -72,17 +75,93 @@ async function assertUserCanAccessCampaign(
   return { ok: true };
 }
 
+async function buildPreviewThreadContext(
+  db: SupabaseClient,
+  reply: PreviewReplyInput,
+): Promise<CategorizerThreadContext> {
+  const messageDate = reply.receivedAt ? new Date(reply.receivedAt) : new Date();
+  const safeDate = Number.isNaN(messageDate.getTime()) ? new Date() : messageDate;
+
+  const { data: thread } = await db
+    .from('email_threads')
+    .select('id, message_job_id')
+    .eq('id', reply.threadId)
+    .maybeSingle();
+
+  let inboundQuery = db
+    .from('email_messages')
+    .select('subject, body_text, body_html, received_at, in_reply_to, reference_message_ids')
+    .eq('thread_id', reply.threadId)
+    .eq('direction', 'received')
+    .order('received_at', { ascending: false })
+    .limit(1);
+
+  if (reply.receivedAt) {
+    inboundQuery = db
+      .from('email_messages')
+      .select('subject, body_text, body_html, received_at, in_reply_to, reference_message_ids')
+      .eq('thread_id', reply.threadId)
+      .eq('direction', 'received')
+      .lte('received_at', reply.receivedAt)
+      .order('received_at', { ascending: false })
+      .limit(1);
+  }
+
+  const { data: inboundRows } = await inboundQuery;
+  const inbound = inboundRows?.[0] as
+    | {
+        subject: string | null;
+        body_text: string | null;
+        body_html: string | null;
+        received_at: string | null;
+        in_reply_to: string | null;
+        reference_message_ids: string[] | null;
+      }
+    | undefined;
+
+  const resolvedBody =
+    resolveClassifyBody({
+      body_text: reply.bodyText ?? inbound?.body_text ?? null,
+      body_html: inbound?.body_html ?? null,
+    }) ?? reply.bodyText;
+
+  const priorOutbound = await resolvePriorOutbound(db, {
+    threadId: reply.threadId,
+    inbound: {
+      receivedAt: inbound?.received_at ?? reply.receivedAt,
+      inReplyTo: inbound?.in_reply_to ?? null,
+      referenceMessageIds: inbound?.reference_message_ids ?? null,
+    },
+    threadMessageJobId: (thread?.message_job_id as string | null | undefined) ?? null,
+  });
+
+  return {
+    messageDate: safeDate,
+    reply: {
+      subject: reply.subject ?? inbound?.subject ?? null,
+      bodyText: resolvedBody,
+    },
+    priorOutbound,
+  };
+}
+
 async function classifyOne(
+  db: SupabaseClient,
   apiKey: string,
   model: string,
   reply: PreviewReplyInput,
 ): Promise<PreviewPrediction> {
-  const messageDate = reply.receivedAt ? new Date(reply.receivedAt) : new Date();
-  const { system, user } = buildCategorizerPrompt({
-    subject: reply.subject,
-    bodyText: reply.bodyText,
-    messageDate: Number.isNaN(messageDate.getTime()) ? new Date() : messageDate,
-  });
+  let context: CategorizerThreadContext;
+  try {
+    context = await buildPreviewThreadContext(db, reply);
+  } catch (err: unknown) {
+    return {
+      threadId: reply.threadId,
+      error: err instanceof Error ? err.message : 'Failed to build classify context',
+    };
+  }
+
+  const { system, user } = buildCategorizerPrompt(context);
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 20_000);
@@ -220,7 +299,7 @@ async function handleRequest(event: Record<string, unknown>) {
   }
 
   const predictions = await Promise.all(
-    replies.map((reply) => classifyOne(openRouterApiKey, model, reply)),
+    replies.map((reply) => classifyOne(db, openRouterApiKey, model, reply)),
   );
 
   return response(200, { predictions, model });

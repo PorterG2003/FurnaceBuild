@@ -136,30 +136,48 @@ test('truncateReplyBody caps oversized bodies and marks truncation', () => {
 
 test('buildCategorizerPrompt anchors relative dates to the message date and lists every category', () => {
   const prompt = buildCategorizerPrompt({
-    subject: 'Re: Quick check-in',
-    bodyText: 'I am out until next Monday.',
     messageDate: NOW,
+    reply: {
+      subject: 'Re: Quick check-in',
+      bodyText: 'I am out until next Monday.',
+    },
+    priorOutbound: {
+      subject: 'Quick question',
+      bodyText: 'Want me to send the link?',
+    },
   });
 
   assert.ok(prompt.system.includes('2026-06-10'), 'system prompt anchors the message date');
   for (const category of CATEGORIZER_CATEGORIES) {
     assert.ok(prompt.system.includes(`"${category}"`), `system prompt lists ${category}`);
   }
+  assert.ok(prompt.system.includes('remove-me') || prompt.system.includes('stop-contacting'));
+  assert.ok(prompt.system.includes('empty') && prompt.system.includes('Neutral'));
   assert.ok(prompt.user.includes('Re: Quick check-in'));
   assert.ok(prompt.user.includes('I am out until next Monday.'));
+  assert.ok(prompt.user.includes('Want me to send the link?'));
 });
 
-test('buildCategorizerPrompt handles empty subject and body', () => {
-  const prompt = buildCategorizerPrompt({ subject: null, bodyText: null, messageDate: NOW });
+test('buildCategorizerPrompt handles empty subject and body and omitted outbound', () => {
+  const prompt = buildCategorizerPrompt({
+    messageDate: NOW,
+    reply: { subject: null, bodyText: null },
+    priorOutbound: null,
+  });
   assert.ok(prompt.user.includes('(no subject)'));
   assert.ok(prompt.user.includes('(empty body)'));
+  assert.ok(prompt.user.includes('(none)'));
 });
 
 // ---------------------------------------------------------------------------
 // classifyReply (transport failure mapping)
 // ---------------------------------------------------------------------------
 
-const INPUT = { subject: 'Re: Hello', bodyText: 'Sounds great!', messageDate: NOW };
+const INPUT = {
+  messageDate: NOW,
+  reply: { subject: 'Re: Hello', bodyText: 'Sounds great!' },
+  priorOutbound: null,
+};
 
 test('classifyReply returns the parsed classification on success', async () => {
   const transport: CategorizerLlmTransport = async () => ({

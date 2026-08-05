@@ -12,4 +12,5 @@ test('resolveSuggestionVersion returns the manual version', () => {
 
 test('resolveSuggestionVersion returns the AI prompt version', () => {
   assert.equal(resolveSuggestionVersion('ai'), CATEGORIZER_PROMPT_VERSION);
+  assert.equal(CATEGORIZER_PROMPT_VERSION, 'categorizer-v2');
 });

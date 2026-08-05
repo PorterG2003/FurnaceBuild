@@ -2150,9 +2150,11 @@ backend.addOutput({
   custom: customOutputs,
 });
 
-// Grant enrollmentMetric Lambda permission to publish CloudWatch metrics
-// This can still be useful for monitoring, even though scheduler auto-scaling is handled separately
-const enrollmentMetricLambda = backend.enrollmentMetric.resources.lambda;
+// Grant enrollmentMetric Lambda permission to publish CloudWatch metrics.
+// No ECS autoscaling / alarm / dashboard currently consumes EnrollmentsReadyToProcess;
+// schedule was slowed to every 15m pending observation. Public URL is plain env (not secret()).
+const enrollmentMetricLambda = backend.enrollmentMetric.resources.lambda as lambda.Function;
+enrollmentMetricLambda.addEnvironment('SUPABASE_URL', process.env.EXPO_PUBLIC_SUPABASE_URL ?? '');
 enrollmentMetricLambda.addToRolePolicy(new iam.PolicyStatement({
   sid: 'AllowCloudWatchPutMetricData',
   actions: [

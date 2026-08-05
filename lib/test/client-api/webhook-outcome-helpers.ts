@@ -36,15 +36,24 @@ export async function ensureWebhookInfrastructureSchema(
   return true;
 }
 
+export type LatestWebhookEventFilter = {
+  campaignId?: string;
+};
+
 export async function latestWebhookEvent(
   harness: ClientApiDbHarness,
   eventType: string,
+  filter: LatestWebhookEventFilter = {},
 ): Promise<{ id: string; payload: Record<string, unknown> } | null> {
-  const { data, error } = await harness.supabase
+  let query = harness.supabase
     .from('webhook_events')
     .select('id, payload')
     .eq('account_id', harness.accountId)
-    .eq('event_type', eventType)
+    .eq('event_type', eventType);
+  if (filter.campaignId) {
+    query = query.eq('campaign_id', filter.campaignId);
+  }
+  const { data, error } = await query
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle();

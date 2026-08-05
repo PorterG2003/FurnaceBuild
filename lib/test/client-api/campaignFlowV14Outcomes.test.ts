@@ -117,7 +117,9 @@ test('client api v1.4 PATCH /status emits campaign webhooks', async (t) => {
     });
     assert.equal(pause.status, 200);
 
-    const pausedEvent = await latestWebhookEvent(harness, 'campaign.paused');
+    const pausedEvent = await latestWebhookEvent(harness, 'campaign.paused', {
+      campaignId: graph.campaignId,
+    });
     assert.ok(pausedEvent);
     assert.equal(pausedEvent.payload.campaign_id, graph.campaignId);
 
@@ -127,7 +129,9 @@ test('client api v1.4 PATCH /status emits campaign webhooks', async (t) => {
       body: { status: 'running' },
     });
     assert.equal(resume.status, 200);
-    const resumedEvent = await latestWebhookEvent(harness, 'campaign.resumed');
+    const resumedEvent = await latestWebhookEvent(harness, 'campaign.resumed', {
+      campaignId: graph.campaignId,
+    });
     assert.ok(resumedEvent);
 
     const stop = await harness.request(`/v1/campaigns/${graph.campaignId}/status`, {
@@ -136,7 +140,9 @@ test('client api v1.4 PATCH /status emits campaign webhooks', async (t) => {
       body: { status: 'stopped' },
     });
     assert.equal(stop.status, 200);
-    const stoppedEvent = await latestWebhookEvent(harness, 'campaign.stopped');
+    const stoppedEvent = await latestWebhookEvent(harness, 'campaign.stopped', {
+      campaignId: graph.campaignId,
+    });
     assert.ok(stoppedEvent);
   } finally {
     await harness.cleanup();

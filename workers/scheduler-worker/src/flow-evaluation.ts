@@ -5,6 +5,7 @@ import {
   reportErrorToSlack,
 } from '@furnace/slack-lib';
 import type { Enrollment } from './types.js';
+import { logger } from './logger.js';
 
 /**
  * Database node structure (from nodes table)
@@ -100,12 +101,12 @@ export async function evaluateFlow(
   sharedContext?: FlowEvaluationSharedContext,
 ): Promise<FlowEvaluationResult> {
   const enrollmentId = enrollment.id.substring(0, 8);
-  console.log(`[FLOW ${enrollmentId}] Evaluating flow. Campaign: ${campaignId.substring(0, 8)}, Current node: ${enrollment.current_node_id?.substring(0, 8) || 'null'}`);
-  
+  logger.debugSampled(enrollment.id, `[FLOW ${enrollmentId}] Evaluating flow. Campaign: ${campaignId.substring(0, 8)}, Current node: ${enrollment.current_node_id?.substring(0, 8) || 'null'}`);
+
   // Validate flow_data structure
   if (!flowData) {
     const error = `Invalid flow_data: flow_data is null or undefined for enrollment ${enrollment.id}`;
-    console.error(`[FLOW ${enrollmentId}] ${error}`);
+    logger.error(`[FLOW ${enrollmentId}] ${error}`);
     reportErrorToSlack('Invalid flow_data: null or undefined', {
       severity: 'critical',
       enrollment_id: enrollment.id,
@@ -116,7 +117,7 @@ export async function evaluateFlow(
 
   if (!flowData.edges || !Array.isArray(flowData.edges)) {
     const error = `Invalid flow_data: edges array is missing or invalid for enrollment ${enrollment.id}`;
-    console.error(`[FLOW ${enrollmentId}] ${error}`);
+    logger.error(`[FLOW ${enrollmentId}] ${error}`);
     reportErrorToSlack('Invalid flow_data: edges array missing or invalid', {
       severity: 'critical',
       enrollment_id: enrollment.id,
@@ -125,13 +126,13 @@ export async function evaluateFlow(
     return { nodes: [] };
   }
   
-  console.log(`[FLOW ${enrollmentId}] Flow data valid. Edges: ${flowData.edges.length}`);
+  logger.debugSampled(enrollment.id, `[FLOW ${enrollmentId}] Flow data valid. Edges: ${flowData.edges.length}`);
 
   const edges = flowData.edges || [];
   
   // Handle entry point (no current_node_id)
   if (!enrollment.current_node_id) {
-    console.log(`[FLOW ${enrollmentId}] Entry point detected. Finding leadSource node...`);
+    logger.debugSampled(enrollment.id, `[FLOW ${enrollmentId}] Entry point detected. Finding leadSource node...`);
     const preloadedNodes = sharedContext?.nodesById
       ? Array.from(sharedContext.nodesById.values())
       : null;
@@ -149,7 +150,7 @@ export async function evaluateFlow(
         .limit(1);
 
       if (error) {
-        console.error(`[FLOW ${enrollmentId}] Error loading entry node: ${error.message}`);
+        logger.error(`[FLOW ${enrollmentId}] Error loading entry node: ${error.message}`);
         if (!isRetryableSupabaseReadError(getErrorMessage(error))) {
           reportErrorToSlack('Database error loading entry node', {
             severity: 'critical',
@@ -165,14 +166,14 @@ export async function evaluateFlow(
     }
 
     if (leadSourceNode) {
-      console.log(`[FLOW ${enrollmentId}] Found leadSource node: ${leadSourceNode.flow_node_id}`);
+      logger.debugSampled(enrollment.id, `[FLOW ${enrollmentId}] Found leadSource node: ${leadSourceNode.flow_node_id}`);
       
       // Find edges starting from leadSource node's flow_node_id
       const nextEdges = edges.filter((edge: any) => edge.source === leadSourceNode.flow_node_id);
-      console.log(`[FLOW ${enrollmentId}] Found ${nextEdges.length} edge(s) from leadSource`);
+      logger.debugSampled(enrollment.id, `[FLOW ${enrollmentId}] Found ${nextEdges.length} edge(s) from leadSource`);
       
       if (nextEdges.length === 0) {
-        console.warn(`[FLOW ${enrollmentId}] No edges found from leadSource node. Flow has no nodes to process.`);
+        logger.warn(`[FLOW ${enrollmentId}] No edges found from leadSource node. Flow has no nodes to process.`);
         reportErrorToSlack('No edges from leadSource node', {
           severity: 'warning',
           enrollment_id: enrollment.id,
@@ -183,7 +184,7 @@ export async function evaluateFlow(
 
       // Get target flow_node_ids from edges
       const targetFlowNodeIds = nextEdges.map((edge: any) => edge.target);
-      console.log(`[FLOW ${enrollmentId}] Target flow node IDs: ${targetFlowNodeIds.join(', ')}`);
+      logger.debugSampled(enrollment.id, `[FLOW ${enrollmentId}] Target flow node IDs: ${targetFlowNodeIds.join(', ')}`);
 
       // Load corresponding database nodes by flow_node_id
       let nextNodes: DatabaseNode[] = [];
@@ -203,7 +204,7 @@ export async function evaluateFlow(
           .in('flow_node_id', targetFlowNodeIds);
 
         if (nextNodesError) {
-          console.error(`[FLOW ${enrollmentId}] Error loading nodes after leadSource: ${nextNodesError.message}`);
+          logger.error(`[FLOW ${enrollmentId}] Error loading nodes after leadSource: ${nextNodesError.message}`);
           if (!isRetryableSupabaseReadError(getErrorMessage(nextNodesError))) {
             reportErrorToSlack('Database error loading nodes after leadSource', {
               severity: 'critical',
@@ -225,17 +226,17 @@ export async function evaluateFlow(
 
       // Log warning if leadSource nodes were filtered out
       if (filteredNodes.length < nextNodes.length) {
-        console.warn(
+        logger.warn(
           `[FLOW ${enrollmentId}] Filtered out ${nextNodes.length - filteredNodes.length} leadSource node(s) from entry point traversal`
         );
       }
 
-      console.log(`[FLOW ${enrollmentId}] Returning ${filteredNodes.length} node(s) after leadSource`);
+      logger.debugSampled(enrollment.id, `[FLOW ${enrollmentId}] Returning ${filteredNodes.length} node(s) after leadSource`);
       return { nodes: filteredNodes };
     }
 
     // Fallback: Get first node (non-leadSource) if no leadSource exists
-    console.warn(`[FLOW ${enrollmentId}] No leadSource node found. Attempting to find first non-leadSource node as entry.`);
+    logger.warn(`[FLOW ${enrollmentId}] No leadSource node found. Attempting to find first non-leadSource node as entry.`);
     reportErrorToSlack('No leadSource node found for campaign', {
       severity: 'warning',
       enrollment_id: enrollment.id,
@@ -247,7 +248,7 @@ export async function evaluateFlow(
       )[0];
 
       if (firstNode) {
-        console.log(`[FLOW ${enrollmentId}] Using first non-leadSource node as entry: ${firstNode.flow_node_id}`);
+        logger.debugSampled(enrollment.id, `[FLOW ${enrollmentId}] Using first non-leadSource node as entry: ${firstNode.flow_node_id}`);
         return { nodes: [firstNode] };
       }
     } else {
@@ -261,7 +262,7 @@ export async function evaluateFlow(
         .limit(1);
 
       if (firstError) {
-        console.error(`[FLOW ${enrollmentId}] Error loading first node: ${firstError.message}`);
+        logger.error(`[FLOW ${enrollmentId}] Error loading first node: ${firstError.message}`);
         if (!isRetryableSupabaseReadError(getErrorMessage(firstError))) {
           reportErrorToSlack('Database error loading first node', {
             severity: 'critical',
@@ -274,12 +275,12 @@ export async function evaluateFlow(
       }
 
       if (firstNodes && firstNodes.length > 0) {
-        console.log(`[FLOW ${enrollmentId}] Using first non-leadSource node as entry: ${firstNodes[0].flow_node_id}`);
+        logger.debugSampled(enrollment.id, `[FLOW ${enrollmentId}] Using first non-leadSource node as entry: ${firstNodes[0].flow_node_id}`);
         return { nodes: [firstNodes[0] as DatabaseNode] };
       }
     }
 
-    console.warn(`[FLOW ${enrollmentId}] No entry point nodes found for campaign ${campaignId.substring(0, 8)}. Flow cannot be evaluated.`);
+    logger.warn(`[FLOW ${enrollmentId}] No entry point nodes found for campaign ${campaignId.substring(0, 8)}. Flow cannot be evaluated.`);
     reportErrorToSlack('No entry point nodes for campaign (flow cannot be evaluated)', {
       severity: 'critical',
       enrollment_id: enrollment.id,
@@ -308,7 +309,7 @@ export async function evaluateFlow(
   if (currentNodeError) {
     const errorMessage = currentNodeError.message || 'Unknown database error';
     const error = `Error loading current node ${enrollment.current_node_id} for enrollment ${enrollment.id}: ${errorMessage}`;
-    console.error(error);
+    logger.error(error);
 
     if (isRetryableSupabaseReadError(getErrorMessage(currentNodeError))) {
       return buildReadFailureResult(currentNodeError);
@@ -326,7 +327,7 @@ export async function evaluateFlow(
 
   if (!currentNode) {
     const error = `Current node ${enrollment.current_node_id} not found for enrollment ${enrollment.id}: Node not found`;
-    console.error(error);
+    logger.error(error);
     reportErrorToSlack('Missing node in database (enrollment references non-existent node)', {
       severity: 'critical',
       enrollment_id: enrollment.id,
@@ -338,7 +339,7 @@ export async function evaluateFlow(
 
   if ((currentNode as DatabaseNode).deleted_at) {
     const error = `Current node ${enrollment.current_node_id} has been deleted for enrollment ${enrollment.id}`;
-    console.error(error);
+    logger.error(error);
     reportErrorToSlack('Deleted node referenced by enrollment', {
       severity: 'warning',
       enrollment_id: enrollment.id,
@@ -353,7 +354,8 @@ export async function evaluateFlow(
   // sourceHandle - generic edge-following below would return ALL branch
   // targets, which must never happen for a categorizer.
   if (currentNode.node_type === 'aiCategorizer') {
-    console.log(
+    logger.debugSampled(
+      enrollment.id,
       `[FLOW ${enrollmentId}] Categorizer node ${currentNode.id.substring(0, 8)} is current. Re-running categorizer handler.`,
     );
     return { nodes: [currentNode] };
@@ -379,7 +381,7 @@ export async function evaluateFlow(
         .limit(1); // In normal flow, there should be only one
 
       if (messageJobsError) {
-        console.error(`[FLOW ${enrollmentId}] Error checking message job for email node ${currentNode.id.substring(0, 8)}: ${messageJobsError.message}`);
+        logger.error(`[FLOW ${enrollmentId}] Error checking message job for email node ${currentNode.id.substring(0, 8)}: ${messageJobsError.message}`);
         if (!isRetryableSupabaseReadError(getErrorMessage(messageJobsError))) {
           reportErrorToSlack('Database error loading latest message job (flow email gate)', {
             severity: 'critical',
@@ -396,7 +398,8 @@ export async function evaluateFlow(
     }
 
     if (!latestMessageJob) {
-      console.log(
+      logger.debugSampled(
+        enrollment.id,
         `[FLOW ${enrollmentId}] Email node ${currentNode.id.substring(0, 8)} has no attempt yet. Scheduler should arm a send attempt.`,
       );
       return { nodes: [currentNode] };
@@ -409,15 +412,18 @@ export async function evaluateFlow(
       && latestMessageJob.status_reason === 'inbox_manual_override';
 
     if (isSent) {
-      console.log(
+      logger.debugSampled(
+        enrollment.id,
         `[FLOW ${enrollmentId}] Email node ${currentNode.id.substring(0, 8)} has message_job sent. Proceeding to next node.`,
       );
     } else if (isManualOverrideCancel) {
-      console.log(
+      logger.debugSampled(
+        enrollment.id,
         `[FLOW ${enrollmentId}] Email node ${currentNode.id.substring(0, 8)} was cancelled via inbox manual override. Proceeding to next node.`,
       );
     } else if (latestMessageJob.status === 'deferred') {
-      console.log(
+      logger.debugSampled(
+        enrollment.id,
         `[FLOW ${enrollmentId}] Email node ${currentNode.id.substring(0, 8)} has deferred attempt. Scheduler should recreate the attempt.`,
       );
       return { nodes: [currentNode] };
@@ -430,7 +436,8 @@ export async function evaluateFlow(
         latestMessageJob.error_message
         ?? latestMessageJob.status_reason
         ?? `message job ended ${latestMessageJob.status}`;
-      console.log(
+      logger.debugSampled(
+        enrollment.id,
         `[FLOW ${enrollmentId}] Email node ${currentNode.id.substring(0, 8)} has terminal attempt ${latestMessageJob.status}. Stopping enrollment.`,
       );
       return {
@@ -439,7 +446,8 @@ export async function evaluateFlow(
         stopReason,
       };
     } else {
-      console.log(
+      logger.debugSampled(
+        enrollment.id,
         `[FLOW ${enrollmentId}] Email node ${currentNode.id.substring(0, 8)} has live message_job ${latestMessageJob.status}. Waiting for send worker...`,
       );
       return { nodes: [], waitingForEmail: true };
@@ -475,7 +483,7 @@ export async function evaluateFlow(
       .in('flow_node_id', targetFlowNodeIds);
 
     if (nextNodesError) {
-      console.error(`Error loading next nodes: ${nextNodesError.message}`);
+      logger.error(`Error loading next nodes: ${nextNodesError.message}`);
       if (!isRetryableSupabaseReadError(getErrorMessage(nextNodesError))) {
         reportErrorToSlack('Database error loading next nodes (flow traversal)', {
           severity: 'critical',
@@ -497,7 +505,7 @@ export async function evaluateFlow(
 
   // Log warning if leadSource nodes were filtered out
   if (filteredNodes.length < nextNodes.length) {
-    console.warn(
+    logger.warn(
       `Filtered out ${nextNodes.length - filteredNodes.length} leadSource node(s) from traversal for enrollment ${enrollment.id}`
     );
   }

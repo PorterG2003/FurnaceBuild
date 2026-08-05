@@ -6,6 +6,7 @@ import * as path from 'path';
 import { config as loadEnvFile } from 'dotenv';
 import * as cdk from 'aws-cdk-lib';
 import { WorkerStack } from '../lib/worker-stack';
+import { workerDesiredCountForStack } from '../lib/desired-counts';
 
 // Repo root = infra/workers/bin -> ../../..
 const repoRoot = path.resolve(__dirname, '../../..');
@@ -125,11 +126,8 @@ new WorkerStack(app, 'WorkerStack-Dev', {
   ...(devLeadsSupabaseUrl
     ? { leadsSupabaseUrl: devLeadsSupabaseUrl, leadsSupabaseSecretParamPath: devLeadsSecretParamPath }
     : {}),
-  desiredCount: {
-    sendWorker: 0, // Start with 0, scale up after pushing Docker images
-    schedulerWorker: 0, // Start with 0, scale up after pushing Docker images
-    inboxCheckerWorker: 0, // Start with 0, scale up after pushing Docker images
-  },
+  // Dev stays off by default; use lease:dev / scale:dev for temporary work.
+  desiredCount: workerDesiredCountForStack('dev'),
 });
 
 // Prod Stack
@@ -148,10 +146,7 @@ new WorkerStack(app, 'WorkerStack-Prod', {
   ...(prodLeadsSupabaseUrl
     ? { leadsSupabaseUrl: prodLeadsSupabaseUrl, leadsSupabaseSecretParamPath: prodLeadsSecretParamPath }
     : {}),
-  desiredCount: {
-    sendWorker: 0, // Start with 0, scale up after pushing Docker images
-    schedulerWorker: 0, // Start with 0, scale up after pushing Docker images
-    inboxCheckerWorker: 0, // Start with 0, scale up after pushing Docker images
-  },
+  // IaC source of truth for production. Do not set these to 0 — a deploy would stop all workers.
+  desiredCount: workerDesiredCountForStack('prod'),
 });
 

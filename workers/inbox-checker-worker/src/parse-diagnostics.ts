@@ -1,7 +1,35 @@
 /**
  * Structured parse logging for every IMAP message (sender vs Message-ID vs threading headers).
- * Suspicious heuristics use console.warn; otherwise console.log.
+ * Suspicious heuristics use console.warn; otherwise log only when sampled
+ * (controlled by INBOX_PARSE_DEBUG_SAMPLE_RATE, default 0 = no debug output).
  */
+
+/** FNV-1a 32-bit hash used for deterministic message-ID sampling. */
+function fnv1a32(s: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h = Math.imul(h ^ s.charCodeAt(i), 0x01000193) >>> 0;
+  }
+  return h;
+}
+
+function parseSampleRate(raw: string | undefined): number {
+  const v = parseFloat(raw ?? '0');
+  if (Number.isNaN(v) || v < 0) return 0;
+  return Math.min(v, 1);
+}
+
+/**
+ * Deterministic sample decision for a message ID.
+ * Returns true when the message should have its diagnostics logged.
+ */
+export function shouldSampleMessage(messageId: string | null | undefined): boolean {
+  const rate = parseSampleRate(process.env.INBOX_PARSE_DEBUG_SAMPLE_RATE);
+  if (rate <= 0) return false;
+  if (rate >= 1) return true;
+  const id = messageId ?? String(Math.random()); // non-deterministic fallback when no ID
+  return (fnv1a32(id) / 4294967296) < rate;
+}
 
 export type AddressHeaderShape = { value?: Array<{ address?: string; name?: string }> } | undefined;
 
@@ -108,7 +136,10 @@ export function evaluateSuspiciousSender(input: {
   return { suspicious: reasons.length > 0, reasons };
 }
 
-/** One JSON line per parsed message (grep CloudWatch for `[INBOX PARSE]` or `inbox_parse`). */
+/** One JSON line per parsed message (grep CloudWatch for `[INBOX PARSE]` or `inbox_parse`).
+ * Emitted unconditionally when suspicious; otherwise only when sampled via
+ * INBOX_PARSE_DEBUG_SAMPLE_RATE (default 0 → no routine debug output).
+ */
 export function logParseDiagnostics(input: ParseDiagnosticsInput): void {
   const replyToList = formatAddressList(input.replyTo);
   const senderList = formatAddressList(input.sender);
@@ -117,10 +148,14 @@ export function logParseDiagnostics(input: ParseDiagnosticsInput): void {
     messageId: input.messageId,
   });
 
+  // Always warn for suspicious; only log for non-suspicious when sampled
+  if (!suspicious && !shouldSampleMessage(input.messageId)) {
+    return;
+  }
+
   const payload = {
     tag: 'inbox_parse',
     mailboxId: input.mailboxId,
-    mailboxEmail: input.mailboxEmail,
     imapUid: input.imapUid,
     subjectPreview: (input.subject || '').slice(0, 120),
     from: input.fromAddress || null,

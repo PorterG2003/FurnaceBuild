@@ -1299,3 +1299,77 @@ test('SendWorker persists sent_subject onto message_jobs.message_data', async ()
   assert.equal((persistCall.updates.message_data as any).sent_subject, 'Hi Casey');
   assert.equal((messageJob.message_data as any).sent_subject, 'Hi Casey');
 });
+
+test('SendWorker.stop awaits active batch before closing SMTP pool', async () => {
+  let closeAllCalls = 0;
+  let batchFinished = false;
+  let resolveBatch!: () => void;
+  const batch = new Promise<void>((resolve) => {
+    resolveBatch = () => {
+      batchFinished = true;
+      resolve();
+    };
+  });
+
+  const worker = new SendWorker({
+    supabase: {} as any,
+    databaseClient: {
+      async poll() {
+        return [];
+      },
+      async pollManual() {
+        return [];
+      },
+      getPollInterval() {
+        return 1000;
+      },
+    } as any,
+  });
+
+  (worker as any).activeBatch = batch;
+  (worker as any).smtpPool = {
+    async closeAll() {
+      closeAllCalls += 1;
+      assert.equal(batchFinished, true, 'SMTP pool must close only after active batch settles');
+    },
+  };
+
+  const stopPromise = worker.stop();
+  assert.equal(closeAllCalls, 0);
+  assert.equal(batchFinished, false);
+  resolveBatch();
+  await stopPromise;
+  assert.equal(batchFinished, true);
+  assert.equal(closeAllCalls, 1);
+  assert.equal((worker as any).running, false);
+});
+
+test('SendWorker.stop wakes sleep and does not leave running=true', async () => {
+  let pollCount = 0;
+  const worker = new SendWorker({
+    supabase: {} as any,
+    databaseClient: {
+      async poll() {
+        pollCount += 1;
+        return [];
+      },
+      async pollManual() {
+        return [];
+      },
+      getPollInterval() {
+        return 60_000;
+      },
+    } as any,
+  });
+  (worker as any).smtpPool = {
+    async closeAll() {},
+  };
+
+  const startPromise = worker.start();
+  await new Promise((r) => setTimeout(r, 20));
+  const before = pollCount;
+  await worker.stop();
+  await startPromise;
+  assert.ok(before >= 1);
+  assert.equal(pollCount, before);
+});

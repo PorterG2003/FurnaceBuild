@@ -55,6 +55,9 @@ export class InboxCheckerWorker {
   private concurrencyLimit: number;
   private recoveryConfig: ImapRecoveryConfig;
   private imapRecoveryTimer: ReturnType<typeof setInterval> | null = null;
+  private shutdownWaiters: Array<() => void> = [];
+  private activeBatch: Promise<unknown> | null = null;
+  private activeBackgroundTasks = new Set<Promise<unknown>>();
 
   constructor(config: WorkerConfig) {
     this.supabase = config.supabase;
@@ -91,11 +94,18 @@ export class InboxCheckerWorker {
 
           // Process with concurrency limit
           const limit = pLimit(this.concurrencyLimit);
-          const results = await Promise.allSettled(
+          const batchPromise = Promise.allSettled(
             mailboxes.map(mailbox =>
               limit(() => this.processMailbox(mailbox))
             )
           );
+          this.activeBatch = batchPromise;
+          let results: PromiseSettledResult<void>[];
+          try {
+            results = await batchPromise;
+          } finally {
+            this.activeBatch = null;
+          }
 
           // Log results
           const successful = results.filter(r => r.status === 'fulfilled').length;
@@ -110,7 +120,7 @@ export class InboxCheckerWorker {
           });
 
           this.maybeAlertHotPathSystemicInfra(mailboxes, results);
-        } else {
+        } else if (this.running) {
           // No mailboxes to check - adaptive polling
           this.consecutiveEmptyPolls++;
           const pollInterval = this.calculatePollInterval();
@@ -129,9 +139,17 @@ export class InboxCheckerWorker {
             worker: 'inbox-checker',
           },
         });
-        await this.sleep(5000); // Wait before retrying
+        if (this.running) {
+          await this.sleep(5000); // Wait before retrying
+        }
       }
     }
+
+    if (this.activeBatch) {
+      await this.activeBatch.catch(() => undefined);
+    }
+    await Promise.allSettled([...this.activeBackgroundTasks]);
+    console.log('[INBOX CHECKER] Worker stopped.');
   }
 
   private maybeAlertHotPathSystemicInfra(
@@ -199,13 +217,19 @@ export class InboxCheckerWorker {
       }
 
       isRunning = true;
-      try {
-        await options.task();
-      } catch (error) {
-        options.onError(error);
-      } finally {
-        isRunning = false;
-      }
+      let taskPromise!: Promise<void>;
+      taskPromise = (async () => {
+        try {
+          await options.task();
+        } catch (error) {
+          options.onError(error);
+        } finally {
+          isRunning = false;
+          this.activeBackgroundTasks.delete(taskPromise);
+        }
+      })();
+      this.activeBackgroundTasks.add(taskPromise);
+      await taskPromise;
     };
 
     if (options.runImmediately) {
@@ -266,11 +290,9 @@ export class InboxCheckerWorker {
       const lastSyncedAt = mailbox.last_synced_at
         ? new Date(mailbox.last_synced_at)
         : null;
-      console.log(`[INBOX CHECKER] Processing mailbox ${mailbox.id} (${mailbox.email_address}) since=${lastSyncedAt?.toISOString() ?? 'null (first sync)'}`);
 
       // Fetch new messages
       const messages = await this.imapClient.fetchNewMessages(mailbox, lastSyncedAt);
-      console.log(`[INBOX CHECKER] Found ${messages.length} new message(s) in mailbox ${mailbox.id}`);
 
       // Retry child-before-parent staged replies after IMAP is healthy
       try {
@@ -319,13 +341,7 @@ export class InboxCheckerWorker {
             continue;
           }
 
-          if (this.messageProcessor.isReply(message)) {
-            console.log(
-              `[INBOX CHECKER] Message ${message.messageId} looks like a reply but does not match our outbound`,
-            );
-          }
-
-          // Check for unsubscribe
+          // Check for unsubscribe (unmatched message)
           if (isUnsubscribe) {
             await this.threadManager.autoBlockUnsubscribe(mailbox, message);
             unsubscribes++;
@@ -341,7 +357,14 @@ export class InboxCheckerWorker {
         .update(applyMailboxImapSuccessUpdate())
         .eq('id', mailbox.id);
 
-      console.log(`[INBOX CHECKER] Mailbox ${mailbox.id} processed: ${replies} replies, ${bounces} bounces, ${unsubscribes} unsubscribes`);
+      console.log(JSON.stringify({
+        tag: 'inbox_mailbox_check',
+        mailbox_id: mailbox.id,
+        messages_fetched: messages.length,
+        replies,
+        bounces,
+        unsubscribes,
+      }));
     } catch (error) {
       console.error(`[INBOX CHECKER] Error processing mailbox ${mailbox.id}:`, error);
 
@@ -379,18 +402,41 @@ export class InboxCheckerWorker {
   }
 
   /**
-   * Stop the worker gracefully
+   * Request graceful shutdown. Awaits active mailbox/recovery work.
+   * Does not call process.exit — start() resolves after drain.
    */
-  stop(): void {
+  async stop(): Promise<void> {
     console.log('[INBOX CHECKER] Stopping worker...');
     this.running = false;
     if (this.imapRecoveryTimer) {
       clearInterval(this.imapRecoveryTimer);
       this.imapRecoveryTimer = null;
     }
+    for (const wake of this.shutdownWaiters.splice(0)) {
+      wake();
+    }
+    if (this.activeBatch) {
+      await this.activeBatch.catch(() => undefined);
+    }
+    await Promise.allSettled([...this.activeBackgroundTasks]);
   }
 
   private sleep(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    if (!this.running || ms <= 0) {
+      return Promise.resolve();
+    }
+    return new Promise<void>((resolve) => {
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        this.shutdownWaiters = this.shutdownWaiters.filter((wake) => wake !== onShutdown);
+        clearTimeout(timer);
+        resolve();
+      };
+      const onShutdown = () => finish();
+      const timer = setTimeout(finish, ms);
+      this.shutdownWaiters.push(onShutdown);
+    });
   }
 }

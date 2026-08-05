@@ -21,6 +21,7 @@ import { batchAssignIntervalJobs } from './batch-interval-assignment.js';
 import { resolveOooResumePollIntervalMs, runOutOfOfficeResumeTick } from './ooo-resume-tick.js';
 import type { CategorizerLlmTransport } from './categorizer/classify.js';
 import type { CampaignSchedule, Enrollment } from './types.js';
+import { logger } from './logger.js';
 
 export interface WorkerConfig {
   supabase: SupabaseClient;
@@ -104,6 +105,9 @@ export class SchedulerWorker {
   private selfRecoveryAuditTimer?: ReturnType<typeof setInterval>;
   private categorizerSweepTimer?: ReturnType<typeof setInterval>;
   private readonly categorizerClassifyTransport?: CategorizerLlmTransport;
+  private shutdownWaiters: Array<() => void> = [];
+  private activeBackgroundTasks = new Set<Promise<unknown>>();
+  private activeBatch: Promise<unknown> | null = null;
 
   constructor(config: WorkerConfig) {
     this.supabase = config.supabase;
@@ -116,7 +120,7 @@ export class SchedulerWorker {
    */
   async start(): Promise<void> {
     this.running = true;
-    console.log('Scheduler worker starting...');
+    logger.info('[SCHEDULER] Worker starting...');
 
     // Start interval maintenance (runs every minute)
     this.startIntervalMaintenance();
@@ -132,18 +136,19 @@ export class SchedulerWorker {
     this.startSelfRecoveryAudit();
     this.startCategorizerSweep();
 
-    console.log('Scheduler worker started. Polling database...');
+    logger.info('[SCHEDULER] Worker started. Polling database...');
 
     while (this.running) {
       try {
         // Poll database for enrollments ready to process
         const enrollments = await this.databaseClient.poll();
+        if (!this.running) {
+          // Shutdown requested during claim — finish this already-claimed batch, then exit.
+        }
 
         if (enrollments.length > 0) {
-          console.log(`[SCHEDULER] Found ${enrollments.length} enrollment(s) ready to process`);
-          enrollments.forEach(e => {
-            console.log(`[SCHEDULER] Enrollment: ${e.id} | State: ${e.state} | Current Node: ${e.current_node_id?.substring(0, 8) || 'null'} | Next Run: ${e.next_run_at}`);
-          });
+          const batchStart = Date.now();
+          logger.debug(`[SCHEDULER] Found ${enrollments.length} enrollment(s) ready to process`);
 
           const campaignGroups = this.groupEnrollmentsByCampaign(enrollments);
           const campaignContexts = await this.loadCampaignContexts(campaignGroups);
@@ -152,10 +157,10 @@ export class SchedulerWorker {
             await this.logMailboxDistribution(enrollments);
           }
 
-          const results: PromiseSettledResult<void>[] = new Array(enrollments.length);
+          const results: PromiseSettledResult<string>[] = new Array(enrollments.length);
           const reportedMissingAccountWarnings = new Set<string>();
 
-          await Promise.all(
+          const batchPromise = Promise.all(
             Array.from(campaignGroups.entries()).map(async ([campaignId, batchItems]) => {
               const context = campaignContexts.get(campaignId);
 
@@ -191,15 +196,36 @@ export class SchedulerWorker {
               });
             }),
           );
+          this.activeBatch = batchPromise;
+          try {
+            await batchPromise;
+          } finally {
+            this.activeBatch = null;
+          }
           
           // Update mailboxRotationIndex after processing batch
-          // Increment by number of enrollments processed (even if some failed, we want consistent rotation)
           this.mailboxRotationIndex += enrollments.length;
           
-          // Log results
+          // Aggregate outcomes for batch summary
+          const outcomes = new Map<string, number>();
           const successful = results.filter(r => r.status === 'fulfilled').length;
           const failed = results.filter(r => r.status === 'rejected').length;
-          console.log(`[SCHEDULER] Processed ${enrollments.length} enrollment(s): ${successful} successful, ${failed} failed`);
+
+          results.forEach((r) => {
+            if (r.status === 'fulfilled') {
+              const tag = r.value ?? 'processed';
+              outcomes.set(tag, (outcomes.get(tag) ?? 0) + 1);
+            }
+          });
+
+          logger.info(JSON.stringify({
+            tag: 'scheduler_batch',
+            total: enrollments.length,
+            successful,
+            failed,
+            durationMs: Date.now() - batchStart,
+            outcomes: Object.fromEntries(outcomes),
+          }));
           
           // Log mailbox distribution after processing
           if (this.mailboxDistributionDebugEnabled) {
@@ -209,23 +235,23 @@ export class SchedulerWorker {
           // Log any failures
           results.forEach((result, index) => {
             if (result.status === 'rejected') {
-              console.error(`[SCHEDULER] Failed to process enrollment ${enrollments[index].id}:`, result.reason);
+              logger.error(`[SCHEDULER] Failed to process enrollment ${enrollments[index].id}:`, result.reason);
             }
           });
 
-          if (enrollments.length >= this.databaseClient.getBatchSize()) {
+          if (this.running && enrollments.length >= this.databaseClient.getBatchSize()) {
             await this.sleep(FULL_BATCH_BACKOFF_MS);
           }
-        } else {
+        } else if (this.running) {
           // No enrollments ready - wait before next poll
           await this.sleep(this.databaseClient.getPollInterval());
         }
       } catch (error) {
         const errorMessage = formatUnknownError(error);
         const errorStack = error instanceof Error ? error.stack : undefined;
-        console.error('Error in scheduler worker main loop:', errorMessage);
+        logger.error('Error in scheduler worker main loop:', errorMessage);
         if (errorStack) {
-          console.error('Stack trace:', errorStack);
+          logger.error('Stack trace:', errorStack);
         }
         const retryableReadError = isRetryableSupabaseReadError(errorMessage);
         if (!(error as any)?.reportedToSlack) {
@@ -247,41 +273,65 @@ export class SchedulerWorker {
             },
           );
         }
-        await this.sleep(5000);
+        if (this.running) {
+          await this.sleep(5000);
+        }
       }
     }
 
-    console.log('Scheduler worker stopped.');
+    if (this.activeBatch) {
+      await this.activeBatch.catch(() => undefined);
+    }
+    await Promise.allSettled([...this.activeBackgroundTasks]);
+
+    logger.info('[SCHEDULER] Worker stopped.');
   }
 
   /**
-   * Stop the worker gracefully
+   * Request graceful shutdown. Does not call process.exit — the main loop drains
+   * the current batch, awaits background tasks, and then resolves start().
    */
-  stop(): void {
-    console.log('Stopping scheduler worker...');
+  async stop(): Promise<void> {
+    logger.info('[SCHEDULER] Stopping worker...');
     this.running = false;
     
     if (this.intervalMaintenanceTimer) {
       clearInterval(this.intervalMaintenanceTimer);
+      this.intervalMaintenanceTimer = undefined;
     }
     if (this.staleLockCleanupTimer) {
       clearInterval(this.staleLockCleanupTimer);
+      this.staleLockCleanupTimer = undefined;
     }
     if (this.batchIntervalAssignmentTimer) {
       clearInterval(this.batchIntervalAssignmentTimer);
+      this.batchIntervalAssignmentTimer = undefined;
     }
     if (this.oooResumeTimer) {
       clearInterval(this.oooResumeTimer);
+      this.oooResumeTimer = undefined;
     }
     if (this.staleReservedReclaimTimer) {
       clearInterval(this.staleReservedReclaimTimer);
+      this.staleReservedReclaimTimer = undefined;
     }
     if (this.selfRecoveryAuditTimer) {
       clearInterval(this.selfRecoveryAuditTimer);
+      this.selfRecoveryAuditTimer = undefined;
     }
     if (this.categorizerSweepTimer) {
       clearInterval(this.categorizerSweepTimer);
+      this.categorizerSweepTimer = undefined;
     }
+
+    for (const wake of this.shutdownWaiters.splice(0)) {
+      wake();
+    }
+
+    if (this.activeBatch) {
+      await this.activeBatch.catch(() => undefined);
+    }
+    await Promise.allSettled([...this.activeBackgroundTasks]);
   }
 
   private startSingleFlightInterval(options: {
@@ -299,18 +349,24 @@ export class SchedulerWorker {
       }
 
       if (isRunning) {
-        console.log(`[${options.taskName}] Previous run still in progress; skipping overlapping tick`);
+        logger.debug(`[${options.taskName}] Previous run still in progress; skipping overlapping tick`);
         return;
       }
 
       isRunning = true;
-      try {
-        await options.task();
-      } catch (error) {
-        options.onError(error);
-      } finally {
-        isRunning = false;
-      }
+      let taskPromise!: Promise<void>;
+      taskPromise = (async () => {
+        try {
+          await options.task();
+        } catch (error) {
+          options.onError(error);
+        } finally {
+          isRunning = false;
+          this.activeBackgroundTasks.delete(taskPromise);
+        }
+      })();
+      this.activeBackgroundTasks.add(taskPromise);
+      await taskPromise;
     };
 
     if (options.runImmediately) {
@@ -473,7 +529,7 @@ export class SchedulerWorker {
         await maintainCampaignIntervals(this.supabase);
       },
       onError: (err) => {
-        console.error('[INTERVAL MAINTENANCE] Error:', err);
+        logger.error('[INTERVAL MAINTENANCE] Error:', err);
         const msg = err instanceof Error ? err.message : String(err);
         reportErrorToSlack('Scheduler: interval maintenance failed', {
           severity: 'warning',
@@ -504,7 +560,7 @@ export class SchedulerWorker {
         });
         
         if (error) {
-          console.error('[STALE LOCK CLEANUP] Error:', error);
+          logger.error('[STALE LOCK CLEANUP] Error:', error);
           reportErrorToSlack('Scheduler: stale lock cleanup RPC failed', {
             severity: 'warning',
             error: error.message,
@@ -518,11 +574,11 @@ export class SchedulerWorker {
             },
           });
         } else if (data > 0) {
-          console.log(`[STALE LOCK CLEANUP] Released ${data} stale locks`);
+          logger.info(`[STALE LOCK CLEANUP] Released ${data} stale locks`);
         }
       },
       onError: (error) => {
-        console.error('[STALE LOCK CLEANUP] Error:', error);
+        logger.error('[STALE LOCK CLEANUP] Error:', error);
         const msg = error instanceof Error ? error.message : String(error);
         reportErrorToSlack('Scheduler: stale lock cleanup failed', {
           severity: 'warning',
@@ -557,11 +613,11 @@ export class SchedulerWorker {
       task: async () => {
         const processed = await runOutOfOfficeResumeTick(this.supabase);
         if (processed > 0) {
-          console.log(`[OOO RESUME] Processed ${processed} due thread(s)`);
+          logger.info(`[OOO RESUME] Processed ${processed} due thread(s)`);
         }
       },
       onError: (err) => {
-        console.error('[OOO RESUME] Error:', err);
+        logger.error('[OOO RESUME] Error:', err);
         const msg = err instanceof Error ? err.message : String(err);
         reportErrorToSlack('Scheduler: process_due_out_of_office_resumes failed', {
           severity: isRetryableSupabaseReadError(msg) ? 'warning' : 'critical',
@@ -577,7 +633,7 @@ export class SchedulerWorker {
         });
       },
     });
-    console.log(`[OOO RESUME] Poll interval ${Math.round(intervalMs / 1000)}s`);
+    logger.info(`[OOO RESUME] Poll interval ${Math.round(intervalMs / 1000)}s`);
   }
 
   private startBatchIntervalAssignment(): void {
@@ -589,7 +645,7 @@ export class SchedulerWorker {
         await batchAssignIntervalJobs(this.supabase, this.mailboxRotationIndex);
       },
       onError: (err) => {
-        console.error('[BATCH INTERVAL] Error:', err);
+        logger.error('[BATCH INTERVAL] Error:', err);
         const msg = err instanceof Error ? err.message : String(err);
         reportErrorToSlack('Scheduler: batch interval assignment failed', {
           severity: isRetryableSupabaseReadError(msg) ? 'warning' : 'critical',
@@ -628,12 +684,12 @@ export class SchedulerWorker {
 
         const rows = Array.isArray(data) ? data : [];
         if (rows.length > 0) {
-          console.log(`[STALE RESERVED RECLAIM] Reclaimed ${rows.length} stale reserved campaign job(s)`);
+          logger.info(`[STALE RESERVED RECLAIM] Reclaimed ${rows.length} stale reserved campaign job(s)`);
         }
       },
       onError: (error) => {
         const msg = formatUnknownError(error);
-        console.error('[STALE RESERVED RECLAIM] Error:', msg);
+        logger.error('[STALE RESERVED RECLAIM] Error:', msg);
         reportErrorToSlack('Scheduler: stale reserved reclaim failed', {
           severity: isRetryableSupabaseReadError(msg) ? 'warning' : 'critical',
           error: msg,
@@ -672,12 +728,12 @@ export class SchedulerWorker {
 
         const woken = typeof data === 'number' ? data : 0;
         if (woken > 0) {
-          console.log(`[CATEGORIZER SWEEP] Woke ${woken} parked enrollment(s) with actionable replies`);
+          logger.info(`[CATEGORIZER SWEEP] Woke ${woken} parked enrollment(s) with actionable replies`);
         }
       },
       onError: (error) => {
         const msg = formatUnknownError(error);
-        console.error('[CATEGORIZER SWEEP] Error:', msg);
+        logger.error('[CATEGORIZER SWEEP] Error:', msg);
         reportErrorToSlack('Scheduler: categorizer sweep failed', {
           severity: isRetryableSupabaseReadError(msg) ? 'warning' : 'critical',
           error: msg,
@@ -714,7 +770,7 @@ export class SchedulerWorker {
 
         const finalizedCount = Array.isArray(finalizedRows) ? finalizedRows.length : 0;
         if (finalizedCount > 0) {
-          console.log(
+          logger.info(
             `[SELF RECOVERY AUDIT] Finalized ${finalizedCount} stale sending campaign job(s) as uncertain send state`,
           );
         }
@@ -773,7 +829,7 @@ export class SchedulerWorker {
             `finalized_stale_sending=${finalizedCount}, ` +
             `orphaned_held_jobs=${orphanedHeldJobs}, ` +
             `stale_categorizer_parks=${staleParkedEnrollments}`;
-          console.log(`[SELF RECOVERY AUDIT] ${summary}`);
+          logger.info(`[SELF RECOVERY AUDIT] ${summary}`);
           reportErrorToSlack('Scheduler: self-recovery audit found outstanding job-health issues', {
             severity: 'warning',
             error: summary,
@@ -788,7 +844,7 @@ export class SchedulerWorker {
       },
       onError: (error) => {
         const msg = formatUnknownError(error);
-        console.error('[SELF RECOVERY AUDIT] Error:', msg);
+        logger.error('[SELF RECOVERY AUDIT] Error:', msg);
         reportErrorToSlack('Scheduler: self-recovery audit failed', {
           severity: isRetryableSupabaseReadError(msg) ? 'warning' : 'critical',
           error: msg,
@@ -855,9 +911,9 @@ export class SchedulerWorker {
         }
       }
 
-      console.log(`[MAILBOX DIST] Campaign ${campaignId.substring(0, 8)}: ${campaignEnrollments.length} enrollment(s) ready`);
-      console.log(`[MAILBOX DIST] Eligible mailboxes: ${eligibleMailboxes.length}`);
-      console.log(`[MAILBOX DIST] Enrollments with locked mailbox: ${campaignEnrollments.length - unlockedCount}, unlocked (mailbox resolves at job creation): ${unlockedCount}`);
+      logger.debug(`[MAILBOX DIST] Campaign ${campaignId.substring(0, 8)}: ${campaignEnrollments.length} enrollment(s) ready`);
+      logger.debug(`[MAILBOX DIST] Eligible mailboxes: ${eligibleMailboxes.length}`);
+      logger.debug(`[MAILBOX DIST] Enrollments with locked mailbox: ${campaignEnrollments.length - unlockedCount}, unlocked (mailbox resolves at job creation): ${unlockedCount}`);
       
       // Show distribution
       const distribution: string[] = [];
@@ -871,7 +927,7 @@ export class SchedulerWorker {
       if (unlockedCount > 0) {
         distribution.push(`unlocked:${unlockedCount}`);
       }
-      console.log(`[MAILBOX DIST] Distribution: ${distribution.join(', ')}`);
+      logger.debug(`[MAILBOX DIST] Distribution: ${distribution.join(', ')}`);
     }
   }
 
@@ -880,7 +936,7 @@ export class SchedulerWorker {
    */
   private async logMailboxDistributionAfterProcessing(
     enrollments: Enrollment[],
-    results: PromiseSettledResult<void>[]
+    results: PromiseSettledResult<string>[]
   ): Promise<void> {
     if (enrollments.length === 0) return;
 
@@ -933,9 +989,9 @@ export class SchedulerWorker {
         distribution.push(`${mailboxId.substring(0, 8)}:${count}`);
       });
       
-      console.log(`[MAILBOX DIST] After processing: ${successfulEnrollments.length} successful, ${failedEnrollments.length} failed`);
+      logger.debug(`[MAILBOX DIST] After processing: ${successfulEnrollments.length} successful, ${failedEnrollments.length} failed`);
       if (distribution.length > 0) {
-        console.log(`[MAILBOX DIST] Final distribution: ${distribution.join(', ')}`);
+        logger.debug(`[MAILBOX DIST] Final distribution: ${distribution.join(', ')}`);
       }
     }
   }
@@ -943,25 +999,27 @@ export class SchedulerWorker {
   /**
    * Process a single enrollment: evaluate flow, create jobs, update state
    * Migrated from Lambda handler
+   * Returns an outcome tag for batch-level aggregation.
    */
   private async processEnrollment(
     enrollment: Enrollment,
     context?: CampaignProcessingContext,
-  ): Promise<void> {
+  ): Promise<string> {
     const enrollmentId = enrollment.id.substring(0, 8);
-    console.log(`[ENROLLMENT ${enrollment.id}] Starting processing... (state: ${enrollment.state}, current_node: ${enrollment.current_node_id?.substring(0, 8) || 'null'})`);
+    logger.debugSampled(enrollment.id, `[ENROLLMENT ${enrollment.id}] Starting processing... (state: ${enrollment.state}, current_node: ${enrollment.current_node_id?.substring(0, 8) || 'null'})`);
     
     try {
       const campaign = context?.campaign;
       if (!campaign) {
         throw new Error(`Campaign ${enrollment.campaign_id} not found`);
       }
-      console.log(
-        `[ENROLLMENT ${enrollmentId}] Using preloaded campaign ${enrollment.campaign_id.substring(0, 8)}. Account ID: ${campaign.account_id?.substring(0, 8) || 'MISSING'}`,
+      logger.debugSampled(
+        enrollment.id,
+        `[ENROLLMENT ${enrollmentId}] Using preloaded campaign ${enrollment.campaign_id.substring(0, 8)}.`,
       );
 
       if (campaign.deleted_at) {
-        console.log(`[ENROLLMENT ${enrollmentId}] Campaign ${enrollment.campaign_id.substring(0, 8)} has been deleted. Stopping enrollment.`);
+        logger.info(JSON.stringify({ tag: 'enrollment_outcome', outcome: 'campaign_deleted', enrollment_id: enrollment.id, campaign_id: enrollment.campaign_id }));
         await this.supabase
           .from('enrollments')
           .update({
@@ -971,17 +1029,17 @@ export class SchedulerWorker {
             updated_at: new Date().toISOString(),
           })
           .eq('id', enrollment.id);
-        return;
+        return 'campaign_deleted';
       }
 
       if (campaign.status !== 'running') {
-        console.log(`[ENROLLMENT ${enrollmentId}] Campaign status is '${campaign.status}'. Skipping processing until campaign is running.`);
+        logger.debugSampled(enrollment.id, `[ENROLLMENT ${enrollmentId}] Campaign status is '${campaign.status}'. Deferring.`);
         await this.supabase
           .from('enrollments')
           .update({ next_run_at: new Date().toISOString() })
           .eq('id', enrollment.id)
           .eq('state', 'active');
-        return;
+        return 'campaign_paused';
       }
 
       // 2. Validate account_id exists
@@ -992,7 +1050,7 @@ export class SchedulerWorker {
       const activeFlowVersionNumber = campaign.current_flow_version_number ?? 0;
 
       // 3. Evaluate flow - find next node(s) (loads from database)
-      console.log(`[ENROLLMENT ${enrollmentId}] Evaluating flow. Current node: ${enrollment.current_node_id?.substring(0, 8) || 'null (entry point)'}`);
+      logger.debugSampled(enrollment.id, `[ENROLLMENT ${enrollmentId}] Evaluating flow. Current node: ${enrollment.current_node_id?.substring(0, 8) || 'null (entry point)'}`);
       const evaluationResult = await evaluateFlow(
         enrollment,
         enrollment.campaign_id,
@@ -1006,7 +1064,7 @@ export class SchedulerWorker {
         const nextRun = new Date(Date.now() + deferMs).toISOString();
         const evaluationError = evaluationResult.evaluationError ?? 'Could not load flow nodes';
         const retryableReadError = isRetryableSupabaseReadError(evaluationError);
-        console.warn(
+        logger.warn(
           `[ENROLLMENT ${enrollmentId}] Flow evaluation failed (database read). Deferring retry in ${deferMs / 1000}s: ${evaluationResult.evaluationError ?? 'unknown'}`
         );
         reportErrorToSlack(
@@ -1037,14 +1095,11 @@ export class SchedulerWorker {
           })
           .eq('id', enrollment.id)
           .eq('state', 'active');
-        return;
+        return 'eval_failed';
       }
 
       const nextNodes = evaluationResult.nodes;
-      console.log(`[ENROLLMENT ${enrollmentId}] Flow evaluation complete. Found ${nextNodes.length} next node(s)`);
-      if (nextNodes.length > 0) {
-        console.log(`[ENROLLMENT ${enrollmentId}] Next nodes: ${nextNodes.map(n => `${n.node_type}(${n.id.substring(0, 8)})`).join(', ')}`);
-      }
+      logger.debugSampled(enrollment.id, `[ENROLLMENT ${enrollmentId}] Flow evaluation complete. Found ${nextNodes.length} next node(s)`);
       
       if (evaluationResult.stopEnrollment) {
         const stoppedAt = new Date().toISOString();
@@ -1060,23 +1115,23 @@ export class SchedulerWorker {
           })
           .eq('id', enrollment.id)
           .eq('state', 'active');
-        console.log(
-          `[ENROLLMENT ${enrollmentId}] Stopped enrollment after terminal email attempt: ${evaluationResult.stopReason ?? 'unknown reason'}`,
-        );
-        return;
+        logger.info(JSON.stringify({
+          tag: 'enrollment_outcome',
+          outcome: 'stopped',
+          enrollment_id: enrollment.id,
+          campaign_id: enrollment.campaign_id,
+          reason: evaluationResult.stopReason ?? 'terminal_email',
+        }));
+        return 'stopped';
       }
 
       if (nextNodes.length === 0) {
-        // No next nodes - check if this is because we're waiting for email to be sent
         if (evaluationResult.waitingForEmail) {
-          // Waiting for email to be sent - don't mark as completed
-          // Send worker will update next_run_at when email is sent, triggering re-evaluation
-          console.log(`[ENROLLMENT ${enrollmentId}] No next nodes, but waiting for email to be sent. Will re-evaluate when email is sent.`);
-          return;
+          return 'waiting';
         }
         
         // No next nodes and not waiting for email - flow is complete
-        console.log(`[ENROLLMENT ${enrollmentId}] No next nodes found. Marking enrollment as completed.`);
+        logger.info(JSON.stringify({ tag: 'enrollment_outcome', outcome: 'completed', enrollment_id: enrollment.id, campaign_id: enrollment.campaign_id }));
         await this.supabase
           .from('enrollments')
           .update({
@@ -1084,30 +1139,25 @@ export class SchedulerWorker {
             current_flow_version_number: activeFlowVersionNumber || enrollment.current_flow_version_number || null,
           })
           .eq('id', enrollment.id);
-        return;
+        return 'completed';
       }
 
       // 4. Process each next node
-      console.log(`[ENROLLMENT ${enrollmentId}] Processing ${nextNodes.length} node(s)...`);
+      let lastOutcome = 'work_done';
       for (const node of nextNodes) {
-        console.log(`[ENROLLMENT ${enrollmentId}] Processing node: ${node.node_type} (${node.id.substring(0, 8)})`);
+        logger.debugSampled(enrollment.id, `[ENROLLMENT ${enrollmentId}] Processing node: ${node.node_type} (${node.id.substring(0, 8)})`);
         
         const isPriorityEmail =
           node.node_type === 'email' &&
           (node.node_data?.priority === true || node.node_data?.send_mode === 'reply');
         if (isPriorityEmail) {
-          console.log(`[ENROLLMENT ${enrollmentId}] Handling priority email node...`);
-          // Priority email (downstream of categorizer): scheduler creates a
-          // campaign_priority job directly; bypasses interval pacing.
           await handlePriorityEmailNode(enrollment, node, this.supabase, {
             schedule: campaign.schedule,
             activeFlowVersionNumber,
           });
-          console.log(`[ENROLLMENT ${enrollmentId}] Priority email node processed.`);
+          logger.info(JSON.stringify({ tag: 'enrollment_outcome', outcome: 'priority_email', enrollment_id: enrollment.id, campaign_id: enrollment.campaign_id, node_id: node.id.substring(0, 8) }));
+          lastOutcome = 'priority_email';
         } else if (node.node_type === 'email') {
-          console.log(`[ENROLLMENT ${enrollmentId}] Handling email node...`);
-          // Email node: just set current_node_id and stop
-          // Job creation will be handled by batch interval assignment once next_run_at is due.
           await this.supabase
             .from('enrollments')
             .update({
@@ -1116,12 +1166,9 @@ export class SchedulerWorker {
               next_run_at: new Date().toISOString(),
             })
             .eq('id', enrollment.id);
-          
-          console.log(`[ENROLLMENT ${enrollmentId}] Email node reached. Updated current_node_id to ${node.id.substring(0, 8)}. Job will be created by batch process.`);
-          
+          logger.debugSampled(enrollment.id, `[ENROLLMENT ${enrollmentId}] Email node reached: ${node.id.substring(0, 8)}. Batch process will create job.`);
+          lastOutcome = 'email_node';
         } else if (node.node_type === 'waitTime' || node.node_type === 'wait') {
-          console.log(`[ENROLLMENT ${enrollmentId}] Handling waitTime node...`);
-          // Handle waitTime node with schedule (NO JITTER - wait times should be exact)
           await handleWaitTimeNode(
             enrollment,
             node,
@@ -1129,11 +1176,9 @@ export class SchedulerWorker {
             activeFlowVersionNumber,
             this.supabase
           );
-          console.log(`[ENROLLMENT ${enrollmentId}] WaitTime node processed. Updated next_run_at.`);
+          logger.debugSampled(enrollment.id, `[ENROLLMENT ${enrollmentId}] WaitTime node processed. Updated next_run_at.`);
+          lastOutcome = 'wait_node';
         } else if (node.node_type === 'aiCategorizer') {
-          console.log(`[ENROLLMENT ${enrollmentId}] Handling Categorizer node...`);
-          // The categorizer handler owns all enrollment updates: park,
-          // classify, restore (Auto Reply), or branch by sourceHandle.
           await handleAICategorizerNode(
             enrollment,
             node,
@@ -1143,16 +1188,15 @@ export class SchedulerWorker {
               activeFlowVersionNumber,
             },
           );
-          console.log(`[ENROLLMENT ${enrollmentId}] Categorizer node processed.`);
+          logger.debugSampled(enrollment.id, `[ENROLLMENT ${enrollmentId}] Categorizer node processed.`);
+          lastOutcome = 'categorizer';
         } else if (node.node_type === 'dataSender') {
-          console.log(`[ENROLLMENT ${enrollmentId}] Handling DataSender node...`);
-          // Handle DataSender node (placeholder)
           await handleDataSenderNode(enrollment, node, activeFlowVersionNumber, this.supabase);
-          console.log(`[ENROLLMENT ${enrollmentId}] DataSender node processed.`);
+          logger.debugSampled(enrollment.id, `[ENROLLMENT ${enrollmentId}] DataSender node processed.`);
+          lastOutcome = 'data_sender';
         } else if (node.node_type === 'leadSource') {
           // LeadSource is an entry point, not a traversal node
-          // If we encounter it during traversal, mark flow as complete (cycle detected)
-          console.warn(`[ENROLLMENT ${enrollmentId}] LeadSource node encountered during traversal - marking as completed`);
+          logger.warn(`[ENROLLMENT ${enrollmentId}] LeadSource node encountered during traversal - marking as completed`);
           await this.supabase
             .from('enrollments')
             .update({
@@ -1160,10 +1204,9 @@ export class SchedulerWorker {
               current_flow_version_number: activeFlowVersionNumber || enrollment.current_flow_version_number || null,
             })
             .eq('id', enrollment.id);
+          lastOutcome = 'completed';
         } else {
-          // Handle other node types (unknown types)
-          console.warn(`[ENROLLMENT ${enrollmentId}] Unknown node type '${node.node_type}'. Updating current_node_id and continuing.`);
-          // For now, just update current_node_id and set next_run_at to process immediately
+          logger.warn(`[ENROLLMENT ${enrollmentId}] Unknown node type '${node.node_type}'. Updating current_node_id and continuing.`);
           await this.supabase
             .from('enrollments')
             .update({
@@ -1172,31 +1215,31 @@ export class SchedulerWorker {
               next_run_at: new Date().toISOString(),
             })
             .eq('id', enrollment.id);
+          lastOutcome = 'unknown_node';
         }
       }
+      return lastOutcome;
     } catch (error) {
       // Check if this is a normal deferral (e.g., no intervals available)
-      // These are expected and handled gracefully - don't log as errors
       const isDeferral = (error as any)?.isDeferral === true;
       
       if (isDeferral) {
-        // Normal deferral - enrollment already updated; continue without logging
-        return;
+        return 'interval_deferred';
       }
 
       // Real error - log and handle
       const errorMessage = formatUnknownError(error);
       const errorStack = error instanceof Error ? error.stack : undefined;
 
-      console.error(`Error processing enrollment ${enrollment.id}:`, errorMessage);
+      logger.error(`Error processing enrollment ${enrollment.id}:`, errorMessage);
       if (errorStack) {
-        console.error('Stack trace:', errorStack);
+        logger.error('Stack trace:', errorStack);
       }
 
       if (isTransientUpstreamGatewayErrorMessage(errorMessage)) {
         const deferMs = 120_000;
         const nextRun = new Date(Date.now() + deferMs).toISOString();
-        console.warn(
+        logger.warn(
           `[ENROLLMENT ${enrollmentId}] Transient upstream error; deferring enrollment retry in ${deferMs / 1000}s`
         );
         reportErrorToSlack('Scheduler: enrollment processing deferred (transient upstream)', {
@@ -1220,7 +1263,7 @@ export class SchedulerWorker {
             .eq('id', enrollment.id)
             .eq('state', 'active');
         } catch (deferUpdateError) {
-          console.error(`Failed to defer enrollment ${enrollment.id} after transient error:`, deferUpdateError);
+          logger.error(`Failed to defer enrollment ${enrollment.id} after transient error:`, deferUpdateError);
           const deferMsg = formatUnknownError(deferUpdateError);
           reportErrorToSlack('Scheduler: failed to defer enrollment after transient upstream error', {
             severity: 'warning',
@@ -1236,14 +1279,14 @@ export class SchedulerWorker {
             },
           });
         }
-        return;
+        return 'deferred';
       }
 
       const retryableReadError = isRetryableSupabaseReadError(errorMessage);
       if (retryableReadError) {
         const deferMs = 60_000;
         const nextRun = new Date(Date.now() + deferMs).toISOString();
-        console.warn(
+        logger.warn(
           `[ENROLLMENT ${enrollmentId}] Retryable read-path failure; deferring enrollment retry in ${deferMs / 1000}s`,
         );
         reportErrorToSlack('Scheduler: enrollment processing deferred (retryable read-path error)', {
@@ -1267,7 +1310,7 @@ export class SchedulerWorker {
             .eq('id', enrollment.id)
             .eq('state', 'active');
         } catch (deferUpdateError) {
-          console.error(`Failed to defer enrollment ${enrollment.id} after retryable read failure:`, deferUpdateError);
+          logger.error(`Failed to defer enrollment ${enrollment.id} after retryable read failure:`, deferUpdateError);
           const deferMsg = formatUnknownError(deferUpdateError);
           reportErrorToSlack('Scheduler: failed to defer enrollment after retryable read failure', {
             severity: 'warning',
@@ -1283,7 +1326,7 @@ export class SchedulerWorker {
             },
           });
         }
-        return;
+        return 'deferred';
       }
 
       // Store a short clue for the UI (what/where/why); max 500 chars, single line
@@ -1299,19 +1342,18 @@ export class SchedulerWorker {
       // Try to update enrollment state to indicate error (don't fail if this fails)
       try {
         const stoppedAt = new Date().toISOString();
-        // Fatal error: stop enrollment to prevent infinite retries
         await this.supabase
           .from('enrollments')
           .update({
-            state: 'stopped', // Stop enrollment on error to prevent infinite retries
+            state: 'stopped',
             stopped_reason: 'error',
             stopped_at: stoppedAt,
             stopped_error_message: stoppedErrorMessage,
-            next_run_at: new Date(Date.now() + 3600000).toISOString(), // Retry in 1 hour
+            next_run_at: new Date(Date.now() + 3600000).toISOString(),
           })
           .eq('id', enrollment.id);
       } catch (updateError) {
-        console.error(`Failed to update enrollment ${enrollment.id} after error:`, updateError);
+        logger.error(`Failed to update enrollment ${enrollment.id} after error:`, updateError);
         const updateMsg = formatUnknownError(updateError);
         reportErrorToSlack('Scheduler: failed to update enrollment state after error', {
           severity: 'warning',
@@ -1328,12 +1370,27 @@ export class SchedulerWorker {
         });
       }
 
-      // Continue with next enrollment (don't stop worker)
+      return 'error_stopped';
     }
   }
 
   private async sleep(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    if (!this.running || ms <= 0) {
+      return;
+    }
+    await new Promise<void>((resolve) => {
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        this.shutdownWaiters = this.shutdownWaiters.filter((wake) => wake !== onShutdown);
+        clearTimeout(timer);
+        resolve();
+      };
+      const onShutdown = () => finish();
+      const timer = setTimeout(finish, ms);
+      this.shutdownWaiters.push(onShutdown);
+    });
   }
 }
 

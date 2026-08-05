@@ -77,7 +77,13 @@
     "restart:prod:scheduler": "bash scripts/restart-services.sh prod scheduler-worker",
     "restart:prod:inbox-checker": "bash scripts/restart-services.sh prod inbox-checker-worker",
     "validate": "bash scripts/validate-build.sh",
-    "validate:build": "bash scripts/validate-build.sh"
+    "validate:build": "bash scripts/validate-build.sh",
+    "lease:dev": "bash scripts/lease-dev.sh start",
+    "lease:dev:status": "bash scripts/lease-dev.sh status",
+    "lease:dev:extend": "bash scripts/lease-dev.sh extend",
+    "lease:dev:stop": "bash scripts/lease-dev.sh stop",
+    "test": "node --import tsx --test scripts/lease-dev-lib.test.ts lib/desired-count.assert.test.ts",
+    "test:infra": "npm run test"
   },
   "keywords": [
     "cdk",
@@ -93,9 +99,14 @@
     "constructs": "^10.3.0",
     "source-map-support": "^0.5.21",
     "ts-node": "^10.9.2",
+    "tsx": "^4.19.4",
     "typescript": "~5.3.0"
   },
   "dependencies": {
+    "@aws-sdk/client-cloudformation": "^3.1103.0",
+    "@aws-sdk/client-ecs": "^3.1103.0",
+    "@aws-sdk/client-scheduler": "^3.1103.0",
+    "@aws-sdk/client-sts": "^3.1103.0",
     "dotenv": "^16.6.1"
   }
 }

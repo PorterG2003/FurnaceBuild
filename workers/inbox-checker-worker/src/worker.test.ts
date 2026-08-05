@@ -460,3 +460,47 @@ test('InboxCheckerWorker starts IMAP recovery on boot when configured to run imm
 
   assert.equal(recoveryClaims, 1);
 });
+
+test('InboxCheckerWorker.stop awaits active batch and clears recovery timer', async () => {
+  let batchFinished = false;
+  let resolveBatch!: () => void;
+  const batch = new Promise<void>((resolve) => {
+    resolveBatch = () => {
+      batchFinished = true;
+      resolve();
+    };
+  });
+
+  const worker = new InboxCheckerWorker({
+    supabase: {} as any,
+    databaseClient: {
+      async claimMailboxesToCheck() {
+        return [];
+      },
+    } as any,
+  });
+
+  const timerHandle = { id: 'imap-recovery' };
+  (worker as any).imapRecoveryTimer = timerHandle;
+  (worker as any).activeBatch = batch;
+
+  const originalClearInterval = global.clearInterval;
+  const cleared: unknown[] = [];
+  global.clearInterval = ((handle?: unknown) => {
+    cleared.push(handle);
+  }) as typeof clearInterval;
+
+  try {
+    const stopPromise = worker.stop();
+    assert.equal(batchFinished, false);
+    resolveBatch();
+    await stopPromise;
+  } finally {
+    global.clearInterval = originalClearInterval;
+  }
+
+  assert.equal(batchFinished, true);
+  assert.deepEqual(cleared, [timerHandle]);
+  assert.equal((worker as any).imapRecoveryTimer, null);
+  assert.equal((worker as any).running, false);
+});

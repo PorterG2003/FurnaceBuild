@@ -125,20 +125,19 @@ async function main() {
       databaseClient,
     });
 
-    // Handle graceful shutdown
+    // Handle graceful shutdown — request stop only; do not process.exit here.
+    // ECS stopTimeout (120s) bounds how long drain can take.
     process.on('SIGTERM', () => {
       console.log('SIGTERM received, shutting down gracefully...');
-      worker.stop();
-      process.exit(0);
+      void worker.stop();
     });
 
     process.on('SIGINT', () => {
       console.log('SIGINT received, shutting down gracefully...');
-      worker.stop();
-      process.exit(0);
+      void worker.stop();
     });
 
-    // Start worker (runs until stopped)
+    // Start worker (runs until stop() drains and start() resolves)
     await worker.start();
 
   } catch (error) {

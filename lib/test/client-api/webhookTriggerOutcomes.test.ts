@@ -143,7 +143,9 @@ test('pause_campaign_and_defer_jobs emits campaign.paused webhook', async (t) =>
     });
     assert.equal(pauseError, null);
 
-    const event = await latestWebhookEvent(harness, 'campaign.paused');
+    const event = await latestWebhookEvent(harness, 'campaign.paused', {
+      campaignId: graph.campaignId,
+    });
     assert.ok(event);
     assert.equal(event.payload.campaign_id, graph.campaignId);
   } finally {
@@ -175,7 +177,9 @@ test('campaign soft-delete does not emit campaign.stopped webhook', async (t) =>
       .eq('id', graph.campaignId);
     assert.equal(deleteError, null);
 
-    const event = await latestWebhookEvent(harness, 'campaign.stopped');
+    const event = await latestWebhookEvent(harness, 'campaign.stopped', {
+      campaignId: graph.campaignId,
+    });
     assert.equal(event, null);
   } finally {
     await harness.cleanup();

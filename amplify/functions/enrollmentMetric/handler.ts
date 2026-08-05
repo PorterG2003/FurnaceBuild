@@ -14,12 +14,12 @@ export const handler = async (event: any) => {
   console.log('Enrollment Metric Lambda triggered:', JSON.stringify(event, null, 2));
 
   // Initialize clients
-  const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+  const supabaseUrl = process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL;
   const supabaseSecretKey = process.env.SUPABASE_SECRET_KEY;
   const awsRegion = process.env.AWS_REGION || 'us-west-2';
 
   if (!supabaseUrl || !supabaseSecretKey) {
-    throw new Error('Missing required environment variables: EXPO_PUBLIC_SUPABASE_URL or SUPABASE_SECRET_KEY');
+    throw new Error('Missing required environment variables: SUPABASE_URL (or EXPO_PUBLIC_SUPABASE_URL) or SUPABASE_SECRET_KEY');
   }
 
   if (!awsRegion) {

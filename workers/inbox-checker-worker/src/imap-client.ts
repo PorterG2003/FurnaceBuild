@@ -63,11 +63,9 @@ export class ImapClient {
       let searchCriteria: any;
       if (lastSyncedAt) {
         searchCriteria = { since: lastSyncedAt };
-        console.log(`[IMAP] Searching ${mailbox.email_address} since=${lastSyncedAt.toISOString()}`);
       } else {
         const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
         searchCriteria = { since: sevenDaysAgo };
-        console.log(`[IMAP] Searching ${mailbox.email_address} (first sync) since=${sevenDaysAgo.toISOString()}`);
       }
 
       const messages = await client.search(searchCriteria, { uid: true });
@@ -75,12 +73,10 @@ export class ImapClient {
 
       // Handle search result (can be false or number[])
       if (!messages || (Array.isArray(messages) && messages.length === 0)) {
-        console.log(`[IMAP] Search returned 0 UIDs for ${mailbox.email_address}`);
         return [];
       }
 
       const messageUids: number[] = Array.isArray(messages) ? messages : [];
-      console.log(`[IMAP] Search returned ${messageUids.length} UID(s) for ${mailbox.email_address}`);
       if (messageUids.length === 0) {
         return [];
       }

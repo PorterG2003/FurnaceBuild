@@ -816,6 +816,15 @@ export class ThreadManager {
     mailbox: Mailbox,
     message: ProcessedMessage,
   ): void {
+    // For unmatched messages, suppress log if the message has no threading headers
+    // (avoids noise from unrelated inbound mail that was never a reply to us)
+    const hasThreadingHeaders =
+      !!message.inReplyTo || (message.referenceMessageIds?.length ?? 0) > 0;
+    if (!matched && !hasThreadingHeaders) return;
+
+    // subject_preview: max 40 chars, no raw email addresses logged
+    const subjectPreview = (message.subject ?? '').slice(0, 40);
+
     console.log(
       JSON.stringify({
         tag: matched ? 'reply_matched' : 'reply_unmatched',
@@ -825,7 +834,7 @@ export class ThreadManager {
         message_id: message.messageId,
         in_reply_to: message.inReplyTo,
         references_count: message.referenceMessageIds?.length ?? 0,
-        subject: message.subject,
+        subject_preview: subjectPreview,
       }),
     );
   }

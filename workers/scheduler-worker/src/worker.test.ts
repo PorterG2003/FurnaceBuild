@@ -152,7 +152,7 @@ test('SchedulerWorker single-flight intervals skip overlapping ticks', async () 
   }
 });
 
-test('SchedulerWorker.stop clears background timers', () => {
+test('SchedulerWorker.stop clears background timers', async () => {
   const worker = createWorker();
 
   const timerHandles = [
@@ -162,6 +162,7 @@ test('SchedulerWorker.stop clears background timers', () => {
     { id: 'ooo-resume' },
     { id: 'stale-reserved-reclaim' },
     { id: 'self-recovery-audit' },
+    { id: 'categorizer-sweep' },
   ];
   (worker as any).intervalMaintenanceTimer = timerHandles[0];
   (worker as any).staleLockCleanupTimer = timerHandles[1];
@@ -169,6 +170,7 @@ test('SchedulerWorker.stop clears background timers', () => {
   (worker as any).oooResumeTimer = timerHandles[3];
   (worker as any).staleReservedReclaimTimer = timerHandles[4];
   (worker as any).selfRecoveryAuditTimer = timerHandles[5];
+  (worker as any).categorizerSweepTimer = timerHandles[6];
 
   const originalClearInterval = global.clearInterval;
   const cleared: unknown[] = [];
@@ -177,12 +179,59 @@ test('SchedulerWorker.stop clears background timers', () => {
   }) as typeof clearInterval;
 
   try {
-    worker.stop();
+    await worker.stop();
   } finally {
     global.clearInterval = originalClearInterval;
   }
 
   assert.deepEqual(cleared, timerHandles);
+  assert.equal((worker as any).running, false);
+});
+
+test('SchedulerWorker.stop drains active batch before resolving', async () => {
+  const worker = createWorker();
+  let batchFinished = false;
+  let resolveBatch!: () => void;
+  const batch = new Promise<void>((resolve) => {
+    resolveBatch = () => {
+      batchFinished = true;
+      resolve();
+    };
+  });
+  (worker as any).activeBatch = batch;
+
+  const stopPromise = worker.stop();
+  assert.equal(batchFinished, false);
+  resolveBatch();
+  await stopPromise;
+  assert.equal(batchFinished, true);
+});
+
+test('SchedulerWorker.stop wakes interruptible sleep without new claims', async () => {
+  let pollCount = 0;
+  const worker = new SchedulerWorker({
+    supabase: {} as any,
+    databaseClient: {
+      async poll() {
+        pollCount += 1;
+        return [];
+      },
+      getPollInterval() {
+        return 60_000;
+      },
+      getBatchSize() {
+        return 100;
+      },
+    } as any,
+  });
+
+  const startPromise = worker.start();
+  await new Promise((r) => setTimeout(r, 20));
+  const pollsBeforeStop = pollCount;
+  await worker.stop();
+  await startPromise;
+  assert.ok(pollsBeforeStop >= 1);
+  assert.equal(pollCount, pollsBeforeStop);
 });
 
 test('SchedulerWorker stale reserved reclaim timer calls reclaim rpc', async () => {

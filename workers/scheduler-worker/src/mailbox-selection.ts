@@ -1,5 +1,6 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import type { Mailbox } from './types.js';
+import { logger } from './logger.js';
 
 export interface CampaignMailboxRow {
   mailbox_id: string;
@@ -24,14 +25,14 @@ export function selectMailboxFromPool(
   rotationIndex: number = 0,
 ): Mailbox | null {
   if (availableMailboxes.length === 0) {
-    console.warn(`No available (active/connected) mailboxes for campaign ${campaignId}`);
+    logger.warn(`No available (active/connected) mailboxes for campaign ${campaignId}`);
     return null;
   }
 
   const selectedIndex = rotationIndex % availableMailboxes.length;
   const selectedMailbox = availableMailboxes[selectedIndex] as Mailbox;
 
-  console.log(
+  logger.debug(
     `[MAILBOX DIST] Campaign ${campaignId.substring(0, 8)}: Selected mailbox ${selectedMailbox.id.substring(0, 8)} (index ${selectedIndex}/${availableMailboxes.length}, rotationIndex: ${rotationIndex})`,
   );
 
@@ -64,12 +65,12 @@ export async function selectMailbox(
     .order('created_at', { ascending: true }); // Consistent ordering for round-robin
   
   if (error) {
-    console.error('Error loading campaign mailboxes:', error);
+    logger.error('Error loading campaign mailboxes:', error);
     return null;
   }
   
   if (!mailboxes || mailboxes.length === 0) {
-    console.warn(`No mailboxes assigned to campaign ${campaignId}`);
+    logger.warn(`No mailboxes assigned to campaign ${campaignId}`);
     return null;
   }
 

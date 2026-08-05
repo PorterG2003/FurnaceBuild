@@ -4,9 +4,11 @@ import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as ecr from 'aws-cdk-lib/aws-ecr';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
+import * as scheduler from 'aws-cdk-lib/aws-scheduler';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
 import { Construct } from 'constructs';
+import { WORKER_CONTAINER_INSIGHTS, type WorkerEnvironment } from './desired-counts';
 
 export interface WorkerStackProps extends cdk.StackProps {
   /**
@@ -216,10 +218,15 @@ export class WorkerStack extends cdk.Stack {
     // ECS Cluster
     // ============================================
 
+    const containerInsightsEnabled =
+      WORKER_CONTAINER_INSIGHTS[(environment === 'prod' ? 'prod' : 'dev') as WorkerEnvironment];
+
     const cluster = new ecs.Cluster(this, 'FurnaceCluster', {
       clusterName: `furnace-cluster-${environment}`,
       vpc: vpc,
-      containerInsights: true, // Enable CloudWatch Container Insights
+      // Dev: disabled to cut enhanced Container Insights cost. Prod: standard insights.
+      // Native ECS CPU/memory service metrics and application CloudWatch logs remain either way.
+      containerInsights: containerInsightsEnabled,
     });
 
     // ============================================
@@ -578,9 +585,13 @@ export class WorkerStack extends cdk.Stack {
     // Send Worker Task Definition & Service
     // ============================================
 
+    // Dev-only rightsizing experiment (0.25 vCPU / 0.5 GB). Prod stays at 0.5 / 1 GB.
+    const sendWorkerCpu = environment === 'dev' ? 256 : 512;
+    const sendWorkerMemoryMiB = environment === 'dev' ? 512 : 1024;
+
     const sendWorkerTaskDefinition = new ecs.FargateTaskDefinition(this, 'SendWorkerTaskDef', {
-      memoryLimitMiB: 1024, // 1 GB
-      cpu: 512, // 0.5 vCPU
+      memoryLimitMiB: sendWorkerMemoryMiB,
+      cpu: sendWorkerCpu,
       taskRole: sendWorkerTaskRole,
       executionRole: taskExecutionRole,
     });
@@ -591,6 +602,7 @@ export class WorkerStack extends cdk.Stack {
         streamPrefix: 'send-worker',
         logGroup: sendWorkerLogGroup,
       }),
+      stopTimeout: cdk.Duration.seconds(120),
       environment: {
         AWS_REGION: region,
         SUPABASE_URL: supabaseUrl,
@@ -637,10 +649,14 @@ export class WorkerStack extends cdk.Stack {
         streamPrefix: 'scheduler-worker',
         logGroup: schedulerWorkerLogGroup,
       }),
+      stopTimeout: cdk.Duration.seconds(120),
       environment: {
         AWS_REGION: region,
         SUPABASE_URL: supabaseUrl,
         SUPABASE_SECRET_KEY_PARAM_PATH: supabaseSecretKeyParamPath,
+        // Both environments default to info + 1% deterministic sample. Full debug must be explicit.
+        SCHEDULER_LOG_LEVEL: 'info',
+        SCHEDULER_LOG_SAMPLE_RATE: '0.01',
         ...(slackErrorWebhookUrl ? { SLACK_ERROR_WEBHOOK_URL: slackErrorWebhookUrl } : {}),
         // Categorizer node AI classification (OpenRouter); fetched from SSM at startup.
         ...(openRouterApiKeyParamPath?.trim()
@@ -680,6 +696,7 @@ export class WorkerStack extends cdk.Stack {
         streamPrefix: 'inbox-checker-worker',
         logGroup: inboxCheckerWorkerLogGroup,
       }),
+      stopTimeout: cdk.Duration.seconds(120),
       environment: {
         AWS_REGION: region,
         SUPABASE_URL: supabaseUrl,
@@ -687,6 +704,8 @@ export class WorkerStack extends cdk.Stack {
         NOTIFICATION_QUEUE_URL: notificationEventsQueue.queueUrl,
         CLASSIFY_REPLY_QUEUE_URL: classifyReplyQueue.queueUrl,
         WEBHOOK_QUEUE_URL: webhookEventsQueueUrl,
+        INBOX_LOG_LEVEL: 'info',
+        INBOX_PARSE_DEBUG_SAMPLE_RATE: '0',
         ...(slackErrorWebhookUrl ? { SLACK_ERROR_WEBHOOK_URL: slackErrorWebhookUrl } : {}),
       },
     });
@@ -704,6 +723,66 @@ export class WorkerStack extends cdk.Stack {
     });
 
     this.inboxCheckerWorkerService = inboxCheckerWorkerService;
+
+    // ============================================
+    // Dev-only automatic lease shutdown (EventBridge Scheduler)
+    // ============================================
+
+    if (environment === 'dev') {
+      const leaseDlq = new sqs.Queue(this, 'DevLeaseScheduleDlq', {
+        queueName: `furnace-dev-lease-schedule-dlq`,
+        retentionPeriod: cdk.Duration.days(14),
+        removalPolicy: cdk.RemovalPolicy.DESTROY,
+      });
+
+      const leaseScheduleGroup = new scheduler.CfnScheduleGroup(this, 'DevLeaseScheduleGroup', {
+        name: 'furnace-dev-lease',
+      });
+
+      const leaseScheduleRole = new iam.Role(this, 'DevLeaseScheduleExecutionRole', {
+        roleName: 'furnace-dev-lease-schedule-role',
+        assumedBy: new iam.ServicePrincipal('scheduler.amazonaws.com'),
+        description: 'EventBridge Scheduler role that can scale Furnace dev ECS workers to zero',
+      });
+
+      leaseScheduleRole.addToPolicy(
+        new iam.PolicyStatement({
+          sid: 'AllowUpdateDevWorkerServicesOnly',
+          actions: ['ecs:UpdateService'],
+          resources: [
+            sendWorkerService.serviceArn,
+            schedulerWorkerService.serviceArn,
+            inboxCheckerWorkerService.serviceArn,
+          ],
+        }),
+      );
+
+      leaseScheduleRole.addToPolicy(
+        new iam.PolicyStatement({
+          sid: 'AllowSendFailedInvocationsToLeaseDlq',
+          actions: ['sqs:SendMessage'],
+          resources: [leaseDlq.queueArn],
+        }),
+      );
+
+      new cdk.CfnOutput(this, 'DevLeaseScheduleGroupName', {
+        value: leaseScheduleGroup.name!,
+        description: 'EventBridge Scheduler group for one-time dev worker lease shutdowns',
+      });
+
+      new cdk.CfnOutput(this, 'DevLeaseScheduleExecutionRoleArn', {
+        value: leaseScheduleRole.roleArn,
+        description: 'IAM role ARN used by EventBridge Scheduler for dev lease shutdowns',
+      });
+
+      new cdk.CfnOutput(this, 'DevLeaseScheduleDlqArn', {
+        value: leaseDlq.queueArn,
+        description: 'DLQ for failed dev lease schedule invocations',
+      });
+
+      // Keep group construct referenced so CDK does not prune it.
+      void leaseScheduleGroup;
+    }
 
     // ============================================
     // Smartlead Migration Task Definition

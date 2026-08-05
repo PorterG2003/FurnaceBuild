@@ -1994,3 +1994,208 @@ test('retryPendingInboundReplies tolerates legacy staged payloads without cc', a
   assert.equal(payload.cc, null);
   assert.deepEqual(payload.to_emails, ['porterg@furnaceoutbound.com']);
 });
+
+// ─── logReplyMatch: PII redaction and suppression ────────────────────────────
+
+function createMinimalMessage(
+  overrides: Partial<{
+    messageId: string | null;
+    inReplyTo: string | null;
+    referenceMessageIds: string[];
+    subject: string;
+    from: { address: string; name?: string };
+    to: Array<{ address: string; name?: string }>;
+    cc: Array<{ address: string; name?: string }>;
+    date: Date;
+  }> = {},
+): ProcessedMessage {
+  return {
+    uid: 1,
+    messageId: overrides.messageId ?? '<abc@example.com>',
+    inReplyTo: overrides.inReplyTo ?? null,
+    references: null,
+    referenceMessageIds: overrides.referenceMessageIds ?? [],
+    threadTopic: null,
+    threadIndex: null,
+    from: overrides.from ?? { address: 'sender@example.com', name: 'Sender' },
+    to: overrides.to ?? [{ address: 'receiver@example.com', name: 'Receiver' }],
+    cc: overrides.cc ?? [],
+    subject: overrides.subject ?? 'Test Subject',
+    bodyText: null,
+    bodyHtml: null,
+    date: overrides.date ?? new Date(),
+    headers: {},
+    attachments: [],
+  };
+}
+
+function createTestMailbox(): Mailbox {
+  return {
+    id: 'mailbox-abc123',
+    account_id: 'account-xyz456',
+    user_id: 'user-1',
+    email_address: 'test@furnaceoutbound.com',
+    display_name: 'Test',
+    provider: 'custom',
+    smtp_host: 'smtp.example.com',
+    smtp_port: 587,
+    smtp_username: 'user',
+    smtp_password: 'pass',
+    smtp_use_tls: true,
+    smtp_use_ssl: false,
+    imap_host: 'imap.example.com',
+    imap_port: 993,
+    imap_username: 'user',
+    imap_password: 'pass',
+    imap_use_ssl: true,
+    status: 'connected',
+    last_synced_at: null,
+    error_message: null,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+  };
+}
+
+function captureManagerLogs() {
+  const logged: string[] = [];
+  const origLog = console.log;
+  console.log = (...args: unknown[]) => logged.push(args.map(String).join(' '));
+  return {
+    logged,
+    restore() {
+      console.log = origLog;
+    },
+  };
+}
+
+test('logReplyMatch: subject_preview is max 40 chars (PII truncation)', () => {
+  const supabase = new MockSupabase([]);
+  const manager = new ThreadManager(supabase as any);
+  const mailbox = createTestMailbox();
+  const longSubject = 'A'.repeat(80);
+  const message = createMinimalMessage({
+    subject: longSubject,
+    inReplyTo: '<parent@example.com>',
+    referenceMessageIds: ['<parent@example.com>'],
+  });
+
+  const cap = captureManagerLogs();
+  (manager as any).logReplyMatch(true, 'exact_job', mailbox, message);
+  cap.restore();
+
+  assert.equal(cap.logged.length, 1);
+  const parsed = JSON.parse(cap.logged[0]!);
+  assert.ok(
+    (parsed.subject_preview ?? '').length <= 40,
+    `subject_preview must be at most 40 chars, got: ${(parsed.subject_preview ?? '').length}`,
+  );
+  assert.equal(parsed.subject_preview, 'A'.repeat(40));
+});
+
+test('logReplyMatch: no raw email addresses in logged JSON for matched path', () => {
+  const supabase = new MockSupabase([]);
+  const manager = new ThreadManager(supabase as any);
+  const mailbox = createTestMailbox();
+  const message = createMinimalMessage({
+    from: { address: 'lead@customer.com', name: 'Lead' },
+    to: [{ address: 'test@furnaceoutbound.com', name: 'Test' }],
+    inReplyTo: '<parent@furnace.build>',
+    referenceMessageIds: ['<parent@furnace.build>'],
+    subject: 'Following up',
+  });
+
+  const cap = captureManagerLogs();
+  (manager as any).logReplyMatch(true, 'exact_job', mailbox, message);
+  cap.restore();
+
+  assert.equal(cap.logged.length, 1);
+  const raw = cap.logged[0]!;
+  // Email addresses in from/to/cc must not appear in the log line
+  assert.ok(!raw.includes('lead@customer.com'), 'from address must not appear in log');
+  assert.ok(!raw.includes('test@furnaceoutbound.com'), 'to/mailbox address must not appear in log');
+  // mailbox.email_address must not be in the output
+  assert.ok(!raw.includes(mailbox.email_address), 'mailbox email_address must not appear in log');
+});
+
+test('logReplyMatch: unmatched with no threading headers is suppressed (non-reply suppression)', () => {
+  const supabase = new MockSupabase([]);
+  const manager = new ThreadManager(supabase as any);
+  const mailbox = createTestMailbox();
+  // No inReplyTo and no referenceMessageIds → not a reply
+  const message = createMinimalMessage({
+    inReplyTo: null,
+    referenceMessageIds: [],
+  });
+
+  const cap = captureManagerLogs();
+  (manager as any).logReplyMatch(false, 'no_outbound_relationship', mailbox, message);
+  cap.restore();
+
+  assert.equal(cap.logged.length, 0, 'unmatched non-reply should produce no log output');
+});
+
+test('logReplyMatch: unmatched WITH threading headers is logged', () => {
+  const supabase = new MockSupabase([]);
+  const manager = new ThreadManager(supabase as any);
+  const mailbox = createTestMailbox();
+  const message = createMinimalMessage({
+    inReplyTo: '<parent@furnace.build>',
+    referenceMessageIds: ['<parent@furnace.build>'],
+  });
+
+  const cap = captureManagerLogs();
+  (manager as any).logReplyMatch(false, 'headers_unresolved', mailbox, message);
+  cap.restore();
+
+  assert.equal(cap.logged.length, 1, 'unmatched with threading headers should log');
+  const parsed = JSON.parse(cap.logged[0]!);
+  assert.equal(parsed.tag, 'reply_unmatched');
+  assert.equal(parsed.reason, 'headers_unresolved');
+});
+
+test('logReplyMatch: matched always logs even without threading headers', () => {
+  const supabase = new MockSupabase([]);
+  const manager = new ThreadManager(supabase as any);
+  const mailbox = createTestMailbox();
+  const message = createMinimalMessage({
+    inReplyTo: null,
+    referenceMessageIds: [],
+  });
+
+  const cap = captureManagerLogs();
+  (manager as any).logReplyMatch(true, 'best_guess', mailbox, message);
+  cap.restore();
+
+  assert.equal(cap.logged.length, 1, 'matched path always logs');
+  const parsed = JSON.parse(cap.logged[0]!);
+  assert.equal(parsed.tag, 'reply_matched');
+  assert.equal(parsed.reason, 'best_guess');
+});
+
+test('logReplyMatch: compact summary has expected structure fields', () => {
+  const supabase = new MockSupabase([]);
+  const manager = new ThreadManager(supabase as any);
+  const mailbox = createTestMailbox();
+  const message = createMinimalMessage({
+    messageId: '<test-mid@furnace.build>',
+    inReplyTo: '<parent@furnace.build>',
+    referenceMessageIds: ['<parent@furnace.build>', '<grandparent@furnace.build>'],
+    subject: 'Re: Campaign Subject',
+  });
+
+  const cap = captureManagerLogs();
+  (manager as any).logReplyMatch(true, 'exact_job', mailbox, message);
+  cap.restore();
+
+  assert.equal(cap.logged.length, 1);
+  const parsed = JSON.parse(cap.logged[0]!);
+  assert.equal(parsed.tag, 'reply_matched');
+  assert.equal(parsed.reason, 'exact_job');
+  assert.equal(parsed.mailbox_id, mailbox.id);
+  assert.equal(parsed.account_id, mailbox.account_id);
+  assert.equal(parsed.message_id, message.messageId);
+  assert.equal(parsed.in_reply_to, message.inReplyTo);
+  assert.equal(parsed.references_count, 2);
+  assert.ok('subject_preview' in parsed, 'should have subject_preview not subject');
+  assert.ok(!('subject' in parsed), 'raw subject field must not appear');
+});

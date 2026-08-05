@@ -113,6 +113,8 @@ export class SendWorker {
   private consecutiveEmptyPolls: number = 0;
   private lastAttachmentGcAt = 0;
   private readonly maxEmptyPolls: number = 10;
+  private shutdownWaiters: Array<() => void> = [];
+  private activeBatch: Promise<unknown> | null = null;
 
   constructor(config: WorkerConfig) {
     this.supabase = config.supabase;
@@ -134,9 +136,16 @@ export class SendWorker {
         const manualJobs = await this.databaseClient.pollManual();
         if (manualJobs.length > 0) {
           this.consecutiveEmptyPolls = 0;
-          const results = await Promise.allSettled(
+          const batchPromise = Promise.allSettled(
             manualJobs.map(job => this.processMessageJob(job))
           );
+          this.activeBatch = batchPromise;
+          let results: PromiseSettledResult<unknown>[];
+          try {
+            results = await batchPromise;
+          } finally {
+            this.activeBatch = null;
+          }
           results.forEach((r, i) => {
             if (r.status === 'rejected') {
               console.error(`[SEND WORKER] Failed manual job ${manualJobs[i].id}:`, r.reason);
@@ -152,9 +161,16 @@ export class SendWorker {
           this.consecutiveEmptyPolls = 0;
           console.log(`[SEND WORKER] Found ${messageJobs.length} message job(s) ready to send`);
 
-          const results = await Promise.allSettled(
+          const batchPromise = Promise.allSettled(
             messageJobs.map(job => this.processMessageJob(job))
           );
+          this.activeBatch = batchPromise;
+          let results: PromiseSettledResult<unknown>[];
+          try {
+            results = await batchPromise;
+          } finally {
+            this.activeBatch = null;
+          }
 
           const successful = results.filter(r => r.status === 'fulfilled').length;
           const failed = results.filter(r => r.status === 'rejected').length;
@@ -165,7 +181,7 @@ export class SendWorker {
               console.error(`[SEND WORKER] Failed to process message job ${messageJobs[index].id}:`, result.reason);
             }
           });
-        } else {
+        } else if (this.running) {
           this.consecutiveEmptyPolls++;
           // Periodic attachment GC while idle (every ~5 minutes)
           if (Date.now() - this.lastAttachmentGcAt > 5 * 60 * 1000) {
@@ -195,9 +211,16 @@ export class SendWorker {
             worker: 'send-worker',
           },
         });
-        await this.sleep(5000);
+        if (this.running) {
+          await this.sleep(5000);
+        }
       }
     }
+
+    if (this.activeBatch) {
+      await this.activeBatch.catch(() => undefined);
+    }
+    console.log('Send worker stopped.');
   }
 
   /**
@@ -216,12 +239,19 @@ export class SendWorker {
   }
 
   /**
-   * Stop the worker gracefully
+   * Request graceful shutdown. Awaits the current batch, then closes SMTP.
+   * Does not call process.exit — start() resolves after drain.
    */
   async stop(): Promise<void> {
     console.log('Stopping send worker...');
     this.running = false;
-    // Close all SMTP connections
+    for (const wake of this.shutdownWaiters.splice(0)) {
+      wake();
+    }
+    if (this.activeBatch) {
+      await this.activeBatch.catch(() => undefined);
+    }
+    // Close SMTP only after active sends settle — never mark unsent work successful.
     await this.smtpPool.closeAll();
   }
 
@@ -2077,7 +2107,22 @@ export class SendWorker {
   }
 
   private sleep(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    if (!this.running || ms <= 0) {
+      return Promise.resolve();
+    }
+    return new Promise<void>((resolve) => {
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        this.shutdownWaiters = this.shutdownWaiters.filter((wake) => wake !== onShutdown);
+        clearTimeout(timer);
+        resolve();
+      };
+      const onShutdown = () => finish();
+      const timer = setTimeout(finish, ms);
+      this.shutdownWaiters.push(onShutdown);
+    });
   }
 
   /**

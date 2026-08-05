@@ -64,7 +64,7 @@ export function isBranchCategory(category: string | null | undefined): category 
   );
 }
 
-export function truncateReplyBody(bodyText: string | null): string {
+export function truncateReplyBody(bodyText: string | null | undefined): string {
   const text = (bodyText ?? '').trim();
   if (text.length <= CATEGORIZER_BODY_TRUNCATION_LIMIT) return text;
   return `${text.slice(0, CATEGORIZER_BODY_TRUNCATION_LIMIT)}\n[truncated]`;

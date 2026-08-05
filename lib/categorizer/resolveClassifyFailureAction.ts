@@ -13,7 +13,7 @@ export function resolveClassifyFailureAction(receiveCount: number): ClassifyFail
 }
 
 export function parseSqsApproximateReceiveCount(
-  attributes: Record<string, string> | undefined,
+  attributes: { ApproximateReceiveCount?: string } | null | undefined,
 ): number {
   const raw = attributes?.ApproximateReceiveCount;
   const parsed = raw ? Number.parseInt(raw, 10) : 1;

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { loadCampaignCategorizerConfig } from './campaign-categorizer-config';
+import { loadCampaignCategorizerConfig } from './campaign-categorizer-config.js';
 
 function mockNodesQuery(result: { data: unknown; error: { message: string } | null }) {
   const chain: any = {

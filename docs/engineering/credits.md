@@ -123,16 +123,20 @@ No new tables are required.
 ## Worked example: Lead enrichment (Apollo + Prospeo waterfall)
 
 - Meter: `apollo_enrichment`, global default **100/month** (name retained; meters both providers).
-- The `apolloEnrich` Lambda (single Function URL, two routes) verifies JWT + account membership on `POST /`, loads the lead's email/LinkedIn (plus name/company when present) by `(account_id, global_lead_id)`, pre-checks `get_credit_balance`, then runs the Apollo → Prospeo waterfall (`lib/apollo/enrichmentWaterfall.ts`).
-- **Apollo primary:** calls Apollo with `reveal_phone_number=true` and a per-session webhook URL at `POST /sessions/{sessionId}`.
-- **Prospeo fallback:** on Apollo upstream error / credit failure, Apollo `no_match`, or Apollo webhook with no phones, calls Prospeo `POST /enrich-person` (`enrich_mobile`; phone-only path also sets `only_verified_mobile`).
+- The `apolloEnrich` Lambda (single Function URL, two routes) verifies JWT + account membership on `POST /`, loads the lead's email/LinkedIn (plus name/company when present) by `(account_id, global_lead_id)`, pre-checks `get_credit_balance`, then runs the enrichment waterfall (`lib/apollo/enrichmentWaterfall.ts`).
+- **Apollo profile primary:** calls Apollo `/people/match` without phone reveal first.
+- **Prospeo-first phone:** on Apollo person match, calls Prospeo `POST /enrich-person` with `enrich_mobile` + `only_verified_mobile`. If Prospeo returns a verified mobile, the session completes with `phone_source=prospeo` (no Apollo phone spend).
+- **Apollo phone fallback:** if Prospeo has no verified mobile, a second Apollo call requests `reveal_phone_number=true` with a per-session webhook at `POST /sessions/{sessionId}`.
+- **Prospeo full fallback:** on Apollo upstream error / credit failure or Apollo `no_match`, calls Prospeo full enrich (`enrich_mobile`, not `only_verified_mobile`) for profile + phone.
 - **Session state** lives in `apollo_enrichment_sessions` (separate from the credit ledger), with optional `profile_source` / `phone_source` (`apollo` | `prospeo`).
-- **Credits (at most one per enrich click):**
+- **Credits (at most one billed unit per enrich click):**
   - Apollo person match → `consume_credit(..., 1, reason='apollo_person_match')`.
   - Prospeo full match after Apollo miss/error → `1` with `reason='prospeo_person_match'`.
-  - Prospeo phone fill after Apollo already charged → `0` audit with `reason='prospeo_phone_fallback'`.
+  - Prospeo phone fill after Apollo already charged → `0` audit with `reason='prospeo_phone'`.
+  - Prospeo phone miss before Apollo reveal → `0` audit with `reason='prospeo_phone_miss'`.
+  - Apollo webhook empty / reveal failure → `0` audit with `reason='apollo_phone_miss'`.
   - Terminal no-match / provider errors → `0` audit rows.
-- **Async phones:** Apollo mobiles arrive via webhook; if none, the webhook path tries Prospeo before marking `no_phone`. Session statuses: `pending_phone | complete | no_phone | no_match | failed | expired`.
+- **Async phones:** only when Prospeo miss; Apollo mobiles arrive via webhook. Session statuses: `pending_phone | complete | no_phone | no_match | failed | expired`.
 - **Re-enrich guard:** a partial unique index on `(account_id, global_lead_id) WHERE status = 'pending_phone'` blocks concurrent enrichments. Before insert, stale rows are actively expired (`status = 'expired' WHERE expires_at <= now()`) so the index cannot wedge. Resume re-opens the stored `sync_suggestion` without a second provider call or credit.
 - The UI (`components/leads/detail/EnrichLeadScreen.tsx`) shows a per-field accept/override comparison; desktop uses an inbox-style side panel (`EnrichLeadPanel`).
 - Secrets: `APOLLO_API_KEY`, `PROSPEO_API_KEY` (Amplify sandbox / pipeline).
@@ -140,8 +144,8 @@ No new tables are required.
 
 - `lib/test/credits/creditRpcOutcomes.test.ts`: default allowance, consume, audit-only, refund,
   per-account override, `INSUFFICIENT_CREDITS`, MST period boundary, and concurrent-consume safety.
-- `lib/apollo/enrichmentWaterfall.test.ts`: Apollo → Prospeo decision matrix (status, sources,
-  `phonePending`, credit amount/reason) with mocked providers.
+- `lib/apollo/enrichmentWaterfall.test.ts`: Apollo profile + Prospeo-first phone decision matrix
+  (status, sources, `phonePending`, credit amount/reason) with mocked providers.
 - `lib/prospeo/*.test.ts`: Prospeo client + profile mapping.
 - Run with the standard outcome-test env (`SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` /
   `SUPABASE_SECRET_KEY`); the migration must be applied to the target database first.

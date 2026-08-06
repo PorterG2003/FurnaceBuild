@@ -1,5 +1,9 @@
 /**
- * Apollo → Prospeo enrichment waterfall orchestration.
+ * Apollo profile + Prospeo-first phone enrichment waterfall.
+ *
+ * Profile: Apollo primary, Prospeo full on Apollo miss/error.
+ * Phone (Apollo match): Prospeo phone_only first; Apollo phone reveal webhook
+ * only when Prospeo has no verified mobile.
  *
  * Pure decision helpers + sync/webhook orchestrators with injected provider
  * clients so the credit/status matrix can be unit-tested without Amplify.
@@ -58,9 +62,10 @@ export type CreditOutcomeKind =
   | 'prospeo_full_match'
   | 'prospeo_full_no_match'
   | 'prospeo_full_error'
-  | 'prospeo_phone_fallback_hit'
-  | 'prospeo_phone_fallback_miss'
+  | 'prospeo_phone'
+  | 'prospeo_phone_miss'
   | 'apollo_webhook_phones'
+  | 'apollo_phone_miss'
   | 'apollo_no_match_terminal';
 
 export function creditPlanForOutcome(kind: CreditOutcomeKind): CreditPlan {
@@ -73,12 +78,14 @@ export function creditPlanForOutcome(kind: CreditOutcomeKind): CreditPlan {
       return { amount: 0, reason: 'prospeo_no_match' };
     case 'prospeo_full_error':
       return { amount: 0, reason: 'prospeo_error' };
-    case 'prospeo_phone_fallback_hit':
-      return { amount: 0, reason: 'prospeo_phone_fallback' };
-    case 'prospeo_phone_fallback_miss':
-      return { amount: 0, reason: 'prospeo_phone_fallback_miss' };
+    case 'prospeo_phone':
+      return { amount: 0, reason: 'prospeo_phone' };
+    case 'prospeo_phone_miss':
+      return { amount: 0, reason: 'prospeo_phone_miss' };
     case 'apollo_webhook_phones':
       return { amount: 0, reason: 'apollo_phone_webhook' };
+    case 'apollo_phone_miss':
+      return { amount: 0, reason: 'apollo_phone_miss' };
     case 'apollo_no_match_terminal':
       return { amount: 0, reason: 'apollo_no_match' };
     default: {
@@ -123,6 +130,8 @@ export interface WaterfallSyncResult {
   phoneSource: EnrichmentProviderSource | null;
   phonePending: boolean;
   credit: CreditPlan;
+  /** Optional 0-amount phone audit after the person-match charge. */
+  phoneCredit?: CreditPlan | null;
   errorCode?: string;
   errorMessage?: string;
   apolloCalled: boolean;
@@ -143,6 +152,38 @@ export interface EnrichProspeoFn {
   (input: EnrichProspeoPersonInput): Promise<ProspeoEnrichResponse | null>;
 }
 
+async function tryProspeoPhoneOnly(
+  contact: LeadContactKeys,
+  enrichProspeo: EnrichProspeoFn,
+): Promise<{
+  hit: boolean;
+  phoneNumbers: ApolloPhoneNumber[];
+  mobilePhoneNumber: string | null;
+  called: boolean;
+  mode: ProspeoMode;
+}> {
+  const mode = prospeoModeForTrigger('phone_only');
+  try {
+    const prospeo = await enrichProspeo(toProspeoInput(contact, mode));
+    if (!prospeo?.person) {
+      return { hit: false, phoneNumbers: [], mobilePhoneNumber: null, called: true, mode };
+    }
+    const mapped = mapProspeoToProfile(prospeo);
+    if (!hasPhoneNumbers(mapped.phoneNumbers)) {
+      return { hit: false, phoneNumbers: [], mobilePhoneNumber: null, called: true, mode };
+    }
+    return {
+      hit: true,
+      phoneNumbers: mapped.phoneNumbers,
+      mobilePhoneNumber: mapped.suggestion.mobile_phone_number,
+      called: true,
+      mode,
+    };
+  } catch {
+    return { hit: false, phoneNumbers: [], mobilePhoneNumber: null, called: true, mode };
+  }
+}
+
 export async function runEnrichmentWaterfallSync(options: {
   contact: LeadContactKeys;
   webhookUrl: string;
@@ -156,8 +197,7 @@ export async function runEnrichmentWaterfallSync(options: {
     person = await enrichApollo({
       email: contact.email,
       linkedinUrl: contact.linkedinUrl,
-      revealPhoneNumber: true,
-      webhookUrl,
+      revealPhoneNumber: false,
     });
   } catch (err) {
     if (!shouldFallbackToProspeo(err)) {
@@ -183,18 +223,69 @@ export async function runEnrichmentWaterfallSync(options: {
   }
 
   if (person) {
-    return {
-      kind: 'apollo_match',
-      sessionStatus: 'pending_phone',
-      suggestion: mapApolloToProfile(person),
-      phoneNumbers: null,
-      profileSource: 'apollo',
-      phoneSource: null,
-      phonePending: true,
-      credit: creditPlanForOutcome('apollo_match'),
-      apolloCalled: true,
-      prospeoCalled: false,
-    };
+    const suggestion = mapApolloToProfile(person);
+    const prospeoPhone = await tryProspeoPhoneOnly(contact, enrichProspeo);
+
+    if (prospeoPhone.hit) {
+      return {
+        kind: 'apollo_match',
+        sessionStatus: 'complete',
+        suggestion: {
+          ...suggestion,
+          mobile_phone_number: prospeoPhone.mobilePhoneNumber,
+        },
+        phoneNumbers: prospeoPhone.phoneNumbers,
+        profileSource: 'apollo',
+        phoneSource: 'prospeo',
+        phonePending: false,
+        credit: creditPlanForOutcome('apollo_match'),
+        phoneCredit: creditPlanForOutcome('prospeo_phone'),
+        apolloCalled: true,
+        prospeoCalled: true,
+        prospeoMode: prospeoPhone.mode,
+      };
+    }
+
+    // Prospeo miss/error → request Apollo phone reveal (async webhook).
+    try {
+      await enrichApollo({
+        email: contact.email,
+        linkedinUrl: contact.linkedinUrl,
+        revealPhoneNumber: true,
+        webhookUrl,
+      });
+      return {
+        kind: 'apollo_match',
+        sessionStatus: 'pending_phone',
+        suggestion,
+        phoneNumbers: null,
+        profileSource: 'apollo',
+        phoneSource: null,
+        phonePending: true,
+        credit: creditPlanForOutcome('apollo_match'),
+        phoneCredit: prospeoPhone.called
+          ? creditPlanForOutcome('prospeo_phone_miss')
+          : null,
+        apolloCalled: true,
+        prospeoCalled: prospeoPhone.called,
+        prospeoMode: prospeoPhone.mode,
+      };
+    } catch {
+      return {
+        kind: 'apollo_match',
+        sessionStatus: 'no_phone',
+        suggestion,
+        phoneNumbers: null,
+        profileSource: 'apollo',
+        phoneSource: null,
+        phonePending: false,
+        credit: creditPlanForOutcome('apollo_match'),
+        phoneCredit: creditPlanForOutcome('apollo_phone_miss'),
+        apolloCalled: true,
+        prospeoCalled: prospeoPhone.called,
+        prospeoMode: prospeoPhone.mode,
+      };
+    }
   }
 
   // Apollo no-match or fallback-eligible error → Prospeo full enrich.
@@ -259,78 +350,30 @@ export interface WaterfallWebhookResult {
   sessionStatus: ApolloEnrichmentSessionStatus;
   phoneNumbers: ApolloPhoneNumber[];
   phoneSource: EnrichmentProviderSource | null;
-  mobilePhoneNumber: string | null;
   credit: CreditPlan;
-  prospeoCalled: boolean;
-  prospeoMode?: ProspeoMode;
 }
 
+/** Resolve Apollo webhook phones only (Prospeo already tried in sync). */
 export async function runEnrichmentWaterfallWebhook(options: {
   apolloPhones: ApolloPhoneNumber[];
-  contact: LeadContactKeys;
-  enrichProspeo: EnrichProspeoFn;
 }): Promise<WaterfallWebhookResult> {
-  const { apolloPhones, contact, enrichProspeo } = options;
+  const { apolloPhones } = options;
 
   if (hasPhoneNumbers(apolloPhones)) {
     return {
       sessionStatus: 'complete',
       phoneNumbers: apolloPhones,
       phoneSource: 'apollo',
-      mobilePhoneNumber: null,
       credit: creditPlanForOutcome('apollo_webhook_phones'),
-      prospeoCalled: false,
     };
   }
 
-  const mode = prospeoModeForTrigger('phone_only');
-  try {
-    const prospeo = await enrichProspeo(toProspeoInput(contact, mode));
-    if (!prospeo?.person) {
-      return {
-        sessionStatus: 'no_phone',
-        phoneNumbers: apolloPhones,
-        phoneSource: null,
-        mobilePhoneNumber: null,
-        credit: creditPlanForOutcome('prospeo_phone_fallback_miss'),
-        prospeoCalled: true,
-        prospeoMode: mode,
-      };
-    }
-
-    const mapped = mapProspeoToProfile(prospeo);
-    if (!hasPhoneNumbers(mapped.phoneNumbers)) {
-      return {
-        sessionStatus: 'no_phone',
-        phoneNumbers: apolloPhones,
-        phoneSource: null,
-        mobilePhoneNumber: null,
-        credit: creditPlanForOutcome('prospeo_phone_fallback_miss'),
-        prospeoCalled: true,
-        prospeoMode: mode,
-      };
-    }
-
-    return {
-      sessionStatus: 'complete',
-      phoneNumbers: mapped.phoneNumbers,
-      phoneSource: 'prospeo',
-      mobilePhoneNumber: mapped.suggestion.mobile_phone_number,
-      credit: creditPlanForOutcome('prospeo_phone_fallback_hit'),
-      prospeoCalled: true,
-      prospeoMode: mode,
-    };
-  } catch {
-    return {
-      sessionStatus: 'no_phone',
-      phoneNumbers: apolloPhones,
-      phoneSource: null,
-      mobilePhoneNumber: null,
-      credit: creditPlanForOutcome('prospeo_phone_fallback_miss'),
-      prospeoCalled: true,
-      prospeoMode: mode,
-    };
-  }
+  return {
+    sessionStatus: 'no_phone',
+    phoneNumbers: apolloPhones,
+    phoneSource: null,
+    credit: creditPlanForOutcome('apollo_phone_miss'),
+  };
 }
 
 /** Default Prospeo enrich wrapper matching EnrichProspeoFn. */

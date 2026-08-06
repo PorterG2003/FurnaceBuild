@@ -68,7 +68,7 @@ test('prospeoModeForTrigger: phone_only uses only_verified_mobile; full does not
   });
 });
 
-test('creditPlanForOutcome covers match and fallback amounts', () => {
+test('creditPlanForOutcome covers match and phone amounts', () => {
   assert.deepEqual(creditPlanForOutcome('apollo_match'), {
     amount: 1,
     reason: 'apollo_person_match',
@@ -77,58 +77,30 @@ test('creditPlanForOutcome covers match and fallback amounts', () => {
     amount: 1,
     reason: 'prospeo_person_match',
   });
-  assert.deepEqual(creditPlanForOutcome('prospeo_phone_fallback_hit'), {
+  assert.deepEqual(creditPlanForOutcome('prospeo_phone'), {
     amount: 0,
-    reason: 'prospeo_phone_fallback',
+    reason: 'prospeo_phone',
+  });
+  assert.deepEqual(creditPlanForOutcome('apollo_phone_miss'), {
+    amount: 0,
+    reason: 'apollo_phone_miss',
   });
 });
 
-test('1. Apollo match → charge 1, pending phone, no Prospeo call', async () => {
-  let prospeoCalls = 0;
+test('1. Apollo match + Prospeo mobile → complete, phone_source prospeo, one Apollo call without reveal', async () => {
+  const apolloCalls: Array<{ revealPhoneNumber?: boolean; webhookUrl?: string | null }> = [];
+  let capturedMode: { enrichMobile?: boolean; onlyVerifiedMobile?: boolean } | undefined;
+
   const result = await runEnrichmentWaterfallSync({
     contact: CONTACT,
     webhookUrl: 'https://example.com/sessions/s1',
-    enrichApollo: async () => APOLLO_PERSON,
-    enrichProspeo: async () => {
-      prospeoCalls += 1;
-      return null;
+    enrichApollo: async (input) => {
+      apolloCalls.push({
+        revealPhoneNumber: input.revealPhoneNumber,
+        webhookUrl: input.webhookUrl,
+      });
+      return APOLLO_PERSON;
     },
-  });
-
-  assert.equal(result.kind, 'apollo_match');
-  assert.equal(result.sessionStatus, 'pending_phone');
-  assert.equal(result.phonePending, true);
-  assert.equal(result.profileSource, 'apollo');
-  assert.equal(result.phoneSource, null);
-  assert.deepEqual(result.credit, { amount: 1, reason: 'apollo_person_match' });
-  assert.equal(result.prospeoCalled, false);
-  assert.equal(prospeoCalls, 0);
-  assert.equal(result.suggestion?.first_name, 'Jane');
-});
-
-test('2. Apollo match + webhook phones → complete, phone_source apollo, no Prospeo', async () => {
-  let prospeoCalls = 0;
-  const result = await runEnrichmentWaterfallWebhook({
-    apolloPhones: [{ sanitized_number: '+15557654321' }],
-    contact: CONTACT,
-    enrichProspeo: async () => {
-      prospeoCalls += 1;
-      return null;
-    },
-  });
-
-  assert.equal(result.sessionStatus, 'complete');
-  assert.equal(result.phoneSource, 'apollo');
-  assert.equal(result.prospeoCalled, false);
-  assert.equal(prospeoCalls, 0);
-  assert.deepEqual(result.credit, { amount: 0, reason: 'apollo_phone_webhook' });
-});
-
-test('3. Apollo match + webhook no phone + Prospeo mobile → complete, amount 0', async () => {
-  let capturedMode: { enrichMobile?: boolean; onlyVerifiedMobile?: boolean } | undefined;
-  const result = await runEnrichmentWaterfallWebhook({
-    apolloPhones: [],
-    contact: CONTACT,
     enrichProspeo: async (input) => {
       capturedMode = {
         enrichMobile: input.enrichMobile,
@@ -138,28 +110,115 @@ test('3. Apollo match + webhook no phone + Prospeo mobile → complete, amount 0
     },
   });
 
+  assert.equal(result.kind, 'apollo_match');
   assert.equal(result.sessionStatus, 'complete');
+  assert.equal(result.phonePending, false);
+  assert.equal(result.profileSource, 'apollo');
   assert.equal(result.phoneSource, 'prospeo');
-  assert.equal(result.mobilePhoneNumber, '+15551234567');
+  assert.equal(result.suggestion?.mobile_phone_number, '+15551234567');
+  assert.deepEqual(result.credit, { amount: 1, reason: 'apollo_person_match' });
+  assert.deepEqual(result.phoneCredit, { amount: 0, reason: 'prospeo_phone' });
   assert.equal(result.prospeoCalled, true);
-  assert.deepEqual(result.credit, { amount: 0, reason: 'prospeo_phone_fallback' });
+  assert.equal(apolloCalls.length, 1);
+  assert.equal(apolloCalls[0]?.revealPhoneNumber, false);
   assert.deepEqual(capturedMode, { enrichMobile: true, onlyVerifiedMobile: true });
 });
 
-test('4. Apollo match + webhook no phone + Prospeo miss → no_phone, amount 0', async () => {
+test('2. Apollo match + Prospeo miss → second Apollo reveal call, pending_phone', async () => {
+  const apolloCalls: Array<{ revealPhoneNumber?: boolean; webhookUrl?: string | null }> = [];
+
+  const result = await runEnrichmentWaterfallSync({
+    contact: CONTACT,
+    webhookUrl: 'https://example.com/sessions/s1',
+    enrichApollo: async (input) => {
+      apolloCalls.push({
+        revealPhoneNumber: input.revealPhoneNumber,
+        webhookUrl: input.webhookUrl,
+      });
+      return APOLLO_PERSON;
+    },
+    enrichProspeo: async () => null,
+  });
+
+  assert.equal(result.kind, 'apollo_match');
+  assert.equal(result.sessionStatus, 'pending_phone');
+  assert.equal(result.phonePending, true);
+  assert.equal(result.profileSource, 'apollo');
+  assert.equal(result.phoneSource, null);
+  assert.deepEqual(result.credit, { amount: 1, reason: 'apollo_person_match' });
+  assert.deepEqual(result.phoneCredit, { amount: 0, reason: 'prospeo_phone_miss' });
+  assert.equal(result.prospeoCalled, true);
+  assert.equal(apolloCalls.length, 2);
+  assert.equal(apolloCalls[0]?.revealPhoneNumber, false);
+  assert.equal(apolloCalls[1]?.revealPhoneNumber, true);
+  assert.equal(apolloCalls[1]?.webhookUrl, 'https://example.com/sessions/s1');
+});
+
+test('3. Apollo match + Prospeo error → still requests Apollo reveal', async () => {
+  const apolloCalls: Array<{ revealPhoneNumber?: boolean }> = [];
+
+  const result = await runEnrichmentWaterfallSync({
+    contact: CONTACT,
+    webhookUrl: 'https://example.com/sessions/s1',
+    enrichApollo: async (input) => {
+      apolloCalls.push({ revealPhoneNumber: input.revealPhoneNumber });
+      return APOLLO_PERSON;
+    },
+    enrichProspeo: async () => {
+      throw new ProspeoError('boom', 500, 'UPSTREAM');
+    },
+  });
+
+  assert.equal(result.sessionStatus, 'pending_phone');
+  assert.equal(result.phonePending, true);
+  assert.equal(apolloCalls.length, 2);
+  assert.equal(apolloCalls[1]?.revealPhoneNumber, true);
+});
+
+test('4. Apollo match + Prospeo miss + Apollo reveal failure → no_phone', async () => {
+  let apolloCall = 0;
+  const result = await runEnrichmentWaterfallSync({
+    contact: CONTACT,
+    webhookUrl: 'https://example.com/sessions/s1',
+    enrichApollo: async (input) => {
+      apolloCall += 1;
+      if (apolloCall === 1) {
+        assert.equal(input.revealPhoneNumber, false);
+        return APOLLO_PERSON;
+      }
+      throw new ApolloError('reveal failed', 500);
+    },
+    enrichProspeo: async () => PROSPEO_NO_MOBILE,
+  });
+
+  assert.equal(result.kind, 'apollo_match');
+  assert.equal(result.sessionStatus, 'no_phone');
+  assert.equal(result.phonePending, false);
+  assert.deepEqual(result.credit, { amount: 1, reason: 'apollo_person_match' });
+  assert.deepEqual(result.phoneCredit, { amount: 0, reason: 'apollo_phone_miss' });
+});
+
+test('5. Webhook phones → complete, phone_source apollo', async () => {
+  const result = await runEnrichmentWaterfallWebhook({
+    apolloPhones: [{ sanitized_number: '+15557654321' }],
+  });
+
+  assert.equal(result.sessionStatus, 'complete');
+  assert.equal(result.phoneSource, 'apollo');
+  assert.deepEqual(result.credit, { amount: 0, reason: 'apollo_phone_webhook' });
+});
+
+test('6. Webhook empty → no_phone, no Prospeo', async () => {
   const result = await runEnrichmentWaterfallWebhook({
     apolloPhones: [],
-    contact: CONTACT,
-    enrichProspeo: async () => null,
   });
 
   assert.equal(result.sessionStatus, 'no_phone');
   assert.equal(result.phoneSource, null);
-  assert.equal(result.prospeoCalled, true);
-  assert.deepEqual(result.credit, { amount: 0, reason: 'prospeo_phone_fallback_miss' });
+  assert.deepEqual(result.credit, { amount: 0, reason: 'apollo_phone_miss' });
 });
 
-test('5a. Apollo no_match + Prospeo match with mobile → charge 1, phonePending false', async () => {
+test('7a. Apollo no_match + Prospeo match with mobile → charge 1, phonePending false', async () => {
   let capturedMode: { enrichMobile?: boolean; onlyVerifiedMobile?: boolean } | undefined;
   const result = await runEnrichmentWaterfallSync({
     contact: CONTACT,
@@ -184,7 +243,7 @@ test('5a. Apollo no_match + Prospeo match with mobile → charge 1, phonePending
   assert.equal(result.suggestion?.mobile_phone_number, '+15551234567');
 });
 
-test('5b. Apollo no_match + Prospeo match without mobile → charge 1, no_phone', async () => {
+test('7b. Apollo no_match + Prospeo match without mobile → charge 1, no_phone', async () => {
   const result = await runEnrichmentWaterfallSync({
     contact: CONTACT,
     webhookUrl: 'https://example.com/sessions/s1',
@@ -199,7 +258,7 @@ test('5b. Apollo no_match + Prospeo match without mobile → charge 1, no_phone'
   assert.deepEqual(result.credit, { amount: 1, reason: 'prospeo_person_match' });
 });
 
-test('6. Apollo no_match + Prospeo no_match → no_match, amount 0', async () => {
+test('8. Apollo no_match + Prospeo no_match → no_match, amount 0', async () => {
   const result = await runEnrichmentWaterfallSync({
     contact: CONTACT,
     webhookUrl: 'https://example.com/sessions/s1',
@@ -213,7 +272,7 @@ test('6. Apollo no_match + Prospeo no_match → no_match, amount 0', async () =>
   assert.equal(result.prospeoCalled, true);
 });
 
-test('7. Apollo upstream credit/error + Prospeo match → charge 1 (Apollo never charged)', async () => {
+test('9. Apollo upstream credit/error + Prospeo match → charge 1 (Apollo never charged)', async () => {
   const result = await runEnrichmentWaterfallSync({
     contact: CONTACT,
     webhookUrl: 'https://example.com/sessions/s1',
@@ -230,7 +289,7 @@ test('7. Apollo upstream credit/error + Prospeo match → charge 1 (Apollo never
   assert.equal(result.prospeoCalled, true);
 });
 
-test('8. Apollo error + Prospeo INSUFFICIENT_CREDITS → failed / PROVIDERS_OUT_OF_CREDITS', async () => {
+test('10. Apollo error + Prospeo INSUFFICIENT_CREDITS → failed / PROVIDERS_OUT_OF_CREDITS', async () => {
   const result = await runEnrichmentWaterfallSync({
     contact: CONTACT,
     webhookUrl: 'https://example.com/sessions/s1',
@@ -248,7 +307,7 @@ test('8. Apollo error + Prospeo INSUFFICIENT_CREDITS → failed / PROVIDERS_OUT_
   assert.deepEqual(result.credit, { amount: 0, reason: 'prospeo_error' });
 });
 
-test('9. phone-only path uses only_verified_mobile; full path does not', async () => {
+test('11. phone-only path uses only_verified_mobile; full path does not', async () => {
   const fullMode = prospeoModeForTrigger('full');
   const phoneMode = prospeoModeForTrigger('phone_only');
   assert.equal(fullMode.onlyVerifiedMobile, false);
@@ -266,14 +325,15 @@ test('9. phone-only path uses only_verified_mobile; full path does not', async (
   });
   assert.equal(syncModeOnlyVerified, false);
 
-  let webhookModeOnlyVerified: boolean | undefined;
-  await runEnrichmentWaterfallWebhook({
-    apolloPhones: [],
+  let phoneOnlyMode: boolean | undefined;
+  await runEnrichmentWaterfallSync({
     contact: CONTACT,
+    webhookUrl: 'https://example.com/s',
+    enrichApollo: async () => APOLLO_PERSON,
     enrichProspeo: async (input) => {
-      webhookModeOnlyVerified = input.onlyVerifiedMobile === true;
-      return null;
+      phoneOnlyMode = input.onlyVerifiedMobile === true;
+      return PROSPEO_WITH_MOBILE;
     },
   });
-  assert.equal(webhookModeOnlyVerified, true);
+  assert.equal(phoneOnlyMode, true);
 });

@@ -1,7 +1,8 @@
 /**
  * Minimal server-side Prospeo client for on-demand person enrichment.
  *
- * Used by the `apolloEnrich` Lambda as an Apollo waterfall fallback.
+ * Used by the `apolloEnrich` Lambda for Prospeo-first phone fill (and as a
+ * full-profile fallback when Apollo has no match).
  * Endpoint: POST https://api.prospeo.io/enrich-person (auth via `X-KEY`).
  * Includes 429/5xx retry with exponential backoff.
  */

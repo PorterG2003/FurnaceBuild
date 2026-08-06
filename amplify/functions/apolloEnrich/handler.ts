@@ -257,7 +257,6 @@ async function handleWebhook(
     requestContext?: { http?: { path?: string } };
   },
   supabase: SupabaseClient,
-  prospeoApiKey: string,
 ): Promise<{ statusCode: number; body: unknown }> {
   const rawPath = event.rawPath ?? event.requestContext?.http?.path ?? '';
   const sessionId = parseApolloWebhookSessionPath(rawPath);
@@ -294,7 +293,7 @@ async function handleWebhook(
 
   const { data: session, error: loadError } = await supabase
     .from('apollo_enrichment_sessions')
-    .select('id, status, account_id, global_lead_id, created_by, sync_suggestion')
+    .select('id, status, account_id, global_lead_id, created_by')
     .eq('id', sessionId)
     .limit(1)
     .maybeSingle();
@@ -309,29 +308,10 @@ async function handleWebhook(
     account_id: string;
     global_lead_id: string;
     created_by: string | null;
-    sync_suggestion: ApolloProfileSuggestion | null;
   };
 
   const apolloPhones = extractApolloWebhookPhones(payload);
-  const contact = await loadLeadContact(
-    supabase,
-    sessionRow.account_id,
-    sessionRow.global_lead_id,
-  );
-
-  const waterfall = await runEnrichmentWaterfallWebhook({
-    apolloPhones,
-    contact,
-    enrichProspeo: createDefaultProspeoEnricher(prospeoApiKey),
-  });
-
-  const nextSuggestion =
-    waterfall.mobilePhoneNumber && sessionRow.sync_suggestion
-      ? {
-          ...sessionRow.sync_suggestion,
-          mobile_phone_number: waterfall.mobilePhoneNumber,
-        }
-      : sessionRow.sync_suggestion;
+  const waterfall = await runEnrichmentWaterfallWebhook({ apolloPhones });
 
   const { error: updateError } = await supabase
     .from('apollo_enrichment_sessions')
@@ -339,7 +319,6 @@ async function handleWebhook(
       status: waterfall.sessionStatus,
       phone_numbers: waterfall.phoneNumbers,
       phone_source: waterfall.phoneSource,
-      ...(nextSuggestion ? { sync_suggestion: nextSuggestion } : {}),
     })
     .eq('id', sessionId);
 
@@ -348,8 +327,8 @@ async function handleWebhook(
     return response(500, { ok: false, error: 'Failed to update session' });
   }
 
-  // Phone-only Prospeo fallback is audit-only (Apollo already charged on match).
-  if (waterfall.prospeoCalled) {
+  // Apollo phone miss is audit-only (person match already charged on sync).
+  if (waterfall.credit.amount === 0 && waterfall.credit.reason === 'apollo_phone_miss') {
     await consumeCredit({
       supabase,
       accountId: sessionRow.account_id,
@@ -360,7 +339,6 @@ async function handleWebhook(
       reason: waterfall.credit.reason,
       metadata: {
         phone_source: waterfall.phoneSource,
-        prospeo_called: true,
       },
     });
   }
@@ -562,6 +540,23 @@ async function handleEnrich(
     return response(500, { ok: false, error: 'Failed to record credit usage' });
   }
 
+  // Prospeo phone hit/miss after Apollo person match is audit-only.
+  if (waterfall.phoneCredit) {
+    await consumeCredit({
+      supabase,
+      accountId,
+      globalLeadId,
+      userId: user.id,
+      sessionId,
+      amount: waterfall.phoneCredit.amount,
+      reason: waterfall.phoneCredit.reason,
+      metadata: {
+        phone_source: waterfall.phoneSource,
+        prospeo_called: waterfall.prospeoCalled,
+      },
+    });
+  }
+
   await supabase
     .from('apollo_enrichment_sessions')
     .update({
@@ -609,7 +604,7 @@ export const handler = async (event: unknown) => {
     const webhookSessionId = parseApolloWebhookSessionPath(rawPath);
 
     if (webhookSessionId) {
-      return handleWebhook(event, supabase, prospeoApiKey);
+      return handleWebhook(event, supabase);
     }
 
     const functionBaseUrl = resolveFunctionUrlBase(event);

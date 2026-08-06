@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+sendlog_*.csv
+wave1_*.csv
+names_cache_*.json
+live_*.json
+dryrun_*.md
+payloads_B/

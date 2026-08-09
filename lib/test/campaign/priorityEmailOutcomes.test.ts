@@ -18,6 +18,7 @@ import {
   getThreadRow,
   processEnrollmentIds,
   simulateClassifyLambda,
+  type CapturedCampaignSend,
 } from './categorizer-helpers';
 
 /**
@@ -36,14 +37,23 @@ import {
  * test.
  */
 
+const ROOT_SENT_SUBJECT = 'Quick check-in';
+
 async function seedRunningCategorizerLead(harness: CampaignDbHarness) {
   const now = Date.now();
-  const leadEmail = `lead-${harness.namespace}@furnace.test`;
+  const leadEmail = `lead-${harness.namespace}@example.com`;
   const graph = await harness.createCampaignGraph({
     name: 'Priority Email E2E',
     status: 'running',
     flowKind: 'emailWaitEmailCategorizer',
     categorizerUseAi: true,
+    mailboxes: [
+      {
+        key: 'mailbox-1',
+        emailAddress: `sender-${harness.namespace}@example.com`,
+        displayName: 'Sender',
+      },
+    ],
     leads: [
       buildCampaignLead({
         key: 'subject',
@@ -62,6 +72,13 @@ async function seedRunningCategorizerLead(harness: CampaignDbHarness) {
             scheduledAt: new Date(now - 2 * 60 * 60_000).toISOString(),
             sentAt: new Date(now - 2 * 60 * 60_000).toISOString(),
             providerMessageId: `<orig-${harness.namespace}@furnace.test>`,
+            // A real send stamps the delivered subject; the priority node's own
+            // subject is empty, so this is the subject it must inherit.
+            messageData: {
+              source: 'campaign_seed',
+              sent_subject: ROOT_SENT_SUBJECT,
+              node_config: { subject: ROOT_SENT_SUBJECT },
+            },
           }),
           buildCampaignJob({
             key: 'queued-2',
@@ -193,23 +210,60 @@ test('post-categorizer priority email: branches, arms a campaign_priority job on
       .select('*')
       .eq('id', priorityJob.id)
       .single();
-    await (createTestSendWorker(harness) as any).processMessageJob(reserved);
+
+    const { data: inboundBeforeSend } = await harness.supabase
+      .from('email_messages')
+      .select('message_id')
+      .eq('thread_id', threadId)
+      .eq('direction', 'received')
+      .order('received_at', { ascending: false })
+      .limit(1)
+      .single();
+    assert.ok(inboundBeforeSend?.message_id);
+
+    const captures: CapturedCampaignSend[] = [];
+    await (createTestSendWorker(harness, { captures }) as any).processMessageJob(reserved);
 
     const { data: sent } = await harness.supabase
       .from('message_jobs')
-      .select('status, provider_message_id')
+      .select('status, provider_message_id, message_data')
       .eq('id', priorityJob.id)
       .single();
     assert.equal(sent?.status, 'sent', 'priority job sent');
     assert.ok(sent?.provider_message_id, 'provider_message_id stamped');
+    assert.equal(captures.length, 1);
+    assert.equal(
+      captures[0]!.subject,
+      ROOT_SENT_SUBJECT,
+      'priority node has an empty subject, so it must inherit the epoch subject',
+    );
+    assert.equal(
+      captures[0]!.inReplyTo?.replace(/^<|>$/g, '').toLowerCase(),
+      String(inboundBeforeSend!.message_id).toLowerCase(),
+      'priority In-Reply-To must equal triggering inbound Message-ID',
+    );
+    assert.ok(
+      captures[0]!.references && captures[0]!.references.length > 0,
+      'priority References must be populated',
+    );
+    assert.equal(
+      (sent as any)?.message_data?.sent_subject,
+      captures[0]!.subject,
+      'message_data.sent_subject must match SMTP subject',
+    );
 
     const { data: sentMessages } = await harness.supabase
       .from('email_messages')
-      .select('direction, message_job_id')
+      .select('direction, message_job_id, subject, in_reply_to, message_references')
       .eq('thread_id', threadId)
       .eq('message_job_id', priorityJob.id);
     assert.equal(sentMessages?.length, 1, 'exactly one recorded outbound message');
     assert.equal(sentMessages?.[0]?.direction, 'sent');
+    assert.equal(sentMessages?.[0]?.subject, captures[0]!.subject);
+    assert.equal(
+      String(sentMessages?.[0]?.in_reply_to ?? '').toLowerCase(),
+      String(inboundBeforeSend!.message_id).toLowerCase(),
+    );
     const threadAfterSend = await getThreadRow(harness, threadId);
     assert.equal(
       threadAfterSend.message_count,

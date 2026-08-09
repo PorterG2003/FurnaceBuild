@@ -1,0 +1,66 @@
+name: Threading tests
+
+# Required PR gate for Furnace-owned email threading invariants.
+# Uses a dedicated non-production Supabase target (CAMPAIGN_TEST_*).
+# Never set CAMPAIGN_TEST_ALLOW_PROD=1 here.
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: threading-tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-threading:
+    name: test:threading
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      CAMPAIGN_TEST_SUPABASE_URL: ${{ secrets.CAMPAIGN_TEST_SUPABASE_URL }}
+      CAMPAIGN_TEST_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.CAMPAIGN_TEST_SUPABASE_SERVICE_ROLE_KEY }}
+      CAMPAIGN_TEST_ACCOUNT_ID: ${{ secrets.CAMPAIGN_TEST_ACCOUNT_ID }}
+      CAMPAIGN_TEST_OWNER_USER_ID: ${{ secrets.CAMPAIGN_TEST_OWNER_USER_ID }}
+      # Explicitly unset / never allow prod override in CI
+      CAMPAIGN_TEST_ALLOW_PROD: '0'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install worker test dependencies
+        run: |
+          npm ci --prefix lib/email
+          npm ci --prefix lib/mailbox
+          npm ci --prefix workers/send-worker
+          npm ci --prefix workers/inbox-checker-worker
+          npm ci --prefix workers/scheduler-worker
+
+      - name: Guard — refuse missing campaign test secrets
+        run: |
+          if [ -z "$CAMPAIGN_TEST_SUPABASE_URL" ] || [ -z "$CAMPAIGN_TEST_SUPABASE_SERVICE_ROLE_KEY" ]; then
+            echo "CAMPAIGN_TEST_SUPABASE_URL and CAMPAIGN_TEST_SUPABASE_SERVICE_ROLE_KEY are required."
+            echo "Configure a dedicated non-production Supabase project; do not use prod."
+            exit 1
+          fi
+          case "$CAMPAIGN_TEST_SUPABASE_URL" in
+            *supabase.co*) ;;
+            *)
+              echo "Unexpected CAMPAIGN_TEST_SUPABASE_URL host"
+              exit 1
+              ;;
+          esac
+
+      - name: Run threading gate
+        run: npm run test:threading

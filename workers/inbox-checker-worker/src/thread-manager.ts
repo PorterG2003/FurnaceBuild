@@ -22,10 +22,13 @@ import { emitClassifyReplyJob } from './emit-classify-reply-job.js';
 import { emitEmailReceivedNotification } from './emit-notification-event.js';
 import { emitWebhookEvent } from './emit-webhook-event.js';
 import {
+  containsUnresolvedTemplate,
   formatReferencesHeader,
+  isNoSubjectPlaceholder,
   normalizeMessageId as normalizeMessageIdShared,
   normalizeThreadTopic,
   parseMessageIds,
+  resolveDeliveredSubject,
 } from '@furnace/email-lib';
 import {
   backfillSentMessages as backfillCampaignSentMessages,
@@ -1192,7 +1195,7 @@ export class ThreadManager {
         cutoffTime,
         mailbox
       );
-      return existingThread;
+      return await this.healThreadSubjectIfUnrendered(existingThread, messageJob);
     }
 
     // Check if a thread already exists for this campaign+lead (handles edge case where
@@ -1216,13 +1219,10 @@ export class ThreadManager {
         cutoffTime,
         mailbox
       );
-      return existingCampaignThread;
+      return await this.healThreadSubjectIfUnrendered(existingCampaignThread, messageJob);
     }
 
-    // Get message data for the thread subject (use first send's merged subject from events if available)
     const messageData = messageJob.message_data || {};
-    const templateSubject = messageData.subject || messageData.node_config?.subject || '(No Subject)';
-
     const mailboxEmail = messageJob.mailboxes?.email_address || mailbox.email_address;
     const leadEmail = messageJob.leads?.email || '';
 
@@ -1237,7 +1237,15 @@ export class ThreadManager {
       .limit(1)
       .maybeSingle();
 
-    const subject = firstSentEvent?.event_data?.sent_subject || templateSubject;
+    // Rule 15: prefer recorded delivered subjects, and render rather than store a
+    // raw template. An empty subject is legitimate; the UI supplies the placeholder.
+    const subject = resolveDeliveredSubject({
+      eventSentSubject: firstSentEvent?.event_data?.sent_subject ?? null,
+      messageDataSentSubject: messageData.sent_subject ?? null,
+      messageDataSubject: messageData.subject ?? null,
+      nodeConfigSubject: messageData.node_config?.subject ?? null,
+      lead: messageJob.leads ?? null,
+    });
 
     // Create new thread
     const { data: newThread, error: threadError } = await this.supabase
@@ -1309,6 +1317,44 @@ export class ThreadManager {
     );
 
     return newThread;
+  }
+
+  /**
+   * Repair a thread title that was frozen before subject resolution existed.
+   *
+   * Threads created by older code could store a raw spintax template or the UI's
+   * "(No subject)" placeholder, which then showed verbatim in the inbox and
+   * seeded composer replies. Healing on read keeps existing threads correct
+   * without waiting on a migration.
+   */
+  private async healThreadSubjectIfUnrendered(thread: any, messageJob: any): Promise<any> {
+    const stored = thread?.subject;
+    if (!containsUnresolvedTemplate(stored) && !isNoSubjectPlaceholder(stored)) {
+      return thread;
+    }
+
+    const messageData = messageJob.message_data || {};
+    const healed = resolveDeliveredSubject({
+      messageDataSentSubject: messageData.sent_subject ?? null,
+      messageDataSubject: messageData.subject ?? null,
+      nodeConfigSubject: messageData.node_config?.subject ?? stored ?? null,
+      lead: messageJob.leads ?? null,
+    });
+
+    if (healed === stored) return thread;
+
+    const { error } = await this.supabase
+      .from('email_threads')
+      .update({ subject: healed })
+      .eq('id', thread.id);
+
+    if (error) {
+      console.error(`Failed to heal thread subject for ${thread.id}:`, error);
+      return thread;
+    }
+
+    console.log(`[INBOX CHECKER] Healed unrendered subject on thread ${thread.id}`);
+    return { ...thread, subject: healed };
   }
 
   /**

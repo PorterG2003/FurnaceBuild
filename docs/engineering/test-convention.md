@@ -160,6 +160,12 @@ Current root command surface:
 - `npm run test:campaign:integration`
 - `npm run test:campaign:worker`
 - `npm run test:campaign`
+- `npm run test:threading` (unit + workers + DB integration + browser/composer; required PR gate)
+- `npm run test:threading:unit`
+- `npm run test:threading:integration`
+- `npm run test:threading:browser`
+- `npm run test:threading:workers`
+- `npm run test:categorizer:live` (explicit OpenRouter spend; not in default unit gates)
 - `npm run test:flux`
 - `npm run test:foundry`
 - `npm run test:utilities`
@@ -175,6 +181,8 @@ Guideline:
 - add root commands by domain
 - prefer domain commands over package-only discovery
 - `test:core` should cover business-critical domains first, not necessarily every test in the repo
+- email threading contract: `docs/engineering/email-threading-test-contract.md`
+- new `*Threading*.test.ts` / `*ThreadSubject*.test.ts` files must be registered in `test:threading*` (enforced by `test:threading:registration`)
 
 ## Repo inventory and final disposition
 

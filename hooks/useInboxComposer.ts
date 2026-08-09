@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Animated } from 'react-native';
 import { mergeInboxComposeHtml } from '@/lib/email/buildCampaignEmailContent';
 import {
+  buildForwardDefaultSubject,
+  buildReplyDefaultSubject,
   canonicalizeEmailContentForSave,
   convertHtmlToRichTextSeed,
   mergeHtmlEmailWithSignature,
@@ -472,7 +474,12 @@ export function useInboxComposer({
       setInReplyToMessageId(message.id);
       setReplyToEmail(toEmail);
       setReplyToName(toName);
-      setReplySubject(selectedThread.subject?.startsWith('Re:') ? selectedThread.subject : `Re: ${selectedThread.subject || '(No subject)'}`);
+      setReplySubject(
+        buildReplyDefaultSubject({
+          parentMessageSubject: message.subject ?? null,
+          threadSubject: selectedThread.subject ?? null,
+        }),
+      );
 
       const ourEmail = messages.find((m) => m.direction === 'sent')?.from_email?.trim().toLowerCase();
       const toNorm = toEmail.trim().toLowerCase();
@@ -528,14 +535,16 @@ export function useInboxComposer({
   const openForwardComposer = useCallback(
     (_message: EmailMessage, options?: ForwardComposerPrefill) => {
       if (!selectedThread) return;
-      const subject = selectedThread.subject ?? '(No subject)';
-      const fwdSubject = subject.startsWith('Fwd:') ? subject : `Fwd: ${subject}`;
+      const fwdSubject = buildForwardDefaultSubject({
+        parentMessageSubject: _message.subject ?? null,
+        threadSubject: selectedThread.subject ?? null,
+      });
       setForwardedMessageId(_message.id);
       setForwardToEmail(options?.toEmail?.trim().toLowerCase() ?? '');
       setForwardCc('');
       setForwardSubject(fwdSubject);
       setIncludeSignature(true);
-      setForwardQuoteHtml(buildForwardedConversationHtml(messages, _message, subject));
+      setForwardQuoteHtml(buildForwardedConversationHtml(messages, _message, fwdSubject));
       setForwardEditorMode('richText');
       setForwardHtmlDraft('');
       setForwardRichInitialContent('<p></p>');
@@ -718,7 +727,7 @@ export function useInboxComposer({
           accountId,
           threadId: selectedThreadId,
           inReplyToMessageId,
-          subject: replySubject.trim() || '(No subject)',
+          subject: replySubject.trim(),
           bodyText: finalBodyText || '',
           bodyHtml: finalBodyHtml || '',
           toEmail: replyToEmail.trim(),
@@ -747,7 +756,7 @@ export function useInboxComposer({
           kind: 'reply',
           threadId: selectedThreadId,
           jobId,
-          subject: replySubject.trim() || '(No subject)',
+          subject: replySubject.trim(),
           bodyText: finalBodyText || '',
           bodyHtml: finalBodyHtml || '',
           toEmail: replyToEmail.trim(),
@@ -874,7 +883,7 @@ export function useInboxComposer({
           accountId,
           threadId: selectedThreadId,
           forwardedMessageId,
-          subject: forwardSubject.trim() || '(No subject)',
+          subject: forwardSubject.trim(),
           bodyText: finalBodyText || '',
           bodyHtml: finalBodyHtml || finalBodyText,
           toEmail: forwardToEmail.trim(),
@@ -903,7 +912,7 @@ export function useInboxComposer({
           kind: 'forward',
           threadId: selectedThreadId,
           jobId,
-          subject: forwardSubject.trim() || '(No subject)',
+          subject: forwardSubject.trim(),
           bodyText: finalBodyText || '',
           bodyHtml: finalBodyHtml || finalBodyText,
           toEmail: forwardToEmail.trim(),

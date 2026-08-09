@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { resetSlackAggregationStateForTests } from '@furnace/slack-lib';
+import { buildTimelineFromRows, type SentJobRow } from '../../../lib/email/dist/index.js';
 import { SendWorker } from './worker.js';
 import type { MessageJob } from './types.js';
 
@@ -138,6 +139,22 @@ class ProcessMessageMutationStub implements PromiseLike<{ data: any; error: any 
   }
 
   in(_column: string, _value: unknown) {
+    return this;
+  }
+
+  or(_filter: string) {
+    return this;
+  }
+
+  order(_column: string, _options?: Record<string, unknown>) {
+    return this;
+  }
+
+  limit(_count: number) {
+    return this;
+  }
+
+  lte(_column: string, _value: unknown) {
     return this;
   }
 
@@ -977,7 +994,7 @@ test('SendWorker persists rendered text and html payloads for campaign sends', a
     nodeConfig: (messageJob.message_data as any).node_config,
   });
   (worker as any).isEmailBlocked = async () => false;
-  (worker as any).getSentJobsForCampaignLeadThread = async () => [];
+  (worker as any).loadThreadTimelineForJob = async () => [];
   (worker as any).finalizeCampaignMessageJobSent = async () => {};
   (worker as any).reconcileLeadMailboxAfterSuccessfulSend = async () => {};
   (worker as any).smtpPool = {
@@ -1047,7 +1064,7 @@ test('SendWorker preserves html-mode full-document payloads', async () => {
     nodeConfig: (messageJob.message_data as any).node_config,
   });
   (worker as any).isEmailBlocked = async () => false;
-  (worker as any).getSentJobsForCampaignLeadThread = async () => [];
+  (worker as any).loadThreadTimelineForJob = async () => [];
   (worker as any).finalizeCampaignMessageJobSent = async () => {};
   (worker as any).reconcileLeadMailboxAfterSuccessfulSend = async () => {};
   (worker as any).smtpPool = {
@@ -1063,6 +1080,14 @@ test('SendWorker preserves html-mode full-document payloads', async () => {
   assert.match(String(eventData.sent_body_html), /<html>/i);
   assert.equal(eventData.sent_body_text, 'Hello Casey');
 });
+
+/** Build the timeline the worker would have loaded from these sent jobs. */
+function timelineFromSentJobs(sentJobs: SentJobRow[]) {
+  return buildTimelineFromRows({
+    sentJobs,
+    lead: { id: 'lead-1', email: 'lead@example.com', first_name: 'Casey' },
+  });
+}
 
 function stubCampaignSendWorker(
   worker: SendWorker,
@@ -1091,13 +1116,14 @@ function stubCampaignSendWorker(
     nodeConfig: (messageJob.message_data as any).node_config,
   });
   (worker as any).isEmailBlocked = async () => false;
-  (worker as any).getSentJobsForCampaignLeadThread = async () => {
+  (worker as any).loadThreadTimelineForJob = async () => {
     if (!options?.firstSent) return [];
-    return [
+    return timelineFromSentJobs([
       {
         id: 'first-job-1',
         provider_message_id: options.firstSent.provider_message_id,
         submitted_message_id: options.firstSent.provider_message_id,
+        sent_at: '2026-04-01T00:00:00.000Z',
         message_data: {
           sent_subject: options.firstSent.sent_subject,
           node_config: {
@@ -1107,7 +1133,7 @@ function stubCampaignSendWorker(
           },
         },
       },
-    ];
+    ]);
   };
   (worker as any).finalizeCampaignMessageJobSent = async () => {};
   (worker as any).reconcileLeadMailboxAfterSuccessfulSend = async () => {};
@@ -1215,7 +1241,7 @@ test('SendWorker follow-up with (No subject) reuses exact first sent_subject', a
   assert.equal(capturedSubject, 'Quick question');
 });
 
-test('SendWorker follow-up with intentional subject keeps it and still sets thread headers', async () => {
+test('SendWorker follow-up with intentional subject starts a new thread without headers', async () => {
   const supabase = new ProcessMessageSupabase();
   let captured: {
     subject?: string;
@@ -1258,8 +1284,112 @@ test('SendWorker follow-up with intentional subject keeps it and still sets thre
   await (worker as any).processMessageJob(messageJob);
 
   assert.equal(captured.subject, 'Brand new subject');
-  assert.equal(captured.inReplyTo, '<first@furnace.build>');
-  assert.equal(captured.references, '<first@furnace.build>');
+  assert.equal(captured.inReplyTo, null);
+  assert.equal(captured.references, null);
+});
+
+test('SendWorker empty → explicit subject → blank continues newest epoch only', async () => {
+  const supabase = new ProcessMessageSupabase();
+  const captures: Array<{
+    subject?: string;
+    inReplyTo?: string | null;
+    references?: string | null;
+  }> = [];
+  const worker = new SendWorker({
+    supabase: supabase as any,
+    databaseClient: {} as any,
+    campaignEmailSender: async (
+      _transporter,
+      _mailbox,
+      _job,
+      _lead,
+      subject,
+      _body,
+      inReplyTo,
+      references,
+    ) => {
+      captures.push({ subject, inReplyTo, references });
+      return {
+        submittedMessageId: `<job-${captures.length}@furnace.build>`,
+        providerMessageId: `<p${captures.length}@example.com>`,
+      };
+    },
+  });
+
+  // Prior sends accumulate as the campaign progresses, exactly as the loader would see them.
+  const prior: any[] = [];
+  (worker as any).loadThreadTimelineForJob = async () => timelineFromSentJobs(prior);
+  const messageJobEmpty = createCampaignMessageJob({
+    id: 'job-empty',
+    message_data: {
+      node_config: { subject: '', body_html: '<p>x</p>', body_text: 'x' },
+    },
+  });
+  stubCampaignSendWorker(worker, messageJobEmpty, { firstSent: null });
+  (worker as any).loadThreadTimelineForJob = async () => timelineFromSentJobs(prior);
+
+  await (worker as any).processMessageJob(messageJobEmpty);
+  assert.equal(captures[0]!.subject, '');
+  assert.equal(captures[0]!.inReplyTo, null);
+  prior.push({
+    id: 'job-empty',
+    provider_message_id: '<p1@example.com>',
+    submitted_message_id: '<job-1@furnace.build>',
+    sent_at: '2026-04-01T00:00:00.000Z',
+    message_data: {
+      sent_subject: '',
+      node_config: { subject: '' },
+    },
+  });
+
+  const messageJobExplicit = createCampaignMessageJob({
+    id: 'job-explicit',
+    message_data: {
+      node_config: {
+        subject: 'Brand new subject',
+        body_html: '<p>y</p>',
+        body_text: 'y',
+      },
+    },
+  });
+  stubCampaignSendWorker(worker, messageJobExplicit, { firstSent: null });
+  (worker as any).loadThreadTimelineForJob = async () => timelineFromSentJobs(prior);
+  await (worker as any).processMessageJob(messageJobExplicit);
+  assert.equal(captures[1]!.subject, 'Brand new subject');
+  assert.equal(captures[1]!.inReplyTo, null, 'explicit subject starts new thread');
+  assert.equal(captures[1]!.references, null);
+  prior.push({
+    id: 'job-explicit',
+    provider_message_id: '<p2@example.com>',
+    submitted_message_id: '<job-2@furnace.build>',
+    sent_at: '2026-04-02T00:00:00.000Z',
+    message_data: {
+      sent_subject: 'Brand new subject',
+      node_config: { subject: 'Brand new subject' },
+    },
+  });
+
+  const messageJobBlank = createCampaignMessageJob({
+    id: 'job-blank',
+    message_data: {
+      node_config: { subject: '', body_html: '<p>z</p>', body_text: 'z' },
+    },
+  });
+  stubCampaignSendWorker(worker, messageJobBlank, {
+    firstSent: {
+      provider_message_id: '<p1@example.com>',
+      sent_subject: '',
+      subjectTemplate: '',
+    },
+  });
+  (worker as any).loadThreadTimelineForJob = async () => timelineFromSentJobs(prior);
+  await (worker as any).processMessageJob(messageJobBlank);
+  assert.equal(
+    captures[2]!.subject,
+    'Brand new subject',
+    'blank follow-up must reuse newest epoch subject',
+  );
+  assert.equal(captures[2]!.inReplyTo, '<p2@example.com>');
 });
 
 test('SendWorker persists sent_subject onto message_jobs.message_data', async () => {

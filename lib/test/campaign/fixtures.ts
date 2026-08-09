@@ -96,6 +96,52 @@ export function buildCampaignThread(
   };
 }
 
+/**
+ * Pre-sent job shaped like a SmartLead / legacy import: provider ID present,
+ * but no events.sent and no message_data.sent_subject (only raw node_config).
+ */
+export function buildImportedSentJob(
+  overrides: Partial<CampaignMessageJobSpec> & {
+    subjectTemplate: string;
+    /** When set, persists rendered subject without a sent event (legacy hybrid). */
+    renderedSubject?: string;
+    providerMessageId: string;
+    sentAt: string;
+  },
+): CampaignMessageJobSpec {
+  const {
+    subjectTemplate,
+    renderedSubject,
+    providerMessageId,
+    sentAt,
+    messageData: messageDataOverride,
+    key,
+    messageType,
+    nodeFlowNodeId,
+    ...rest
+  } = overrides;
+  return buildCampaignJob({
+    ...rest,
+    key: key ?? 'imported-sent',
+    status: 'sent',
+    scheduledAt: sentAt,
+    sentAt,
+    providerMessageId,
+    messageType: messageType ?? 'campaign',
+    nodeFlowNodeId: nodeFlowNodeId ?? 'email-1',
+    messageData: {
+      source: 'imported_seed',
+      node_config: {
+        subject: subjectTemplate,
+        body_html: '<p>Imported body</p>',
+        body_text: 'Imported body',
+      },
+      ...(renderedSubject !== undefined ? { sent_subject: renderedSubject } : {}),
+      ...(messageDataOverride ?? {}),
+    },
+  });
+}
+
 export function buildCampaignLead(
   overrides: Partial<CampaignLeadSpec> & Pick<CampaignLeadSpec, 'key' | 'email'>,
 ): CampaignLeadSpec {

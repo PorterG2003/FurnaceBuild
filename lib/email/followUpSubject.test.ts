@@ -96,4 +96,27 @@ describe('resolveCampaignFollowUpSubject', () => {
     });
     assert.equal(subject, 'Brand new subject');
   });
+
+  it('empty → explicit rendered subject → blank continues newest epoch subject', () => {
+    // When callers pass the newest epoch's rendered subject as firstSentSubject,
+    // blank continuation must reuse it (not an older empty/root subject).
+    const subject = resolveCampaignFollowUpSubject({
+      currentSubject: '',
+      firstSentSubject: 'New angle Casey',
+      firstSubjectTemplate: '{New angle {{first_name}}|Fresh take {{first_name}}}',
+      lead,
+    });
+    assert.equal(subject, 'New angle Casey');
+  });
+
+  it('blank after empty root reuses empty rendered subject without inventing placeholder', () => {
+    const subject = resolveCampaignFollowUpSubject({
+      currentSubject: '',
+      firstSentSubject: '',
+      firstSubjectTemplate: '',
+      lead,
+    });
+    assert.equal(subject, '');
+    assert.notEqual(subject, '(No subject)');
+  });
 });

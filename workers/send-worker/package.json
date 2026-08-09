@@ -8,24 +8,26 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",
-    "test": "npm --prefix ../../lib/mailbox run build && npm --prefix ../../lib/email run build && npm --prefix ../../lib/webhooks run build && node --import tsx --test src/email.test.ts src/worker.test.ts src/sentAttachments.test.ts src/types.test.ts"
+    "test": "npm --prefix ../../lib/mailbox run build && npm --prefix ../../lib/email run build && npm --prefix ../../lib/webhooks run build && node --import tsx --test src/email.test.ts src/worker.test.ts src/sentAttachments.test.ts src/types.test.ts src/loadThreadTimeline.test.ts"
   },
   "dependencies": {
-    "@furnace/campaign-lib": "file:../../lib/campaign",
-    "@furnace/mailbox-lib": "file:../../lib/mailbox",
-    "@furnace/slack-lib": "file:../../lib/slack",
-    "@furnace/email-lib": "file:../../lib/email",
-    "@furnace/webhooks-lib": "file:../../lib/webhooks",
     "@aws-sdk/client-sqs": "^3.0.0",
     "@aws-sdk/client-ssm": "^3.0.0",
+    "@furnace/campaign-lib": "file:../../lib/campaign",
+    "@furnace/email-lib": "file:../../lib/email",
+    "@furnace/mailbox-lib": "file:../../lib/mailbox",
+    "@furnace/slack-lib": "file:../../lib/slack",
+    "@furnace/webhooks-lib": "file:../../lib/webhooks",
     "@supabase/supabase-js": "^2.77.0",
-    "nodemailer": "^6.9.0",
-    "dotenv": "^16.0.0"
+    "dotenv": "^16.0.0",
+    "nodemailer": "^6.9.0"
   },
   "devDependencies": {
+    "@types/mailparser": "^3.4.6",
     "@types/node": "^20.0.0",
     "@types/nodemailer": "^6.4.0",
-    "typescript": "^5.9.0",
-    "tsx": "^4.0.0"
+    "mailparser": "^3.9.15",
+    "tsx": "^4.0.0",
+    "typescript": "^5.9.0"
   }
 }

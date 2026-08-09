@@ -1,17 +1,20 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import {
   buildCampaignEmailContent,
-  buildReferencesFromAncestorIds,
   buildStableSubmittedMessageId,
   formatMessageId,
   formatReferencesHeader,
   normalizeMessageId,
   normalizeThreadTopic,
   parseMessageIds,
-  pickWireMessageId,
-  resolveCampaignFollowUpSubject,
+  resolveOutboundThreading,
   type LeadLike,
+  type OutboundThreadingContext,
+  type ThreadTimelineEntry,
+  type ThreadingDecision,
 } from '../../../lib/email/dist/index.js';
+import { loadThreadTimeline } from './loadThreadTimeline.js';
+import { describeLegacyThreadingDivergence } from './threadingParity.js';
 import {
   formatUnknownError,
   isRetryableSupabaseReadError,
@@ -87,15 +90,6 @@ type SentThreadMessageRecord = {
   threadTopic?: string | null;
   receivedAt?: string;
   attachments?: unknown[] | null;
-};
-
-type SentThreadAncestorJob = {
-  id: string;
-  provider_message_id: string | null;
-  submitted_message_id?: string | null;
-  message_data: any;
-  sent_at?: string | null;
-  scheduled_at?: string | null;
 };
 
 export interface WorkerConfig {
@@ -1102,13 +1096,31 @@ export class SendWorker {
 
       // Throttle check passed - proceed with sending
 
-      // 2b. Prior sent jobs for subject continuity + cumulative RFC threading
-      const priorSentJobs = await this.getSentJobsForCampaignLeadThread(
-        messageJob.campaign_id,
-        messageJob.lead_id,
-      );
-      const threadFirst = priorSentJobs[0] ?? null;
-      const threadingHeaders = this.buildOutboundThreadingHeaders(priorSentJobs);
+      // 2b. Full conversation timeline (prior sends + inbound replies) so the
+      //     shared resolver can pick the subject epoch and immediate parent.
+      let timeline: ThreadTimelineEntry[];
+      try {
+        timeline = await this.loadThreadTimelineForJob({
+          campaignId: messageJob.campaign_id,
+          leadId: messageJob.lead_id,
+          threadId: (messageJob.message_data as any)?.thread_id ?? null,
+          lead: lead as unknown as LeadLike,
+        });
+      } catch (err) {
+        const msg = formatUnknownError(err);
+        reportErrorToSlack('Send-worker: failed to load thread timeline for outbound threading', {
+          severity: 'warning',
+          message_job_id: message_job_id,
+          campaign_id: messageJob.campaign_id,
+          error: msg,
+          alertPolicy: 'persistent_config_warning',
+          aggregationKey: `send-worker-thread-timeline:${messageJob.campaign_id}`,
+          summaryFields: {
+            campaign_id: messageJob.campaign_id,
+          },
+        });
+        throw err;
+      }
 
       // 3. Generate email content from template (shared pipeline with preview)
       let content;
@@ -1146,61 +1158,54 @@ export class SendWorker {
       const isHtmlBody = content.isHtmlBody;
       const emailBodyText = content.bodyText;
 
-      // Subject: use current node's subject; if follow-up and continuing (empty /
-      // mistaken "(No subject)"), reuse the exact first sent subject.
-      let subject: string;
-      const inReplyTo = threadingHeaders?.inReplyTo ?? null;
-      const references = threadingHeaders?.references ?? null;
-      const referenceMessageIds = threadingHeaders?.referenceMessageIds ?? null;
-      if (threadFirst) {
-        const nc = threadFirst.message_data?.node_config;
-        const firstSubjectTemplate = (nc?.subject ?? nc?.template ?? '') as string;
-        let firstSentSubject: string | null = null;
-        try {
-          firstSentSubject = await this.resolveFirstSentSubjectForFollowUp(threadFirst);
-        } catch (err) {
-          const msg = formatUnknownError(err);
-          reportErrorToSlack('Send-worker: failed to load first sent subject for thread follow-up', {
-            severity: 'warning',
-            message_job_id: message_job_id,
+      // Subject and RFC ancestry come from the one shared resolver, so campaign
+      // sends, priority replies, and manual replies cannot drift apart.
+      let threading: OutboundThreadingContext;
+      try {
+        threading = resolveOutboundThreading({
+          subjectTemplate: nodeConfig.subject ?? nodeConfig.template ?? '',
+          renderedSubject: currentSubject,
+          timeline,
+          lead: lead as unknown as LeadLike,
+        });
+      } catch (err) {
+        const msg = formatUnknownError(err);
+        reportErrorToSlack('Send-worker: outbound threading resolution failed', {
+          severity: 'warning',
+          message_job_id: message_job_id,
+          campaign_id: messageJob.campaign_id,
+          error: msg,
+          alertPolicy: 'persistent_config_warning',
+          aggregationKey: `send-worker-threading-resolve:${messageJob.campaign_id}`,
+          summaryFields: {
             campaign_id: messageJob.campaign_id,
-            error: msg,
-            alertPolicy: 'persistent_config_warning',
-            aggregationKey: `send-worker-thread-followup-subject:${messageJob.campaign_id}`,
-            summaryFields: {
-              campaign_id: messageJob.campaign_id,
-            },
-          });
-          throw err;
-        }
-        try {
-          subject = resolveCampaignFollowUpSubject({
-            currentSubject,
-            firstSentSubject,
-            firstSubjectTemplate,
-            lead: lead as unknown as LeadLike,
-          });
-        } catch (err) {
-          const msg = formatUnknownError(err);
-          reportErrorToSlack('Send-worker: first-email subject/content parse failed (thread follow-up)', {
-            severity: 'warning',
-            message_job_id: message_job_id,
-            campaign_id: messageJob.campaign_id,
-            error: msg,
-            alertPolicy: 'persistent_config_warning',
-            aggregationKey: `send-worker-thread-followup-parse:${messageJob.campaign_id}`,
-            summaryFields: {
-              campaign_id: messageJob.campaign_id,
-            },
-          });
-          throw err;
-        }
-      } else {
-        subject = currentSubject;
+          },
+        });
+        throw err;
       }
 
-      const threadTopic = normalizeThreadTopic(subject);
+      const subject = threading.subject;
+      const inReplyTo = threading.inReplyTo;
+      const references = threading.references;
+      const referenceMessageIds =
+        threading.referenceMessageIds.length > 0 ? threading.referenceMessageIds : null;
+      const threadTopic = threading.threadTopic;
       const submittedMessageId = buildStableSubmittedMessageId(message_job_id);
+
+      // Surface where the resolver changed real behavior, so a rollout can be
+      // watched rather than guessed at.
+      const divergence = describeLegacyThreadingDivergence({
+        timeline,
+        renderedSubject: currentSubject,
+        lead: lead as unknown as LeadLike,
+        resolved: threading,
+      });
+      if (divergence) {
+        console.log(
+          `[SEND WORKER] Threading resolver changed outcome for job ${message_job_id} ` +
+            `(decision=${threading.decision}): ${JSON.stringify(divergence)}`,
+        );
+      }
 
       // Check if this is a test mode job (skip SMTP sending)
       // Test mailboxes are identified by @furnace.test email domain
@@ -1278,6 +1283,13 @@ export class SendWorker {
         referenceMessageIds,
         threadTopic,
         submittedMessageId: sendResult.submittedMessageId,
+        threadingDecision: threading.decision,
+        parentEmailMessageId: threading.parentEmailMessageId,
+        // A new epoch is rooted at this very send, so it names itself.
+        conversationRootMessageId:
+          threading.conversationRootMessageId ??
+          normalizeMessageId(providerMessageId) ??
+          normalizeMessageId(sendResult.submittedMessageId),
       });
 
       await this.reconcileLeadMailboxAfterSuccessfulSend(messageJob, lead.mailbox_id);
@@ -1658,21 +1670,34 @@ export class SendWorker {
     const rawAttachments = Array.isArray(md.attachments) ? md.attachments : [];
     const fileAttachments = await resolveSendAttachments(this.supabase, rawAttachments);
     console.log(`[SEND WORKER] Reply job ${message_job_id} attachments: ${fileAttachments.length} (raw: ${rawAttachments.length})`);
-    const replyRefIds = Array.isArray(md.reference_message_ids)
-      ? md.reference_message_ids
-      : parseMessageIds(md.message_references ?? null);
+    // Recompute ancestry at send time from the same resolver the campaign lane
+    // uses, parenting the message the user selected in the composer.
+    const replyThreading = resolveOutboundThreading({
+      subjectTemplate: md.subject ?? '',
+      renderedSubject: md.subject ?? '',
+      timeline: await this.loadThreadTimelineForJob({ threadId }),
+      explicitParentWireId: md.in_reply_to ?? null,
+    });
+    const replyRefIds =
+      replyThreading.referenceMessageIds.length > 0
+        ? replyThreading.referenceMessageIds
+        : Array.isArray(md.reference_message_ids)
+          ? md.reference_message_ids
+          : parseMessageIds(md.message_references ?? null);
     const replyThreadTopic =
       (typeof md.thread_topic === 'string' && md.thread_topic) ||
+      replyThreading.threadTopic ||
       normalizeThreadTopic(md.subject || null);
     const replyOptions: ReplyEmailOptions = {
       toEmail: md.to_email || '',
       toName: md.to_name ?? null,
       cc: Array.isArray(md.cc) ? md.cc : undefined,
-      subject: md.subject || '(No subject)',
+      subject: md.subject || '',
       bodyText: md.body_text || md.body_html || '',
       bodyHtml: md.body_html ?? null,
-      inReplyTo: md.in_reply_to ?? null,
-      references: md.message_references ?? formatReferencesHeader(replyRefIds),
+      inReplyTo: replyThreading.inReplyTo ?? md.in_reply_to ?? null,
+      references:
+        replyThreading.references ?? md.message_references ?? formatReferencesHeader(replyRefIds),
       threadTopic: replyThreadTopic,
       messageId: buildStableSubmittedMessageId(message_job_id),
       attachments: fileAttachments.length > 0 ? fileAttachments : undefined,
@@ -1852,7 +1877,7 @@ export class SendWorker {
       toEmail: md.to_email || '',
       toName: md.to_name ?? null,
       cc: Array.isArray(md.cc) ? md.cc : undefined,
-      subject: md.subject || '(No subject)',
+      subject: md.subject || '',
       bodyText: md.body_text || md.body_html || '',
       bodyHtml: md.body_html ?? null,
       inReplyTo: null,
@@ -1929,81 +1954,16 @@ export class SendWorker {
   }
 
   /**
-   * Prior sent campaign / priority jobs for this campaign+lead (oldest first).
-   * Used for subject continuity (first) and cumulative RFC threading (all).
+   * Conversation timeline for one job. Wrapped as a method so tests and
+   * harnesses can supply a timeline without standing up both tables.
    */
-  private async getSentJobsForCampaignLeadThread(
-    campaignId: string,
-    leadId: string,
-  ): Promise<SentThreadAncestorJob[]> {
-    const { data, error } = await this.supabase
-      .from('message_jobs')
-      .select('id, provider_message_id, submitted_message_id, message_data, sent_at, scheduled_at')
-      .eq('campaign_id', campaignId)
-      .eq('lead_id', leadId)
-      .eq('status', 'sent')
-      .or(
-        'message_type.is.null,message_type.eq.campaign,message_type.eq.campaign_priority,message_type.eq.campaign_reply',
-      )
-      .order('sent_at', { ascending: true, nullsFirst: false })
-      .order('scheduled_at', { ascending: true });
-
-    if (error || !data) return [];
-    return data as SentThreadAncestorJob[];
-  }
-
-  /**
-   * Build In-Reply-To + cumulative References from ordered prior wire Message-IDs.
-   * Degrades to root-only when only the first ancestor has an ID.
-   */
-  private buildOutboundThreadingHeaders(
-    priorSentJobs: SentThreadAncestorJob[],
-  ): { inReplyTo: string; references: string; referenceMessageIds: string[] } | null {
-    const ancestorIds = priorSentJobs
-      .map((job) =>
-        pickWireMessageId({
-          providerMessageId: job.provider_message_id,
-          submittedMessageId: job.submitted_message_id ?? job.message_data?.submitted_message_id,
-        }),
-      )
-      .filter((id): id is string => Boolean(id));
-
-    if (ancestorIds.length === 0) return null;
-    return buildReferencesFromAncestorIds(ancestorIds);
-  }
-
-  /**
-   * Prefer message_jobs.message_data.sent_subject; fall back to the sent event payload
-   * for jobs finalized before sent_subject was persisted on the job row.
-   */
-  private async resolveFirstSentSubjectForFollowUp(
-    threadFirst: { id: string; message_data: any },
-  ): Promise<string | null> {
-    const fromJob =
-      typeof threadFirst.message_data?.sent_subject === 'string'
-        ? threadFirst.message_data.sent_subject.trim()
-        : '';
-    if (fromJob) return fromJob;
-
-    const { data, error } = await this.supabase
-      .from('events')
-      .select('event_data')
-      .eq('message_job_id', threadFirst.id)
-      .eq('event_type', 'sent')
-      .order('created_at', { ascending: true })
-      .limit(1)
-      .maybeSingle();
-
-    if (error) {
-      throw new Error(
-        `Failed to load sent event for message job ${threadFirst.id}: ${error.message}`,
-      );
-    }
-
-    const eventData = (data as { event_data?: Record<string, unknown> } | null)?.event_data;
-    const fromEvent =
-      typeof eventData?.sent_subject === 'string' ? eventData.sent_subject.trim() : '';
-    return fromEvent || null;
+  private async loadThreadTimelineForJob(params: {
+    campaignId?: string | null;
+    leadId?: string | null;
+    threadId?: string | null;
+    lead?: LeadLike | null;
+  }): Promise<ThreadTimelineEntry[]> {
+    return loadThreadTimeline({ supabase: this.supabase, ...params });
   }
 
   private async persistSentThreadingMetadataOnMessageJob(
@@ -2015,6 +1975,9 @@ export class SendWorker {
       referenceMessageIds: string[] | null;
       threadTopic: string | null;
       submittedMessageId: string;
+      threadingDecision?: ThreadingDecision;
+      parentEmailMessageId?: string | null;
+      conversationRootMessageId?: string | null;
     },
   ): Promise<void> {
     const existing =
@@ -2029,6 +1992,10 @@ export class SendWorker {
       reference_message_ids: meta.referenceMessageIds ?? undefined,
       thread_topic: meta.threadTopic ?? undefined,
       submitted_message_id: meta.submittedMessageId,
+      // Provenance: why this send threaded the way it did.
+      threading_decision: meta.threadingDecision ?? undefined,
+      parent_email_message_id: meta.parentEmailMessageId ?? undefined,
+      conversation_root_message_id: meta.conversationRootMessageId ?? undefined,
     };
     const { error } = await this.supabase
       .from('message_jobs')

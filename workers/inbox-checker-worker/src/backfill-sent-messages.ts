@@ -5,6 +5,7 @@ import {
 } from '@furnace/slack-lib';
 import {
   buildReferencesFromAncestorIds,
+  buildTimelineFromRows,
   formatReferencesHeader,
   normalizeMessageId,
   normalizeThreadTopic,
@@ -73,9 +74,15 @@ export async function backfillSentMessages(
     .in('message_job_id', jobIds);
 
   const eventByJobId = new Map<string, any>();
+  const eventSentSubjectByJobId = new Map<string, string | null>();
   if (sentEvents) {
     for (const evt of sentEvents) {
       eventByJobId.set(evt.message_job_id, evt.event_data);
+      const sentSubject = evt.event_data?.sent_subject;
+      eventSentSubjectByJobId.set(
+        evt.message_job_id,
+        typeof sentSubject === 'string' ? sentSubject : null,
+      );
     }
   }
 
@@ -94,14 +101,25 @@ export async function backfillSentMessages(
 
   const { data: leadRow } = await supabase
     .from('leads')
-    .select('email, name')
+    .select('email, name, first_name, last_name, company_name, website, custom_lead_data')
     .eq('id', leadId)
     .maybeSingle();
 
   const leadEmail = leadRow?.email || '';
   const leadName = leadRow?.name || null;
 
-  const wireIds: string[] = [];
+  // Epoch-tagged view of these sends. A follow-up with an explicit subject opened
+  // a new conversation, so ancestry must not reach back across that boundary.
+  const timeline = buildTimelineFromRows({
+    sentJobs,
+    eventSentSubjectByJobId,
+    lead: leadRow ?? null,
+  });
+  const timelineIndexByJobId = new Map<string, number>();
+  timeline.forEach((entry, index) => {
+    if (entry.messageJobId) timelineIndexByJobId.set(entry.messageJobId, index);
+  });
+
   let insertedCount = 0;
   for (let i = 0; i < sentJobs.length; i++) {
     const job = sentJobs[i];
@@ -109,7 +127,6 @@ export async function backfillSentMessages(
       providerMessageId: job.provider_message_id,
       submittedMessageId: job.submitted_message_id ?? job.message_data?.submitted_message_id,
     });
-    if (wireId) wireIds.push(wireId);
 
     if (existingJobIds.has(job.id)) continue;
 
@@ -117,12 +134,23 @@ export async function backfillSentMessages(
     const md = job.message_data || {};
     const nc = md.node_config || {};
 
-    const jobSubject = evtData?.sent_subject || md.subject || nc.subject || '(No Subject)';
+    const timelineIndex = timelineIndexByJobId.get(job.id);
+    const entry = timelineIndex == null ? null : timeline[timelineIndex]!;
+
+    // Rule 15: never let a raw template become a stored subject.
+    const jobSubject = entry?.deliveredSubject ?? '';
     const jobBodyHtml = evtData?.sent_body_html || nc.body || nc.template || '';
     const jobBodyText = evtData?.sent_body_text || nc.body || nc.template || '';
 
-    const normalizedProviderId = wireId;
-    const ancestors = wireIds.slice(0, -1);
+    const ancestors =
+      entry && timelineIndex != null
+        ? timeline
+            .slice(0, timelineIndex)
+            .filter(
+              (prior) => prior.conversationRootMessageId === entry.conversationRootMessageId,
+            )
+            .map((prior) => prior.wireMessageId)
+        : [];
     const threading = ancestors.length > 0 ? buildReferencesFromAncestorIds(ancestors) : null;
     const inReplyTo = threading?.inReplyTo ? normalizeMessageId(threading.inReplyTo) : null;
     const msgReferences =
@@ -147,11 +175,12 @@ export async function backfillSentMessages(
       subject: jobSubject,
       body_text: jobBodyText,
       body_html: jobBodyHtml,
-      message_id: normalizedProviderId,
+      message_id: wireId,
       in_reply_to: inReplyTo,
       message_references: msgReferences,
       reference_message_ids: referenceMessageIds.length > 0 ? referenceMessageIds : null,
       thread_topic: threadTopic,
+      conversation_root_message_id: entry?.conversationRootMessageId ?? null,
       received_at: job.sent_at || job.created_at,
       headers: {},
       attachments: [],

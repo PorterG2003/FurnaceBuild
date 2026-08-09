@@ -79,6 +79,8 @@ export interface MessageJob {
   error_message: string | null;
   message_data: {
     subject?: string;
+    /** Exact subject line used on a successful send. */
+    sent_subject?: string;
     source?: string;
     node_config?: {
       subject?: string;

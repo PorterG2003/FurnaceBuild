@@ -51,9 +51,10 @@ async function insertReservedCampaignJob(opts: {
   graph: Awaited<ReturnType<CampaignDbHarness['createCampaignGraph']>>;
   lead: { enrollmentId: string; leadId: string };
   mailboxId: string;
-  nodeId: string;
+  nodeId: string | null;
   subject: string;
   bodyHtml?: string;
+  messageType?: string;
 }) {
   const messageJobId = randomUUID();
   const scheduledAt = new Date().toISOString();
@@ -75,7 +76,7 @@ async function insertReservedCampaignJob(opts: {
     provider_message_id: null,
     error_message: null,
     retry_count: 0,
-    message_type: 'campaign',
+    message_type: opts.messageType ?? 'campaign',
     send_wait_reason: null,
     interval_id: null,
     throttle_bypass_next_attempt: true,
@@ -298,7 +299,7 @@ test('(No subject) follow-up reuses exact first sent_subject', async () => {
   }
 });
 
-test('intentional follow-up subject is preserved while thread headers still reference first', async () => {
+test('intentional follow-up subject starts a new thread with no inherited headers', async () => {
   const harness = new CampaignDbHarness({
     namespace: createCampaignTestNamespace('followup-intentional'),
   });
@@ -340,8 +341,73 @@ test('intentional follow-up subject is preserved while thread headers still refe
     assert.equal(captures.length, 2);
     assert.equal(captures[1]!.subject, 'Brand new subject');
     assert.notEqual(captures[1]!.subject, firstJob.message_data.sent_subject);
-    assert.equal(captures[1]!.inReplyTo, firstJob.provider_message_id);
-    assert.equal(captures[1]!.references, firstJob.provider_message_id);
+    // Contract: explicit subject starts a new conversation — no inherited headers.
+    assert.equal(captures[1]!.inReplyTo, null);
+    assert.equal(captures[1]!.references, null);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test('empty → explicit rendered subject → blank priority continues newest epoch only', async () => {
+  const harness = new CampaignDbHarness({
+    namespace: createCampaignTestNamespace('followup-epoch'),
+  });
+
+  try {
+    const graph = await createThreadingGraph(harness, 'epoch-target');
+    const lead = graph.leadsByKey.get('epoch-target')!;
+    const mailboxId = graph.mailboxIdsByKey.get('mailbox-1')!;
+    const email1NodeId = graph.nodeIdsByFlowNodeId.get('email-1')!;
+    const email2NodeId = graph.nodeIdsByFlowNodeId.get('email-2')!;
+
+    const job1Id = await insertReservedCampaignJob({
+      harness,
+      graph,
+      lead,
+      mailboxId,
+      nodeId: email1NodeId,
+      subject: '',
+    });
+    const job2Id = await insertReservedCampaignJob({
+      harness,
+      graph,
+      lead,
+      mailboxId,
+      nodeId: email2NodeId,
+      subject: '{New angle {{first_name}}|Fresh take {{first_name}}}',
+    });
+    const job3Id = await insertReservedCampaignJob({
+      harness,
+      graph,
+      lead,
+      mailboxId,
+      nodeId: null,
+      subject: '',
+      messageType: 'campaign_priority',
+    });
+
+    const captures: CapturedSend[] = [];
+    const sendWorker = createSendWorker(harness, captures, (i) =>
+      i === 0 ? '<epoch-root@example.com>' : i === 1 ? '<epoch-new@example.com>' : '<epoch-blank@example.com>',
+    );
+
+    await sendWithPinnedRandom(sendWorker, await loadJob(harness, job1Id), 0);
+    assert.equal(captures[0]!.subject, '');
+    assert.equal(captures[0]!.inReplyTo, null);
+
+    await sendWithPinnedRandom(sendWorker, await loadJob(harness, job2Id), 0);
+    assert.equal(captures[1]!.subject, 'New angle Casey');
+    assert.equal(captures[1]!.inReplyTo, null, 'explicit subject starts new thread');
+    assert.equal(captures[1]!.references, null);
+
+    await sendWithPinnedRandom(sendWorker, await loadJob(harness, job3Id), 0.5);
+    assert.equal(
+      captures[2]!.subject,
+      'New angle Casey',
+      'blank after explicit must reuse newest epoch, not empty root',
+    );
+    assert.equal(captures[2]!.inReplyTo, '<epoch-new@example.com>');
   } finally {
     await harness.cleanup();
   }

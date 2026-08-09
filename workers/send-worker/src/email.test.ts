@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { SendMailOptions } from 'nodemailer';
+import MailComposer from 'nodemailer/lib/mail-composer/index.js';
+import { simpleParser } from 'mailparser';
 import {
   processInlineImagesForEmail,
   sendEmail,
@@ -13,6 +15,48 @@ type CapturedMail = {
   text?: SendMailOptions['text'];
   html?: SendMailOptions['html'];
 };
+
+function normalizeForSemanticCompare(value: string | null | undefined): string {
+  return String(value ?? '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/\r\n/g, '\n')
+    .replace(/[\n\r\t]+/g, ' ')
+    .replace(/[ \t]+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+function assertMimeSemanticParity(
+  bodyText: string | null | undefined,
+  bodyHtml: string | null | undefined,
+  label = 'MIME body',
+): void {
+  const text = normalizeForSemanticCompare(bodyText);
+  const html = normalizeForSemanticCompare(bodyHtml);
+  assert.equal(
+    html,
+    text,
+    `${label}: text/plain and text/html must be semantically equal\n text=${JSON.stringify(text)}\n html=${JSON.stringify(html)}`,
+  );
+}
+
+async function captureRawMime(options: SendMailOptions): Promise<Buffer> {
+  const composer = new MailComposer(options);
+  const compiled = composer.compile();
+  return await new Promise<Buffer>((resolve, reject) => {
+    compiled.build((err: Error | null, message: Buffer) => {
+      if (err) reject(err);
+      else resolve(message);
+    });
+  });
+}
 
 function createMailbox(overrides: Partial<Mailbox> = {}): Mailbox {
   return {
@@ -125,6 +169,50 @@ describe('sendEmail', () => {
     assert.equal(capturedMail!.references, '<root@furnace.build> <parent@furnace.build>');
     assert.equal((capturedMail!.headers as any)['Thread-Topic'], 'Checking in');
     assert.equal((capturedMail!.headers as any)['In-Reply-To'], undefined);
+
+    const raw = await captureRawMime(capturedMail!);
+    const parsed = await simpleParser(raw);
+    assert.equal(parsed.subject, 'Checking in');
+    assert.equal(/\{[^{}\n]*\|[^{}\n]*\}/.test(String(parsed.subject ?? '')), false);
+    assert.equal(String(parsed.inReplyTo ?? '').replace(/^<|>$/g, ''), 'parent@furnace.build');
+    const refs = Array.isArray(parsed.references)
+      ? parsed.references
+      : String(parsed.references ?? '')
+          .split(/\s+/)
+          .filter(Boolean);
+    assert.ok(refs.some((r) => String(r).includes('parent@furnace.build')));
+    assertMimeSemanticParity(String(parsed.text ?? ''), String(parsed.html ?? ''), 'parsed MIME');
+  });
+
+  it('raw MIME text/html parts stay semantically equivalent for mismatched-looking html', async () => {
+    let capturedMail: SendMailOptions | null = null;
+    const transporter = {
+      async sendMail(options: SendMailOptions) {
+        capturedMail = options;
+        return { messageId: '<provider@example.com>' };
+      },
+    };
+
+    await sendEmail(
+      transporter as any,
+      createMailbox(),
+      createJob({ id: '22222222-2222-2222-2222-222222222222' }),
+      createLead(),
+      'Parity check',
+      'Hello Casey\n\nThanks,\nPorter',
+      null,
+      null,
+      {
+        bodyHtml: '<p>Hello Casey</p><p>Thanks,<br>Porter</p>',
+        bodyText: 'Hello Casey\n\nThanks,\nPorter',
+      }
+    );
+
+    assert.ok(capturedMail);
+    const raw = await captureRawMime(capturedMail!);
+    const parsed = await simpleParser(raw);
+    assert.equal(parsed.subject, 'Parity check');
+    assertMimeSemanticParity(String(parsed.text ?? ''), String(parsed.html ?? ''), 'MIME parity');
   });
 
   it('derives text from rendered html when explicit bodyText is absent', async () => {

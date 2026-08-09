@@ -6,6 +6,7 @@ import { useOnboardingTarget } from '@/components/onboarding/useOnboardingTarget
 import { TARGETS } from '@/lib/onboarding/types';
 import { ThreadItem } from './ThreadItem';
 import { ThreadListSkeleton } from './MessageListSkeleton';
+import { NO_SUBJECT_DISPLAY } from '@/lib/email';
 import { normalizeInboxSearchQuery, resolveThreadCardTitle } from '@/lib/inbox';
 import type { EmailThread } from '@/lib/supabase/types';
 import type { ThreadTag } from '@/lib/supabase/services/thread-tags';
@@ -217,7 +218,7 @@ export function InboxThreadList({
                   leadEmail: thread.lead_id ? leadEmailById[thread.lead_id] : null,
                   mailboxEmail: thread.mailbox_id ? mailboxEmailById[thread.mailbox_id] : null,
                   subject: thread.subject,
-                  fallbackTitle: '(No subject)',
+                  fallbackTitle: NO_SUBJECT_DISPLAY,
                 })}
                 campaignName={thread.campaign_id ? campaigns.find((c) => c.id === thread.campaign_id)?.name ?? null : null}
                 sourceLabel={thread.smartlead_lead_id != null ? 'Smartlead' : null}

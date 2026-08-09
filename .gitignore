@@ -87,3 +87,9 @@ lib/client-api/webhooks/*.d.ts.map
 
 # scripts
 scripts/lead-sourcing/
+!scripts/lead-sourcing/
+scripts/lead-sourcing/*/
+!scripts/lead-sourcing/linkedin-webinar-ads/
+!scripts/lead-sourcing/linkedin-webinar-ads/**
+scripts/lead-sourcing/linkedin-webinar-ads/node_modules/
+scripts/lead-sourcing/linkedin-webinar-ads/output/

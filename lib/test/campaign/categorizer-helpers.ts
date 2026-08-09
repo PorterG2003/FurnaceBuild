@@ -156,11 +156,24 @@ export function createTestSchedulerWorker(
   });
 }
 
+export type CapturedCampaignSend = {
+  jobId: string;
+  subject: string;
+  inReplyTo: string | null;
+  references: string | null;
+  bodyText?: string | null;
+  bodyHtml?: string | null;
+  submittedMessageId: string;
+  providerMessageId: string;
+};
+
 export function createTestSendWorker(
   harness: CampaignDbHarness,
   options?: {
     failingJobIds?: Set<string>;
     onSend?: (jobId: string) => void;
+    /** When provided, every campaign SMTP invocation is appended here. */
+    captures?: CapturedCampaignSend[];
   },
 ): SendWorker {
   const sendWorker = new SendWorker({
@@ -170,17 +183,45 @@ export function createTestSendWorker(
       batchSize: 100,
       pollIntervalMs: 1000,
     }) as any,
-    campaignEmailSender: async (_transporter: unknown, _mailbox: unknown, job: any) => {
+    campaignEmailSender: async (
+      _transporter: unknown,
+      _mailbox: unknown,
+      job: any,
+      _lead?: unknown,
+      subject?: string,
+      emailBody?: string,
+      inReplyTo?: string | null,
+      references?: string | null,
+      sendOptions?: {
+        bodyHtml?: string;
+        bodyText?: string;
+        messageId?: string;
+        threadTopic?: string;
+      },
+    ) => {
       if (options?.failingJobIds?.has(job.id)) {
         throw new Error('Synthetic provider failure');
       }
       options?.onSend?.(job.id);
-      const id = `<${job.id}@furnace.test>`;
+      const id = sendOptions?.messageId ?? `<${job.id}@furnace.test>`;
+      if (options?.captures) {
+        options.captures.push({
+          jobId: job.id,
+          subject: String(subject ?? ''),
+          inReplyTo: inReplyTo ?? null,
+          references: references ?? null,
+          bodyText: sendOptions?.bodyText ?? (sendOptions?.bodyHtml ? null : (emailBody ?? null)),
+          bodyHtml: sendOptions?.bodyHtml ?? null,
+          submittedMessageId: id,
+          providerMessageId: id,
+        });
+      }
       return { submittedMessageId: id, providerMessageId: id };
     },
   });
   (sendWorker as any).smtpPool = {
     getTransporter: async () => ({}),
+    markMessageSent: () => {},
     closeAll: async () => {},
   };
   return sendWorker;

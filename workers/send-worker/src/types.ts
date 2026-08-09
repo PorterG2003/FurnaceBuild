@@ -86,6 +86,12 @@ export interface MessageJob {
     reference_message_ids?: string[];
     thread_topic?: string;
     submitted_message_id?: string;
+    /** Why this send threaded the way it did, for incident triage. */
+    threading_decision?: 'root' | 'continue-epoch' | 'new-epoch' | 'explicit-parent';
+    /** email_messages.id of the parent, when the parent was a stored row. */
+    parent_email_message_id?: string;
+    /** Wire Message-ID of the first message in this send's subject epoch. */
+    conversation_root_message_id?: string;
     attachments?: Array<{ filename: string; contentType?: string; content: string }>;
     /** Test harness flag: skip SMTP and still finalize as sent. */
     skip_smtp?: boolean;

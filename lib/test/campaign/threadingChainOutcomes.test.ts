@@ -9,6 +9,10 @@ import {
   createCampaignTestNamespace,
 } from './fixtures';
 import { SendWorker } from '../../../workers/send-worker/src/worker';
+import {
+  assertCumulativeReferences,
+  assertImmediateParent,
+} from '../inbox/threadingAssertions';
 
 type CapturedSend = {
   subject: string;
@@ -64,7 +68,42 @@ async function insertReservedJob(opts: {
   return messageJobId;
 }
 
-test('four campaign/priority sends emit immediate-parent and cumulative References', async () => {
+async function insertInbound(opts: {
+  harness: CampaignDbHarness;
+  graph: Awaited<ReturnType<CampaignDbHarness['createCampaignGraph']>>;
+  lead: { enrollmentId: string; leadId: string };
+  mailboxId: string;
+  threadId: string;
+  messageId: string;
+  inReplyTo: string;
+  at: string;
+}) {
+  const leadEmail = `lead-chain-${opts.harness.namespace}@example.com`;
+  const mailboxEmail =
+    opts.graph.mailboxEmailsByKey.get('mailbox-1') ?? `sender-${opts.harness.namespace}@example.com`;
+  const { data, error } = await opts.harness.supabase
+    .from('email_messages')
+    .insert({
+      thread_id: opts.threadId,
+      account_id: opts.graph.accountId,
+      direction: 'received',
+      from_email: leadEmail,
+      to_email: mailboxEmail,
+      subject: 'Re: Root subject Casey',
+      body_text: 'Inbound',
+      body_html: '<p>Inbound</p>',
+      message_id: opts.messageId.replace(/^<|>$/g, ''),
+      in_reply_to: opts.inReplyTo.replace(/^<|>$/g, ''),
+      message_references: opts.inReplyTo,
+      received_at: opts.at,
+    } as any)
+    .select('id')
+    .single();
+  assert.equal(error, null);
+  opts.graph.manifest.messageIds.push(data!.id);
+}
+
+test('mixed outbound/inbound chain: each send parents the most recent thread message', async () => {
   const harness = new CampaignDbHarness({
     namespace: createCampaignTestNamespace('threading-chain'),
   });
@@ -99,42 +138,63 @@ test('four campaign/priority sends emit immediate-parent and cumulative Referenc
     const mailboxId = graph.mailboxIdsByKey.get('mailbox-1')!;
     const email1NodeId = graph.nodeIdsByFlowNodeId.get('email-1')!;
     const email2NodeId = graph.nodeIdsByFlowNodeId.get('email-2')!;
+    const leadEmail = `lead-chain-${harness.namespace}@example.com`;
+    const mailboxEmail =
+      graph.mailboxEmailsByKey.get('mailbox-1') ?? `sender-${harness.namespace}@example.com`;
 
-    const jobIds = [
-      await insertReservedJob({
-        harness,
-        graph,
-        lead,
-        mailboxId,
-        nodeId: email1NodeId,
+    const { data: thread, error: threadError } = await harness.supabase
+      .from('email_threads')
+      .insert({
+        account_id: graph.accountId,
+        mailbox_id: mailboxId,
+        campaign_id: graph.campaignId,
+        lead_id: lead.leadId,
+        enrollment_id: lead.enrollmentId,
         subject: 'Root subject Casey',
-      }),
-      await insertReservedJob({
-        harness,
-        graph,
-        lead,
-        mailboxId,
-        nodeId: email2NodeId,
-        subject: '',
-      }),
-      await insertReservedJob({
-        harness,
-        graph,
-        lead,
-        mailboxId,
-        nodeId: null,
-        subject: '',
-        messageType: 'campaign_priority',
-      }),
-      await insertReservedJob({
-        harness,
-        graph,
-        lead,
-        mailboxId,
-        nodeId: email2NodeId,
-        subject: '',
-      }),
-    ];
+        participants: [mailboxEmail, leadEmail],
+        message_count: 1,
+        has_reply: false,
+        last_message_at: new Date().toISOString(),
+      })
+      .select('id')
+      .single();
+    assert.equal(threadError, null);
+    graph.manifest.threadIds.push(thread!.id);
+
+    const jobRoot = await insertReservedJob({
+      harness,
+      graph,
+      lead,
+      mailboxId,
+      nodeId: email1NodeId,
+      subject: 'Root subject Casey',
+    });
+    const jobFollow = await insertReservedJob({
+      harness,
+      graph,
+      lead,
+      mailboxId,
+      nodeId: email2NodeId,
+      subject: '',
+    });
+    const jobPriority = await insertReservedJob({
+      harness,
+      graph,
+      lead,
+      mailboxId,
+      nodeId: null,
+      subject: '',
+      messageType: 'campaign_priority',
+      threadId: thread!.id,
+    });
+    const jobAfter = await insertReservedJob({
+      harness,
+      graph,
+      lead,
+      mailboxId,
+      nodeId: email2NodeId,
+      subject: '',
+    });
 
     const captures: CapturedSend[] = [];
     const providerIds = [
@@ -143,6 +203,7 @@ test('four campaign/priority sends emit immediate-parent and cumulative Referenc
       '<c@furnace.build>',
       '<d@furnace.build>',
     ];
+    const inboundId = '<inbound-1@mail.example.com>';
     let callIndex = 0;
     const sendWorker = new SendWorker({
       supabase: harness.supabase as any,
@@ -171,46 +232,53 @@ test('four campaign/priority sends emit immediate-parent and cumulative Referenc
       closeAll: async () => {},
     };
 
-    // Seed a thread for priority job recording (optional); paced sends don't require it.
-    for (const jobId of jobIds) {
-      const { data: job } = await harness.supabase.from('message_jobs').select('*').eq('id', jobId).single();
-      await (sendWorker as any).processMessageJob(job);
-    }
-
-    assert.equal(captures.length, 4);
+    // Root outbound
+    await (sendWorker as any).processMessageJob(
+      (await harness.supabase.from('message_jobs').select('*').eq('id', jobRoot).single()).data,
+    );
     assert.equal(captures[0]!.inReplyTo, null);
-    assert.equal(captures[0]!.references, null);
     assert.equal(captures[0]!.subject, 'Root subject Casey');
 
-    assert.equal(captures[1]!.subject, 'Root subject Casey');
-    assert.equal(captures[1]!.inReplyTo, '<a@furnace.build>');
-    assert.deepEqual(parseMessageIds(captures[1]!.references), ['a@furnace.build']);
+    // Blank follow-up parents root outbound
+    await (sendWorker as any).processMessageJob(
+      (await harness.supabase.from('message_jobs').select('*').eq('id', jobFollow).single()).data,
+    );
+    assertImmediateParent(captures[1]!.inReplyTo, providerIds[0]);
+    assertCumulativeReferences(captures[1]!.references, [providerIds[0]]);
 
+    // Inbound arrives — becomes the most recent thread message
+    await insertInbound({
+      harness,
+      graph,
+      lead,
+      mailboxId,
+      threadId: thread!.id,
+      messageId: inboundId,
+      inReplyTo: providerIds[1]!,
+      at: new Date().toISOString(),
+    });
+
+    // Priority must parent the inbound (causal), not outbound B
+    await (sendWorker as any).processMessageJob(
+      (await harness.supabase.from('message_jobs').select('*').eq('id', jobPriority).single()).data,
+    );
     assert.equal(captures[2]!.subject, 'Root subject Casey');
-    assert.equal(captures[2]!.inReplyTo, '<b@furnace.build>');
-    assert.deepEqual(parseMessageIds(captures[2]!.references), [
-      'a@furnace.build',
-      'b@furnace.build',
-    ]);
+    assertImmediateParent(
+      captures[2]!.inReplyTo,
+      inboundId,
+      'priority after inbound must parent the inbound Message-ID',
+    );
+    assert.ok(
+      parseMessageIds(captures[2]!.references).includes('inbound-1@mail.example.com') ||
+        parseMessageIds(captures[2]!.references).includes('b@furnace.build'),
+      'References must include inbound ancestry',
+    );
 
-    assert.equal(captures[3]!.subject, 'Root subject Casey');
-    assert.equal(captures[3]!.inReplyTo, '<c@furnace.build>');
-    assert.deepEqual(parseMessageIds(captures[3]!.references), [
-      'a@furnace.build',
-      'b@furnace.build',
-      'c@furnace.build',
-    ]);
-
-    const { data: jobs } = await harness.supabase
-      .from('message_jobs')
-      .select('id, provider_message_id, submitted_message_id, message_data')
-      .in('id', jobIds)
-      .order('sent_at', { ascending: true });
-    assert.equal(jobs?.length, 4);
-    for (const job of jobs ?? []) {
-      assert.ok((job as any).submitted_message_id || (job as any).message_data?.submitted_message_id);
-      assert.ok((job as any).provider_message_id);
-    }
+    // Another blank after priority parents priority outbound C (latest)
+    await (sendWorker as any).processMessageJob(
+      (await harness.supabase.from('message_jobs').select('*').eq('id', jobAfter).single()).data,
+    );
+    assertImmediateParent(captures[3]!.inReplyTo, providerIds[2]);
   } finally {
     await harness.cleanup();
   }

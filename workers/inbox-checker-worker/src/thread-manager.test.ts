@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { containsUnresolvedTemplate } from '@furnace/email-lib';
 import { ThreadManager } from './thread-manager.js';
 import type { Mailbox, MessageJob, ProcessedMessage } from './types.js';
 
@@ -25,6 +26,20 @@ type RpcCall = {
   fn: string;
   args: Record<string, unknown>;
 };
+
+/** Payload of the first write (insert/update/upsert) recorded against a table. */
+function findWritePayload(
+  calls: Array<QueryCall | RpcCall>,
+  table: string,
+): Record<string, unknown> | undefined {
+  const call = calls.find(
+    (candidate): candidate is QueryCall =>
+      candidate.kind === 'query' &&
+      candidate.table === table &&
+      candidate.insertPayloads.length > 0,
+  );
+  return call?.insertPayloads[0] as Record<string, unknown> | undefined;
+}
 
 class MockQueryBuilder implements PromiseLike<Response> {
   constructor(
@@ -891,6 +906,8 @@ test('backfillSentMessages stores rendered event payloads for sent campaign mess
     message_references: null,
     reference_message_ids: null,
     thread_topic: 'Hello Casey',
+    // A single send is the root of its own epoch.
+    conversation_root_message_id: 'abc@example.com',
     received_at: '2026-04-05T01:00:00.000Z',
     headers: {},
     attachments: [],
@@ -945,6 +962,183 @@ test('backfillSentMessages falls back to raw node config when no sent event exis
   assert.equal(inserted.subject, 'Fallback subject');
   assert.equal(inserted.body_text, '{Hey|Hi} {{first_name}}');
   assert.equal(inserted.body_html, '{Hey|Hi} {{first_name}}');
+});
+
+test('backfillSentMessages prefers message_data.sent_subject over raw node_config when event is missing', async () => {
+  const supabase = new MockSupabase([
+    {
+      data: [
+        {
+          id: 'job-1',
+          provider_message_id: '<abc@example.com>',
+          sent_at: '2026-04-05T01:00:00.000Z',
+          created_at: '2026-04-05T00:00:00.000Z',
+          message_data: {
+            sent_subject: 'Hello Casey',
+            node_config: {
+              subject: '{Hello {{first_name}}|Hi {{first_name}}}',
+              body: 'Body',
+            },
+          },
+          mailbox_id: 'mailbox-1',
+          lead_id: 'lead-1',
+        },
+      ],
+    },
+    { data: [] }, // no sent events
+    { data: [] },
+    { data: { email: 'lead@example.com', name: 'Lead' }, error: null },
+    { data: null, error: null },
+    { count: 1, error: null },
+    { data: null, error: null },
+  ]);
+  const manager = new ThreadManager(supabase as any);
+
+  await (manager as any).backfillSentMessages(
+    { id: 'thread-1', account_id: 'account-1' },
+    'campaign-1',
+    'lead-1',
+    '2026-04-06T00:00:00.000Z',
+    createMailbox()
+  );
+
+  const insertCall = supabase.calls[4] as QueryCall;
+  const inserted = insertCall.insertPayloads[0] as Record<string, unknown>;
+  assert.equal(inserted.subject, 'Hello Casey');
+  assert.doesNotMatch(String(inserted.subject), /\{.*\|.*\}/);
+});
+
+test('getOrCreateThread prefers event sent_subject, then message_data.sent_subject, never raw spintax', async () => {
+  const messageJob = {
+    id: 'job-1',
+    campaign_id: 'campaign-1',
+    lead_id: 'lead-1',
+    enrollment_id: 'enrollment-1',
+    mailbox_id: 'mailbox-1',
+    sent_at: '2026-04-05T01:00:00.000Z',
+    created_at: '2026-04-05T00:00:00.000Z',
+    message_data: {
+      sent_subject: 'Hello Casey',
+      node_config: {
+        subject: '{Hello {{first_name}}|Hi {{first_name}}}',
+      },
+    },
+    mailboxes: { account_id: 'account-1', email_address: 'porterg@furnaceoutbound.com' },
+    leads: { email: 'lead@example.com' },
+  };
+
+  // No existing thread; no sent event; create path must use sent_subject.
+  const supabase = new MockSupabase([
+    { data: [] }, // existing by message_job_id
+    { data: [] }, // existing by campaign+lead
+    { data: null }, // firstSentEvent missing
+    {
+      data: {
+        id: 'thread-1',
+        account_id: 'account-1',
+        subject: 'Hello Casey',
+      },
+      error: null,
+    },
+    { data: [] }, // backfill jobs
+  ]);
+  const manager = new ThreadManager(supabase as any);
+  const thread = await (manager as any).getOrCreateThread(
+    messageJob,
+    createMailbox(),
+    '2026-04-06T00:00:00.000Z'
+  );
+  assert.equal(thread.subject, 'Hello Casey');
+
+  const inserted = findWritePayload(supabase.calls, 'email_threads');
+  assert.ok(inserted, 'must insert email_threads');
+  assert.equal(inserted.subject, 'Hello Casey');
+  assert.equal(containsUnresolvedTemplate(String(inserted.subject)), false);
+});
+
+test('getOrCreateThread rejects raw template subject when only node_config.subject is available without rendered fallback', async () => {
+  const messageJob = {
+    id: 'job-raw',
+    campaign_id: 'campaign-1',
+    lead_id: 'lead-1',
+    enrollment_id: 'enrollment-1',
+    mailbox_id: 'mailbox-1',
+    sent_at: '2026-04-05T01:00:00.000Z',
+    created_at: '2026-04-05T00:00:00.000Z',
+    message_data: {
+      node_config: {
+        subject: '{Hello {{first_name}}|Hi {{first_name}}}',
+      },
+    },
+    mailboxes: { account_id: 'account-1', email_address: 'porterg@furnaceoutbound.com' },
+    leads: { email: 'lead@example.com' },
+  };
+
+  const supabase = new MockSupabase([
+    { data: [] }, // no thread for this message_job
+    { data: [] }, // no thread for this campaign+lead
+    { data: null }, // no sent event
+    { data: { id: 'thread-raw', account_id: 'account-1' }, error: null }, // insert
+    { data: [] }, // backfill jobs
+  ]);
+  const manager = new ThreadManager(supabase as any);
+  await (manager as any).getOrCreateThread(
+    messageJob,
+    createMailbox(),
+    '2026-04-06T00:00:00.000Z'
+  );
+
+  const inserted = findWritePayload(supabase.calls, 'email_threads');
+  assert.ok(inserted, 'must insert email_threads');
+  const stored = String(inserted.subject ?? '');
+  // Contract: unresolved spintax must never become the thread title. Use the
+  // shared detector, since a flat regex cannot see a mustache nested in spintax.
+  assert.equal(containsUnresolvedTemplate(stored), false, String(stored));
+  assert.match(String(stored), /^(Hello|Hi)$/, 'renders deterministically with no lead name');
+  assert.equal(stored, String(stored).trim(), 'no stray spacing from empty merge values');
+});
+
+test('getOrCreateThread heals an existing thread whose stored subject is a raw template', async () => {
+  const messageJob = {
+    id: 'job-heal',
+    campaign_id: 'campaign-1',
+    lead_id: 'lead-1',
+    enrollment_id: 'enrollment-1',
+    mailbox_id: 'mailbox-1',
+    sent_at: '2026-04-05T01:00:00.000Z',
+    created_at: '2026-04-05T00:00:00.000Z',
+    message_data: {
+      sent_subject: 'Hello Casey',
+      node_config: { subject: '{Hello {{first_name}}|Hi {{first_name}}}' },
+    },
+    mailboxes: { account_id: 'account-1', email_address: 'porterg@furnaceoutbound.com' },
+    leads: { email: 'lead@example.com', first_name: 'Casey' },
+  };
+
+  const supabase = new MockSupabase([
+    {
+      data: [
+        {
+          id: 'thread-stale',
+          account_id: 'account-1',
+          subject: '{Hello {{first_name}}|Hi {{first_name}}}',
+        },
+      ],
+    },
+    { data: [] }, // backfill jobs
+    { data: null, error: null }, // subject heal update
+  ]);
+  const manager = new ThreadManager(supabase as any);
+  const thread = await (manager as any).getOrCreateThread(
+    messageJob,
+    createMailbox(),
+    '2026-04-06T00:00:00.000Z'
+  );
+
+  assert.equal(thread.subject, 'Hello Casey');
+  const updated = findWritePayload(supabase.calls, 'email_threads');
+  assert.ok(updated, 'must rewrite the stale subject');
+  assert.equal(updated.subject, 'Hello Casey');
 });
 
 test('backfillSentMessages includes campaign sends after matched job sent_at when cutoff is reply time', async () => {

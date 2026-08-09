@@ -32,6 +32,7 @@ import { campaignHtmlDemoSeedModule } from './scenarios/campaign-html-demo';
 import { clientApiCampaignWalkthroughModule } from './scenarios/client-api-campaign-walkthrough/index';
 import { bucketInsightsSmokeModule } from './scenarios/bucket-insights-smoke';
 import { replaceLeadAttachSeedModule } from './scenarios/replace-lead-attach/index';
+import { threadingSubjectComposerModule } from './scenarios/threading-subject-composer/index';
 
 export const allModules: Record<string, SeedModule> = {
   minimal: minimalModule,
@@ -61,6 +62,7 @@ export const allModules: Record<string, SeedModule> = {
   bucketInsightsSmoke_seed: bucketInsightsSmokeModule,
   clientApiWalkthrough_seed: clientApiCampaignWalkthroughModule,
   replaceLeadAttach_seed: replaceLeadAttachSeedModule,
+  threadingSubjectComposer_seed: threadingSubjectComposerModule,
 };
 
 /**
@@ -80,6 +82,7 @@ export const scenarioModuleIds: Record<string, string[]> = {
   'bucket-insights-smoke': ['bucketInsightsSmoke_seed'],
   'client-api-campaign-walkthrough': ['clientApiWalkthrough_seed'],
   'replace-lead-attach': ['replaceLeadAttach_seed'],
+  'threading-subject-composer': ['threadingSubjectComposer_seed'],
 };
 
 function collectModuleIdsWithDeps(seedIds: string[]): Set<string> {

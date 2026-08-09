@@ -1,6 +1,7 @@
 import type { RefObject } from 'react';
 import { View, Pressable, Text } from 'react-native';
 import { SmartleadBadge } from '@/components/campaigns';
+import { NO_SUBJECT_DISPLAY } from '@/lib/email';
 import type { EmailThread } from '@/lib/supabase/types';
 import { formatLeadLastRepliedAt, hexToPillBackground } from '@/lib/inbox';
 import { getCategoryColor } from '@/lib/inbox/category-colors';
@@ -92,7 +93,7 @@ export function ThreadItem({
           className={`flex-1 text-base ${isUnread ? 'font-instrument-bold text-white' : 'font-instrument-semibold text-white'}`}
           numberOfLines={1}
         >
-          {cardTitle ?? thread.subject ?? '(No subject)'}
+          {cardTitle || thread.subject || NO_SUBJECT_DISPLAY}
         </Text>
       </View>
 

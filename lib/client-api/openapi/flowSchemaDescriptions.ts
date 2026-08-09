@@ -86,7 +86,7 @@ export function buildEmailVariantDescription(linkMode: DocLinkMode = 'docs'): st
   return [
     'One A/B variant of an email node. Variant ids must be stable UUIDs. Supports merge variables in `subject`, `template`, and `body_html`.',
     '',
-    'Empty `subject` reuses the first outbound subject and continues the thread.',
+    'Empty `subject` reuses the subject from the newest subject epoch and continues that conversation. An explicit non-empty `subject` starts a new conversation (no inherited reply headers).',
     '',
     `See ${guideLink('Email sequences', '/concepts/sequences/', linkMode)}.`,
   ].join('\n');

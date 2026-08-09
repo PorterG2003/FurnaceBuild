@@ -85,6 +85,32 @@ export {
 } from './threadHeaders.js';
 
 export {
+  NO_SUBJECT_DISPLAY,
+  buildForwardDefaultSubject,
+  buildReplyDefaultSubject,
+  buildThreadTimeline,
+  buildTimelineFromRows,
+  containsUnresolvedTemplate,
+  isNoSubjectPlaceholder,
+  newestEpochEntries,
+  resolveDeliveredSubject,
+  resolveOutboundThreading,
+  sentJobToTimelineInput,
+  threadMessageToTimelineInput,
+  type BuildTimelineFromRowsInput,
+  type ComposerSubjectInput,
+  type OutboundThreadingContext,
+  type ResolveDeliveredSubjectInput,
+  type ResolveOutboundThreadingInput,
+  type SentJobRow,
+  type ThreadMessageDirection,
+  type ThreadMessageRow,
+  type ThreadTimelineEntry,
+  type ThreadTimelineInput,
+  type ThreadingDecision,
+} from './threading/index.js';
+
+export {
   generateEmailVariantId,
   labelForVariantIndex,
   normalizeLegacyEmailNodeData,

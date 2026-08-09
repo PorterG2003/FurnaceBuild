@@ -430,3 +430,122 @@ test('empty body_html with populated template still renders campaign copy (API/M
     await harness.cleanup();
   }
 });
+
+test('SMTP capture has semantic text/html parity and no unresolved subject templates', async () => {
+  const harness = new CampaignDbHarness({
+    namespace: createCampaignTestNamespace('message-rendering-mime'),
+  });
+
+  try {
+    const graph = await harness.createCampaignGraph({
+      name: 'Message Rendering MIME Outcomes',
+      status: 'running',
+      flowKind: 'emailOnly',
+      mailboxes: [
+        {
+          key: 'mailbox-1',
+          emailAddress: `sender-${harness.namespace}@example.com`,
+          displayName: 'Sender',
+        },
+      ],
+      leads: [
+        buildCampaignLead({
+          key: 'mime-target',
+          email: `lead-mime-${harness.namespace}@example.com`,
+          firstName: 'Casey',
+          enrollment: buildCampaignEnrollment({
+            state: 'active',
+            currentFlowNodeId: 'email-1',
+            nextRunAt: new Date(Date.now() - 60_000).toISOString(),
+          }),
+        }),
+      ],
+    });
+
+    const lead = graph.leadsByKey.get('mime-target')!;
+    const mailboxId = graph.mailboxIdsByKey.get('mailbox-1')!;
+    const nodeId = graph.nodeIdsByFlowNodeId.get('email-1')!;
+    const scheduledAt = new Date().toISOString();
+    const messageJobId = randomUUID();
+
+    const { error: jobError } = await harness.supabase.from('message_jobs').insert({
+      id: messageJobId,
+      enrollment_id: lead.enrollmentId,
+      campaign_id: graph.campaignId,
+      account_id: graph.accountId,
+      lead_id: lead.leadId,
+      mailbox_id: mailboxId,
+      node_id: nodeId,
+      status: 'reserved',
+      scheduled_at: scheduledAt,
+      reserved_at: scheduledAt,
+      lease_expires_at: null,
+      claim_token: null,
+      sending_started_at: null,
+      sent_at: null,
+      provider_message_id: null,
+      error_message: null,
+      retry_count: 0,
+      message_type: 'campaign',
+      send_wait_reason: null,
+      interval_id: null,
+      message_data: {
+        node_config: {
+          subject: 'MIME parity {{first_name}}',
+          body_html: '<p>Hello {{first_name}}</p><p>Thanks</p>',
+          body_text: 'Hello {{first_name}}\n\nThanks',
+        },
+      },
+    } as any);
+    assert.equal(jobError, null);
+    graph.manifest.messageJobIds.push(messageJobId);
+
+    let capturedSubject = '';
+    let capturedText: string | null = null;
+    let capturedHtml: string | null = null;
+    const sendWorker = new SendWorker({
+      supabase: harness.supabase as any,
+      databaseClient: {} as any,
+      campaignEmailSender: async (
+        _t,
+        _m,
+        job: { id: string },
+        _l,
+        subject,
+        body,
+        _irt,
+        _refs,
+        options?: { bodyHtml?: string; bodyText?: string },
+      ) => {
+        capturedSubject = String(subject ?? '');
+        capturedHtml = options?.bodyHtml ?? null;
+        capturedText = options?.bodyText ?? (options?.bodyHtml ? null : String(body ?? ''));
+        return {
+          submittedMessageId: `<${job.id}@furnace.build>`,
+          providerMessageId: `<${job.id}@furnace.build>`,
+        };
+      },
+    });
+    (sendWorker as any).smtpPool = {
+      getTransporter: async () => ({}),
+      markMessageSent: () => {},
+      closeAll: async () => {},
+    };
+
+    const { data: messageJobRow } = await harness.supabase
+      .from('message_jobs')
+      .select('*')
+      .eq('id', messageJobId)
+      .single();
+    await (sendWorker as any).processMessageJob(messageJobRow);
+
+    const { assertMimeSemanticParity, assertNoUnresolvedTemplate } = await import(
+      '../inbox/threadingAssertions'
+    );
+    assertNoUnresolvedTemplate(capturedSubject, 'SMTP subject');
+    assert.equal(capturedSubject, 'MIME parity Casey');
+    assertMimeSemanticParity(capturedText, capturedHtml, 'SMTP body parts');
+  } finally {
+    await harness.cleanup();
+  }
+});

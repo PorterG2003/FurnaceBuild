@@ -1701,6 +1701,7 @@ export interface Database {
           reference_message_ids: string[] | null;
           thread_topic: string | null;
           thread_index: string | null;
+          conversation_root_message_id: string | null;
           received_at: string;
           read_at: string | null;
           headers: Json;
@@ -1732,6 +1733,7 @@ export interface Database {
           reference_message_ids?: string[] | null;
           thread_topic?: string | null;
           thread_index?: string | null;
+          conversation_root_message_id?: string | null;
           received_at: string;
           read_at?: string | null;
           headers?: Json;
@@ -1762,6 +1764,7 @@ export interface Database {
           reference_message_ids?: string[] | null;
           thread_topic?: string | null;
           thread_index?: string | null;
+          conversation_root_message_id?: string | null;
           received_at?: string;
           read_at?: string | null;
           headers?: Json;

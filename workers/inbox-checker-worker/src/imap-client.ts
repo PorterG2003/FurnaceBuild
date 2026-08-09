@@ -247,7 +247,8 @@ export class ImapClient {
       from: fromHeader,
       to: toHeader,
       cc: ccHeader,
-      subject: mail.subject ?? '(No Subject)',
+      // An absent Subject header is an empty subject; the UI supplies a placeholder.
+      subject: mail.subject ?? '',
       bodyText: textBody || null,
       bodyHtml: htmlBody || null,
       date: mail.date ?? new Date(),

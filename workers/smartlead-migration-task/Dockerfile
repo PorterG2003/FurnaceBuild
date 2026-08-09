@@ -6,6 +6,7 @@ WORKDIR /app
 # Copy and build @furnace/email-lib
 COPY lib/email/package*.json lib/email/tsconfig.build.json ./lib/email/
 COPY lib/email/*.ts ./lib/email/
+COPY lib/email/threading ./lib/email/threading
 WORKDIR /app/lib/email
 RUN npm install && npm run build
 

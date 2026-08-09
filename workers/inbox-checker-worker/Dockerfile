@@ -7,6 +7,7 @@ WORKDIR /app
 RUN mkdir -p /app/lib/email /app/lib/mailbox /app/lib/slack /app/workers/inbox-checker-worker
 COPY lib/email/package*.json lib/email/tsconfig.build.json ./lib/email/
 COPY lib/email/*.ts ./lib/email/
+COPY lib/email/threading ./lib/email/threading
 COPY lib/email/transactional ./lib/email/transactional
 WORKDIR /app/lib/email
 RUN npm install && npm run build

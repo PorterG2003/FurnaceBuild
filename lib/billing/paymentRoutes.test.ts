@@ -83,6 +83,27 @@ test('buildPlatformPaymentQuote allows a free retainer without fees', () => {
   });
 });
 
+test('buildPlatformPaymentQuote charges an explicit prorated subtotal instead of the retainer', () => {
+  const quote = buildPlatformPaymentQuote({
+    monthlyRetainerCents: 180_000,
+    dueTodaySubtotalCents: 98_710,
+    paymentRoute: 'card',
+    routeConfig: {
+      percentageFeeBps: 290,
+      flatFeeCents: 30,
+    },
+  });
+
+  assert.deepEqual(quote, {
+    paymentRoute: 'card',
+    baseAmountCents: 180_000,
+    subtotalCents: 98_710,
+    routeFeeCents: 2_893,
+    totalDueTodayCents: 101_603,
+  });
+  assert.equal(quote.subtotalCents + quote.routeFeeCents, quote.totalDueTodayCents);
+});
+
 test('buildPlatformRouteChargeBreakdown returns total cents for card charges', () => {
   const charge = buildPlatformRouteChargeBreakdown({
     subtotalCents: 96_000,

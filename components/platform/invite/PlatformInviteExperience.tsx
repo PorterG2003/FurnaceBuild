@@ -34,6 +34,10 @@ import {
   isPlatformInviteUnavailableStatus,
 } from '@/lib/platform/invite/accessState';
 import { resolveInviteAcceptFlow } from '@/lib/platform/invite/acceptFlow';
+import {
+  buildInvitePriceSections,
+  formatInvitePriceAmount,
+} from '@/lib/platform/invite/priceSections';
 import type {
   PlatformInviteCheckoutInput,
   PlatformInviteCheckoutResult,
@@ -189,81 +193,21 @@ export function PlatformInviteExperience({
       year: 'numeric',
     });
   }, [quote?.recurringAnchorAt]);
-  const priceSections = useMemo(() => {
-    const sections: PlatformPaymentBreakdownSection[] = [];
-    if (!quote) return sections;
+  const priceSections = useMemo<PlatformPaymentBreakdownSection[]>(() => {
+    if (!quote) return [];
 
-    const dueTodayRows: PlatformPaymentBreakdownRow[] = [
-      { label: 'Monthly retainer', value: formatUsd(quote.monthlyRetainerCents) },
-    ];
-    if (quote.routeFeeCents > 0) {
-      dueTodayRows.push({
-        label: `${activeRouteOption.label} processing fee`,
-        value: formatUsd(quote.routeFeeCents),
-      });
-    }
-    dueTodayRows.push({
-      label: 'Total due today',
-      value: formatUsd(quote.totalDueTodayCents),
-      emphasize: true,
-    });
-    sections.push({
-      title: 'Due today',
-      rows: dueTodayRows,
-    });
-
-    const futureInvoiceRows: PlatformPaymentBreakdownRow[] = [];
-    if (quote.firstRecurringRouteFeeCents > 0) {
-      futureInvoiceRows.push({
-        label:
-          quote.firstRecurringDiscountCents > 0
-            ? `Invoice subtotal on ${recurringAnchorLabel} (after overlap credit)`
-            : `Invoice subtotal on ${recurringAnchorLabel}`,
-        value: formatUsd(quote.firstRecurringSubtotalCents),
-      });
-      futureInvoiceRows.push({
-        label: `${activeRouteOption.label} processing fee on ${recurringAnchorLabel}`,
-        value: formatUsd(quote.firstRecurringRouteFeeCents),
-      });
-      futureInvoiceRows.push({
-        label: `Total due on ${recurringAnchorLabel}`,
-        value: formatUsd(quote.firstRecurringInvoiceCents),
-        emphasize: true,
-      });
-      futureInvoiceRows.push({
-        label: 'Later monthly subtotal',
-        value: formatUsd(quote.ongoingMonthlyRetainerCents),
-      });
-      futureInvoiceRows.push({
-        label: `${activeRouteOption.label} processing fee on later invoices`,
-        value: formatUsd(quote.ongoingMonthlyRouteFeeCents),
-      });
-      futureInvoiceRows.push({
-        label: 'Later monthly total',
-        value: formatUsd(quote.ongoingMonthlyTotalCents),
-      });
-    } else {
-      if (quote.firstRecurringDiscountCents > 0) {
-        futureInvoiceRows.push({
-          label: `Overlap credit on ${recurringAnchorLabel}`,
-          value: `-${formatUsd(quote.firstRecurringDiscountCents)}`,
-        });
-      }
-      futureInvoiceRows.push({
-        label: `Amount due on ${recurringAnchorLabel}`,
-        value: formatUsd(quote.firstRecurringInvoiceCents),
-      });
-      futureInvoiceRows.push({
-        label: 'Later monthly invoices',
-        value: formatUsd(quote.ongoingMonthlyTotalCents),
-      });
-    }
-    sections.push({
-      title: 'Future invoices',
-      rows: futureInvoiceRows,
-    });
-
-    return sections;
+    return buildInvitePriceSections({
+      quote,
+      routeLabel: activeRouteOption.label,
+      recurringAnchorLabel,
+    }).map((section) => ({
+      title: section.title,
+      rows: section.rows.map<PlatformPaymentBreakdownRow>((row) => ({
+        label: row.label,
+        value: formatInvitePriceAmount(row.amountCents, formatUsd),
+        emphasize: row.role === 'total',
+      })),
+    }));
   }, [activeRouteOption.label, quote, recurringAnchorLabel]);
   const isProposalStep = showsProposalStep && step === 'proposal';
 

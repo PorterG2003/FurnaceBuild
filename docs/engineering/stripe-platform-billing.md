@@ -53,6 +53,24 @@ Because this path is webhook-only, any change to Stripe object creation or metad
 
 Free invites are the exception: a `$0` retainer bypasses Stripe entirely and activates through `accept_platform_invitation(...)`. These accounts do not get a Stripe subscription until they are later upgraded to a paid retainer.
 
+## Invite proration modes
+
+Each invite carries `platform_invitations.proration_mode`, chosen by the admin in the invite wizard and snapshotted onto every revision. `buildBillingAnchorPlan(startedAt, retainerCents, mode)` in [`lib/billing/proration.ts`](../../lib/billing/proration.ts) is the single source of truth for both modes; every quote, checkout session, preview, and breakdown derives from it.
+
+| Mode | Due today | First recurring invoice (1st MST) |
+|------|-----------|-----------------------------------|
+| `second_month` (default) | Full retainer | Retainer minus an overlap credit, applied as a once-off Stripe coupon |
+| `first_month` | `round(retainer x remaining signup-month days / days in month)` | Full retainer, no coupon |
+
+Rules that apply to both modes:
+
+- Existing invites and any invite created without an explicit mode stay `second_month`. The default must not change.
+- The two modes are **not** revenue-equivalent. `second_month` computes its credit against the *anchor* month's day count while `first_month` prorates against the *signup* month, so a `$1,800` retainer accepted Aug 15 bills `$2,760.00` versus `$2,787.10` through Sep 30. Tests assert exact per-mode values rather than equality between modes.
+- Accepting on the 1st MST is not a prorated case in either mode: due today is a full retainer and the credit is `$0`. UI copy is driven by `dueTodayCoveredDays < dueTodayMonthDays`, never by the mode itself, so this case renders identical clean copy in both.
+- A late-month `first_month` accept on a small retainer can round below Stripe's `$0.50` minimum. `buildBillingAnchorPlan` clamps it, which keeps the admin preview, the customer quote, and the actual charge in agreement.
+- The agreement text is snapshotted at publish, so `applyProrationModeToTermsMarkdown` swaps the stock proration clause when the admin changes the mode. Hand-edited agreements are left untouched and the wizard warns instead.
+- The once-off coupon must not be created when the discount is `0`. `resolveInviteRecurringCouponAmountCents` owns that decision.
+
 ## Account amendment payment rule
 
 Account amendment upgrades now have two distinct payment behaviors:
@@ -95,9 +113,20 @@ After provisioning creates or grants membership, call `useEnterWorkspace().enter
 - `app/accept-account-amendment/[id].tsx`
 - `components/platform/invite/PlatformInviteExperience.tsx`
 - `components/platform/amendment/PlatformAmendmentUpgradePaymentStep.tsx`
+- `components/platform/admin/wizard/steps/invite/InviteBillingStep.tsx`
 - `lib/billing/amendmentQuote.ts`
 - `lib/billing/calendar.ts`
 - `lib/billing/paymentRoutes.ts`
+- `lib/billing/proration.ts`
+- `lib/platform/invite/priceSections.ts`
+- `lib/platform/invite/prorationSummary.ts`
+- `lib/platform/contract/terms.ts`
+- `lib/billing/proration.test.ts`
+- `lib/billing/paymentRoutes.test.ts`
+- `lib/platform/contract/terms.test.ts`
+- `lib/platform/invite/priceSections.test.ts`
+- `lib/platform/invite/prorationSummary.test.ts`
+- `lib/platform/invite/preview.test.ts`
 - `lib/test/platform/accountAmendmentOutcomes.test.ts`
 - `lib/test/platform/platformInviteOutcomes.test.ts`
 - `lib/account/useEnterWorkspace.ts`

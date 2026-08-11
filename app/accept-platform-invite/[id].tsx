@@ -21,6 +21,7 @@ import {
   isPlatformInviteUnavailableStatus,
 } from '@/lib/platform/invite/accessState';
 import type { PlatformPaymentRoute } from '@/lib/billing/paymentRoutes';
+import { normalizePlatformInviteProrationMode } from '@/lib/billing/proration';
 import type {
   PlatformInviteCheckoutInput,
   PlatformContractViewData,
@@ -53,6 +54,7 @@ function mapInvitationInfo(
     currency: info.currency ?? 'usd',
     proposalSnapshot: info.proposal_snapshot ?? {},
     agreementType: normalizeAgreementType(info.agreement_type),
+    prorationMode: normalizePlatformInviteProrationMode(info.proration_mode),
     termsVersion: info.terms_version,
     termsSourceMarkdown: info.terms_source_markdown ?? '',
     termsSnapshotMarkdown: info.terms_snapshot_markdown ?? '',

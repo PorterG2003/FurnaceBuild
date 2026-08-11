@@ -4,6 +4,7 @@ import {
   buildInviteRecurringCouponParams,
   buildStripeCouponName,
   buildUpgradeDeltaCouponParams,
+  resolveInviteRecurringCouponAmountCents,
 } from './couponParams.js';
 
 test('buildStripeCouponName keeps long uuid references within Stripe limits', () => {
@@ -35,6 +36,57 @@ test('buildInviteRecurringCouponParams uses a Stripe-safe display name and prese
     overlapCreditCents: '6452',
     paymentRoute: 'card',
   });
+});
+
+test('resolveInviteRecurringCouponAmountCents discounts the credited difference for second-month invites', () => {
+  const amount = resolveInviteRecurringCouponAmountCents({
+    metadataCouponAmountCents: 86_436,
+    ongoingMonthlyTotalCents: 185_250,
+    firstRecurringInvoiceTotalCents: 98_814,
+  });
+
+  assert.equal(amount, 86_436);
+});
+
+test('resolveInviteRecurringCouponAmountCents skips the coupon for first-month invites', () => {
+  // First-month invites bill the anchor invoice at the full retainer, so there is nothing to discount.
+  const amount = resolveInviteRecurringCouponAmountCents({
+    metadataCouponAmountCents: 0,
+    ongoingMonthlyTotalCents: 185_250,
+    firstRecurringInvoiceTotalCents: 185_250,
+  });
+
+  assert.equal(amount, 0);
+});
+
+test('resolveInviteRecurringCouponAmountCents skips the coupon when the client accepts on the 1st', () => {
+  const amount = resolveInviteRecurringCouponAmountCents({
+    metadataCouponAmountCents: 0,
+    ongoingMonthlyTotalCents: 180_000,
+    firstRecurringInvoiceTotalCents: 180_000,
+  });
+
+  assert.equal(amount, 0);
+});
+
+test('resolveInviteRecurringCouponAmountCents falls back to the derived difference when metadata is missing', () => {
+  const amount = resolveInviteRecurringCouponAmountCents({
+    metadataCouponAmountCents: 0,
+    ongoingMonthlyTotalCents: 185_250,
+    firstRecurringInvoiceTotalCents: 98_814,
+  });
+
+  assert.equal(amount, 86_436);
+});
+
+test('resolveInviteRecurringCouponAmountCents never returns a negative discount', () => {
+  const amount = resolveInviteRecurringCouponAmountCents({
+    metadataCouponAmountCents: 0,
+    ongoingMonthlyTotalCents: 100_000,
+    firstRecurringInvoiceTotalCents: 120_000,
+  });
+
+  assert.equal(amount, 0);
 });
 
 test('buildUpgradeDeltaCouponParams uses a Stripe-safe display name and preserves full metadata', () => {

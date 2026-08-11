@@ -1,4 +1,5 @@
 import type { PlatformPaymentRoute } from '@/lib/billing/paymentRoutes';
+import type { PlatformInviteProrationMode } from '@/lib/billing/proration';
 import type { AgreementType } from './terms';
 
 export type PlatformInviteStep = 'proposal' | 'terms' | 'payment' | 'account' | 'activating';
@@ -13,6 +14,7 @@ export interface PlatformContractViewData {
   currency?: string;
   proposalSnapshot: Record<string, unknown>;
   agreementType: AgreementType;
+  prorationMode?: PlatformInviteProrationMode;
   termsVersion?: string;
   termsSourceMarkdown?: string;
   termsSnapshotMarkdown: string;

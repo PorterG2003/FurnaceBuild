@@ -929,6 +929,7 @@ export interface Database {
           terms_version: string;
           terms_source_markdown: string;
           terms_snapshot_markdown: string;
+          proration_mode: 'second_month' | 'first_month';
           terms_accepted_at: string | null;
           terms_accepted_ip: string | null;
           accepted_by_user_id: string | null;
@@ -981,6 +982,7 @@ export interface Database {
           terms_version: string;
           terms_source_markdown: string;
           terms_snapshot_markdown: string;
+          proration_mode?: 'second_month' | 'first_month';
           terms_accepted_at?: string | null;
           terms_accepted_ip?: string | null;
           accepted_by_user_id?: string | null;
@@ -1033,6 +1035,7 @@ export interface Database {
           terms_version?: string;
           terms_source_markdown?: string;
           terms_snapshot_markdown?: string;
+          proration_mode?: 'second_month' | 'first_month';
           terms_accepted_at?: string | null;
           terms_accepted_ip?: string | null;
           accepted_by_user_id?: string | null;
@@ -1079,6 +1082,7 @@ export interface Database {
           terms_version: string;
           terms_source_markdown: string;
           terms_snapshot_markdown: string;
+          proration_mode: 'second_month' | 'first_month';
           created_by_user_id: string;
           created_at: string;
         };
@@ -1095,6 +1099,7 @@ export interface Database {
           terms_version: string;
           terms_source_markdown: string;
           terms_snapshot_markdown: string;
+          proration_mode?: 'second_month' | 'first_month';
           created_by_user_id: string;
           created_at?: string;
         };
@@ -1111,6 +1116,7 @@ export interface Database {
           terms_version?: string;
           terms_source_markdown?: string;
           terms_snapshot_markdown?: string;
+          proration_mode?: 'second_month' | 'first_month';
           created_by_user_id?: string;
           created_at?: string;
         };

@@ -1,3 +1,5 @@
+import type { PlatformInviteProrationMode } from '@/lib/billing/proration';
+
 export type AgreementType = 'platform_agreement' | 'managed_services_agreement';
 
 type AgreementTemplateDefinition = {
@@ -302,6 +304,64 @@ export function formatCurrentMstDate(date = new Date()) {
 
 export function normalizeAgreementType(value: unknown): AgreementType {
   return value === 'managed_services_agreement' ? 'managed_services_agreement' : 'platform_agreement';
+}
+
+/**
+ * Stock proration clauses, keyed by mode. The agreement text is snapshotted at publish, so
+ * it has to state the billing behavior the invite was actually configured with.
+ */
+const PRORATION_CLAUSES: {
+  second_month: string;
+  first_month: string;
+}[] = [
+  {
+    second_month:
+      'If your account activates mid-month, your second invoice will be prorated to cover the remainder of that calendar month. Standard monthly billing begins the following month.',
+    first_month:
+      'If your account activates mid-month, your first invoice is prorated to cover the remainder of that calendar month. Standard monthly billing begins on the 1st of the following month.',
+  },
+  {
+    second_month:
+      'The initial invoice of {{monthly_fee}} is due when this agreement is accepted. Subsequent invoices are issued on the 1st of each calendar month, or the next business day when needed. If a billing period begins mid-month, the second invoice is prorated accordingly.',
+    first_month:
+      'The initial invoice is due when this agreement is accepted, prorated to cover the remainder of the current calendar month. Subsequent invoices of {{monthly_fee}} are issued on the 1st of each calendar month, or the next business day when needed.',
+  },
+];
+
+export interface ProrationClauseSwapResult {
+  markdown: string;
+  /** False when no stock clause matched, meaning the agreement was hand-edited. */
+  applied: boolean;
+}
+
+/**
+ * Rewrites the stock proration clause to match the selected mode. Only exact stock sentences
+ * are replaced, so a hand-edited agreement is left untouched and the caller can warn instead.
+ */
+export function applyProrationModeToTermsMarkdown(
+  markdown: string,
+  prorationMode: PlatformInviteProrationMode,
+): ProrationClauseSwapResult {
+  const otherMode: PlatformInviteProrationMode =
+    prorationMode === 'first_month' ? 'second_month' : 'first_month';
+
+  let next = markdown;
+  let applied = false;
+
+  for (const clause of PRORATION_CLAUSES) {
+    const target = clause[prorationMode];
+    if (next.includes(target)) {
+      applied = true;
+      continue;
+    }
+    const source = clause[otherMode];
+    if (next.includes(source)) {
+      next = next.replace(source, target);
+      applied = true;
+    }
+  }
+
+  return { markdown: next, applied };
 }
 
 export function getAgreementTypeDefinition(agreementType: AgreementType) {

@@ -1,4 +1,8 @@
 import { useMemo } from 'react';
+import {
+  normalizePlatformInviteProrationMode,
+  type PlatformInviteProrationMode,
+} from '@/lib/billing/proration';
 import type { ProposalPlanTier } from '../contract/proposalPlans';
 import type { AgreementType } from '../contract/terms';
 import {
@@ -15,6 +19,7 @@ export interface PlatformInviteWizardDraft {
   inviteEmail: string;
   inviteCompanyName: string;
   inviteMonthlyRetainer: string;
+  inviteProrationMode: PlatformInviteProrationMode;
   planTier: ProposalPlanTier;
   proposalClientLogoUrl: string;
   proposalClientLogoScale: number;
@@ -136,7 +141,13 @@ export function buildPlatformInviteWizardStorageKey(invitationId?: string) {
 }
 
 export function readPlatformInviteWizardDraft(storageKey: string): PlatformInviteWizardDraft | null {
-  return readWizardDraft<PlatformInviteWizardDraft>(storageKey);
+  const draft = readWizardDraft<PlatformInviteWizardDraft>(storageKey);
+  if (!draft) return null;
+  // Drafts stored before the proration option existed have no mode.
+  return {
+    ...draft,
+    inviteProrationMode: normalizePlatformInviteProrationMode(draft.inviteProrationMode),
+  };
 }
 
 export function writePlatformInviteWizardDraft(storageKey: string, draft: PlatformInviteWizardDraft) {

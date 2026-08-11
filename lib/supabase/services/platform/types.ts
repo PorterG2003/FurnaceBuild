@@ -1,5 +1,6 @@
 import type { AccountBilling, BillingAdjustment, PlatformInvitationRevision, PlatformTermsVersion } from '../../types';
 import type { PlatformPaymentRoute } from '@/lib/billing/paymentRoutes';
+import type { PlatformInviteProrationMode } from '@/lib/billing/proration';
 import type { AgreementType } from '@/lib/platform/contract/terms';
 
 export type { PlatformInvitationRevision, PlatformTermsVersion };
@@ -16,6 +17,7 @@ export interface PlatformInvitationInfo {
   terms_version?: string;
   terms_source_markdown?: string;
   terms_snapshot_markdown?: string;
+  proration_mode?: PlatformInviteProrationMode;
   inviter_name?: string;
   viewed_at?: string | null;
   selected_payment_route?: PlatformPaymentRoute | null;

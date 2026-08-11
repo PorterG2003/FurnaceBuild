@@ -2,6 +2,7 @@ import outputs from '@/amplify_outputs.json';
 import { getAccessToken } from '@/lib/services/auth-token';
 import type { AmendmentUpgradeQuote } from '@/lib/billing/amendmentQuote';
 import type { PlatformPaymentRoute } from '@/lib/billing/paymentRoutes';
+import type { PlatformInviteProrationMode } from '@/lib/billing/proration';
 
 const custom = (outputs as { custom?: { platformCommerceUrl?: string } }).custom;
 const PLATFORM_COMMERCE_URL = custom?.platformCommerceUrl;
@@ -14,6 +15,10 @@ export interface PlatformCheckoutQuote {
   routeFeeCents: number;
   totalDueTodayCents: number;
   recurringAnchorAt: string;
+  prorationMode: PlatformInviteProrationMode;
+  // Days of the signup month the due-today charge covers. Equal to dueTodayMonthDays when not prorated.
+  dueTodayCoveredDays: number;
+  dueTodayMonthDays: number;
   // Invoice subtotal after the overlap credit is applied, before any route fee.
   firstRecurringSubtotalCents: number;
   firstRecurringRouteFeeCents: number;

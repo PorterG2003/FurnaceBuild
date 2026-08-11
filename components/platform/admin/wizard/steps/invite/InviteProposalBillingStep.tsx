@@ -1,6 +1,7 @@
 import { View } from 'react-native';
 import { AgreementTypeSelector, ProposalPlanFields } from '@/components/platform/admin/wizard';
 import { InviteBillingStep } from '@/components/platform/admin/wizard/steps/invite/InviteBillingStep';
+import type { PlatformInviteProrationMode } from '@/lib/billing/proration';
 import type { AgreementType } from '@/lib/platform/contract/terms';
 import type { ProposalPlanTier } from '@/lib/platform/contract/proposalPlans';
 
@@ -10,6 +11,9 @@ type InviteProposalBillingStepProps = {
   isManagedServices: boolean;
   inviteMonthlyRetainer: string;
   onInviteMonthlyRetainerChange: (value: string) => void;
+  inviteProrationMode: PlatformInviteProrationMode;
+  onInviteProrationModeChange: (value: PlatformInviteProrationMode) => void;
+  prorationClauseUnmatched?: boolean;
   autoAddInternalAdmins: boolean;
   onAutoAddInternalAdminsChange: (value: boolean) => void;
   planTier: ProposalPlanTier;
@@ -30,6 +34,9 @@ export function InviteProposalBillingStep({
   isManagedServices,
   inviteMonthlyRetainer,
   onInviteMonthlyRetainerChange,
+  inviteProrationMode,
+  onInviteProrationModeChange,
+  prorationClauseUnmatched,
   autoAddInternalAdmins,
   onAutoAddInternalAdminsChange,
   planTier,
@@ -49,6 +56,9 @@ export function InviteProposalBillingStep({
       <InviteBillingStep
         inviteMonthlyRetainer={inviteMonthlyRetainer}
         onInviteMonthlyRetainerChange={onInviteMonthlyRetainerChange}
+        inviteProrationMode={inviteProrationMode}
+        onInviteProrationModeChange={onInviteProrationModeChange}
+        prorationClauseUnmatched={prorationClauseUnmatched}
         autoAddInternalAdmins={autoAddInternalAdmins}
         onAutoAddInternalAdminsChange={onAutoAddInternalAdminsChange}
       />

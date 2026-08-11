@@ -15,6 +15,8 @@ export interface PlatformPaymentFeeConfig {
 
 export interface PlatformPaymentQuoteInput {
   monthlyRetainerCents: number;
+  /** Amount actually charged today. Defaults to the full retainer when not prorated. */
+  dueTodaySubtotalCents?: number;
   paymentRoute: PlatformPaymentRoute;
   routeConfig: PlatformPaymentFeeConfig;
 }
@@ -132,8 +134,13 @@ export function buildPlatformPaymentQuote(
     throw new Error('monthlyRetainerCents must be zero or greater');
   }
 
+  const dueTodaySubtotalCents = input.dueTodaySubtotalCents ?? input.monthlyRetainerCents;
+  if (!Number.isFinite(dueTodaySubtotalCents) || dueTodaySubtotalCents < 0) {
+    throw new Error('dueTodaySubtotalCents must be zero or greater');
+  }
+
   const charge = buildPlatformRouteChargeBreakdown({
-    subtotalCents: input.monthlyRetainerCents,
+    subtotalCents: dueTodaySubtotalCents,
     paymentRoute: input.paymentRoute,
     routeConfig: input.routeConfig,
   });

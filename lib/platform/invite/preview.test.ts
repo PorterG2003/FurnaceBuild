@@ -38,3 +38,41 @@ test('buildPlatformInvitePreviewQuote keeps ACH future totals equal to the retai
   assert.equal(quote.ongoingMonthlyRouteFeeCents, 0);
   assert.equal(quote.ongoingMonthlyTotalCents, 180_000);
 });
+
+test('buildPlatformInvitePreviewQuote defaults to second-month proration', () => {
+  const quote = buildPlatformInvitePreviewQuote(basePreviewData, 'ach', { startedAt: previewStartedAt });
+
+  assert.equal(quote.prorationMode, 'second_month');
+  assert.equal(quote.subtotalCents, 180_000);
+  assert.equal(quote.dueTodayCoveredDays, quote.dueTodayMonthDays);
+});
+
+test('buildPlatformInvitePreviewQuote prorates today and keeps the anchor invoice full for first_month', () => {
+  const quote = buildPlatformInvitePreviewQuote(
+    { ...basePreviewData, prorationMode: 'first_month' },
+    'ach',
+    { startedAt: new Date('2026-08-15T10:00:00.000Z') },
+  );
+
+  assert.equal(quote.prorationMode, 'first_month');
+  assert.equal(quote.subtotalCents, 98_710);
+  assert.equal(quote.totalDueTodayCents, 98_710);
+  assert.equal(quote.dueTodayCoveredDays, 17);
+  assert.equal(quote.dueTodayMonthDays, 31);
+  assert.equal(quote.firstRecurringDiscountCents, 0);
+  assert.equal(quote.firstRecurringInvoiceCents, 180_000);
+  assert.equal(quote.ongoingMonthlyTotalCents, 180_000);
+});
+
+test('buildPlatformInvitePreviewQuote adds the card fee on top of a prorated subtotal', () => {
+  const quote = buildPlatformInvitePreviewQuote(
+    { ...basePreviewData, prorationMode: 'first_month' },
+    'card',
+    { startedAt: new Date('2026-08-15T10:00:00.000Z') },
+  );
+
+  assert.equal(quote.subtotalCents, 98_710);
+  assert.equal(quote.routeFeeCents, 2_893);
+  assert.equal(quote.totalDueTodayCents, 101_603);
+  assert.equal(quote.monthlyRetainerCents, 180_000);
+});

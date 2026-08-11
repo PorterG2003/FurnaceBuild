@@ -1,57 +1,62 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {
-  formatCurrentMstDate,
-  renderPlatformTermsMarkdown,
-  renderTermsTemplate,
-} from './terms';
+import { applyProrationModeToTermsMarkdown, getAgreementTemplateMarkdown } from './terms';
 
-test('formatCurrentMstDate uses fixed MST calendar date', () => {
-  assert.equal(formatCurrentMstDate(new Date('2026-05-30T23:30:00.000Z')), 'May 30, 2026');
-  assert.equal(formatCurrentMstDate(new Date('2026-05-31T06:30:00.000Z')), 'May 30, 2026');
+const SECOND_MONTH_PLATFORM_CLAUSE =
+  'If your account activates mid-month, your second invoice will be prorated to cover the remainder of that calendar month. Standard monthly billing begins the following month.';
+const FIRST_MONTH_PLATFORM_CLAUSE =
+  'If your account activates mid-month, your first invoice is prorated to cover the remainder of that calendar month. Standard monthly billing begins on the 1st of the following month.';
+
+test('the stock platform agreement describes second-month proration', () => {
+  const markdown = getAgreementTemplateMarkdown('platform_agreement');
+  assert.ok(markdown.includes(SECOND_MONTH_PLATFORM_CLAUSE));
 });
 
-test('renderTermsTemplate replaces known placeholders and preserves unknown tokens', () => {
-  const rendered = renderTermsTemplate('Hello {{client_name}} {{unknown_value}}', {
-    client_name: 'Sisu',
-  });
-
-  assert.equal(rendered, 'Hello Sisu {{unknown_value}}');
-});
-
-test('renderPlatformTermsMarkdown fills managed-services variables from invite inputs', () => {
-  const rendered = renderPlatformTermsMarkdown({
-    sourceMarkdown: [
-      '{{client_name}}',
-      '{{monthly_fee}}',
-      '{{effective_date_mst}}',
-      '{{start_date_mst}}',
-      '{{outreach_volume}}',
-      '{{inbox_count}}',
-    ].join('\n'),
-    proposedAccountName: 'Sisu',
-    monthlyRetainerCents: 180000,
-    proposalSnapshot: {
-      managed_outreach_volume: 5000,
-      managed_inbox_count: 25,
-    },
-    now: new Date('2026-05-30T23:30:00.000Z'),
-  });
-
-  assert.equal(
-    rendered,
-    ['Sisu', '$1,800', 'May 30, 2026', 'May 30, 2026', '5,000', '25'].join('\n')
+test('switching to first_month rewrites the platform proration clause', () => {
+  const result = applyProrationModeToTermsMarkdown(
+    getAgreementTemplateMarkdown('platform_agreement'),
+    'first_month',
   );
+
+  assert.equal(result.applied, true);
+  assert.ok(result.markdown.includes(FIRST_MONTH_PLATFORM_CLAUSE));
+  assert.ok(!result.markdown.includes(SECOND_MONTH_PLATFORM_CLAUSE));
 });
 
-test('renderPlatformTermsMarkdown falls back when managed variables are missing', () => {
-  const rendered = renderPlatformTermsMarkdown({
-    sourceMarkdown: '{{outreach_volume}} / {{inbox_count}}',
-    proposedAccountName: null,
-    monthlyRetainerCents: null,
-    proposalSnapshot: {},
-    now: new Date('2026-05-30T23:30:00.000Z'),
-  });
+test('switching back to second_month restores the original platform clause', () => {
+  const original = getAgreementTemplateMarkdown('platform_agreement');
+  const swapped = applyProrationModeToTermsMarkdown(original, 'first_month');
+  const restored = applyProrationModeToTermsMarkdown(swapped.markdown, 'second_month');
 
-  assert.equal(rendered, 'TBD / TBD');
+  assert.equal(restored.applied, true);
+  assert.equal(restored.markdown, original);
+});
+
+test('the managed services agreement clause swaps in both directions', () => {
+  const original = getAgreementTemplateMarkdown('managed_services_agreement');
+  const swapped = applyProrationModeToTermsMarkdown(original, 'first_month');
+
+  assert.equal(swapped.applied, true);
+  assert.notEqual(swapped.markdown, original);
+  assert.ok(swapped.markdown.includes('prorated to cover the remainder of the current calendar month'));
+  assert.ok(swapped.markdown.includes('{{monthly_fee}}'));
+
+  const restored = applyProrationModeToTermsMarkdown(swapped.markdown, 'second_month');
+  assert.equal(restored.markdown, original);
+});
+
+test('re-applying the mode already present is a no-op that still reports success', () => {
+  const original = getAgreementTemplateMarkdown('platform_agreement');
+  const result = applyProrationModeToTermsMarkdown(original, 'second_month');
+
+  assert.equal(result.applied, true);
+  assert.equal(result.markdown, original);
+});
+
+test('a hand-edited agreement is left untouched and reported as unmatched', () => {
+  const edited = '# Custom agreement\n\nBilling is negotiated separately.';
+  const result = applyProrationModeToTermsMarkdown(edited, 'first_month');
+
+  assert.equal(result.applied, false);
+  assert.equal(result.markdown, edited);
 });

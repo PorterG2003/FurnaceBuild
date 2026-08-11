@@ -24,6 +24,7 @@ import {
 } from '@/lib/supabase/services/platform';
 import { sendPlatformInviteEmail } from '@/lib/services/platform';
 import {
+  applyProrationModeToTermsMarkdown,
   getAgreementTemplateMarkdown,
   getAgreementTypeLabel,
   getAgreementTypeTitle,
@@ -43,6 +44,11 @@ import {
   writePlatformInviteWizardDraft,
 } from '@/lib/platform/invite/wizard';
 import { useInviteReviewPreviewData } from '@/lib/platform/invite/useInviteWizardScreen';
+import {
+  normalizePlatformInviteProrationMode,
+  type PlatformInviteProrationMode,
+} from '@/lib/billing/proration';
+import { getInviteProrationModeLabel } from '@/lib/platform/invite/prorationSummary';
 import { WizardPageShell } from '@/components/platform/admin/wizard';
 import { InviteClientStep } from '@/components/platform/admin/wizard/steps/invite/InviteClientStep';
 import { InviteProposalBillingStep } from '@/components/platform/admin/wizard/steps/invite/InviteProposalBillingStep';
@@ -79,6 +85,9 @@ export default function SignNewClientPage() {
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteCompanyName, setInviteCompanyName] = useState('');
   const [inviteMonthlyRetainer, setInviteMonthlyRetainer] = useState('');
+  const [inviteProrationMode, setInviteProrationMode] =
+    useState<PlatformInviteProrationMode>('second_month');
+  const [prorationClauseUnmatched, setProrationClauseUnmatched] = useState(false);
   const [planTier, setPlanTier] = useState<ProposalPlanTier>(defaultPlanTier);
   const [proposalClientLogoUrl, setProposalClientLogoUrl] = useState('');
   const [proposalClientLogoScale, setProposalClientLogoScale] = useState(1);
@@ -197,6 +206,7 @@ export default function SignNewClientPage() {
       inviteEmail,
       inviteCompanyName,
       inviteMonthlyRetainer,
+      inviteProrationMode,
       planTier,
       proposalClientLogoUrl,
       proposalClientLogoScale,
@@ -216,6 +226,7 @@ export default function SignNewClientPage() {
       inviteCompanyName,
       inviteEmail,
       inviteMonthlyRetainer,
+      inviteProrationMode,
       managedInboxCount,
       managedOutreachVolume,
       planTier,
@@ -249,6 +260,7 @@ export default function SignNewClientPage() {
     setInviteEmail(draft.inviteEmail);
     setInviteCompanyName(draft.inviteCompanyName);
     setInviteMonthlyRetainer(draft.inviteMonthlyRetainer);
+    setInviteProrationMode(normalizePlatformInviteProrationMode(draft.inviteProrationMode));
     setPlanTier(draft.planTier);
     setProposalClientLogoUrl(draft.proposalClientLogoUrl);
     setProposalClientLogoScale(draft.proposalClientLogoScale);
@@ -276,7 +288,19 @@ export default function SignNewClientPage() {
     const nextTemplate =
       termsTemplatesByType[nextAgreementType] ?? fallbackTermsTemplatesByType[nextAgreementType];
     setSelectedTermsVersion(nextTemplate?.version ?? '');
-    setTermsSourceMarkdown(nextTemplate?.body_markdown ?? '');
+    const swap = applyProrationModeToTermsMarkdown(
+      nextTemplate?.body_markdown ?? '',
+      inviteProrationMode,
+    );
+    setTermsSourceMarkdown(swap.markdown);
+    setProrationClauseUnmatched(!swap.applied);
+  };
+
+  const applyProrationMode = (nextMode: PlatformInviteProrationMode) => {
+    setInviteProrationMode(nextMode);
+    const swap = applyProrationModeToTermsMarkdown(termsSourceMarkdown, nextMode);
+    setTermsSourceMarkdown(swap.markdown);
+    setProrationClauseUnmatched(!swap.applied);
   };
 
   useEffect(() => {
@@ -321,6 +345,7 @@ export default function SignNewClientPage() {
           inviteEmail: '',
           inviteCompanyName: '',
           inviteMonthlyRetainer: '',
+          inviteProrationMode: 'second_month',
           planTier: defaultPlanTier,
           proposalClientLogoUrl: '',
           proposalClientLogoScale: 1,
@@ -376,6 +401,9 @@ export default function SignNewClientPage() {
               typeof invitation.monthly_retainer_cents === 'number'
                 ? String(Math.round(invitation.monthly_retainer_cents / 100))
                 : '',
+            inviteProrationMode: normalizePlatformInviteProrationMode(
+              currentRevision?.proration_mode ?? invitation.proration_mode,
+            ),
             planTier: loadedPlanTier,
             proposalClientLogoUrl: proposal.client_logo_url,
             proposalClientLogoScale: proposal.client_logo_scale,
@@ -399,6 +427,7 @@ export default function SignNewClientPage() {
             ...nextDraft,
             ...localDraft,
             agreementType: normalizeAgreementType(localDraft.agreementType),
+            inviteProrationMode: normalizePlatformInviteProrationMode(localDraft.inviteProrationMode),
             planTier: isProposalPlanTier(localDraft.planTier) ? localDraft.planTier : nextDraft.planTier,
           };
         }
@@ -449,6 +478,7 @@ export default function SignNewClientPage() {
         termsVersion: selectedTermsVersion,
         termsSourceMarkdown,
         autoAddInternalAdmins,
+        prorationMode: inviteProrationMode,
       });
     }
 
@@ -461,6 +491,7 @@ export default function SignNewClientPage() {
       termsVersion: selectedTermsVersion,
       termsSourceMarkdown,
       autoAddInternalAdmins,
+      prorationMode: inviteProrationMode,
     });
   };
 
@@ -520,6 +551,7 @@ export default function SignNewClientPage() {
     inviteEmail,
     inviteCompanyName,
     monthlyRetainerCents,
+    prorationMode: inviteProrationMode,
     proposalSnapshot,
     agreementType,
     selectedTermsVersion,
@@ -549,6 +581,9 @@ export default function SignNewClientPage() {
           isManagedServices={isManagedServicesAgreement}
           inviteMonthlyRetainer={inviteMonthlyRetainer}
           onInviteMonthlyRetainerChange={setInviteMonthlyRetainer}
+          inviteProrationMode={inviteProrationMode}
+          onInviteProrationModeChange={applyProrationMode}
+          prorationClauseUnmatched={prorationClauseUnmatched}
           autoAddInternalAdmins={autoAddInternalAdmins}
           onAutoAddInternalAdminsChange={setAutoAddInternalAdmins}
           planTier={planTier}
@@ -575,7 +610,12 @@ export default function SignNewClientPage() {
           previewMarkdown={renderedTermsPreview}
           onResetToDefault={() => {
             setSelectedTermsVersion(selectedTerms?.version ?? '');
-            setTermsSourceMarkdown(selectedTerms?.body_markdown ?? '');
+            const swap = applyProrationModeToTermsMarkdown(
+              selectedTerms?.body_markdown ?? '',
+              inviteProrationMode,
+            );
+            setTermsSourceMarkdown(swap.markdown);
+            setProrationClauseUnmatched(!swap.applied);
           }}
         />
       );
@@ -587,6 +627,13 @@ export default function SignNewClientPage() {
         { label: 'Company', value: inviteCompanyName || 'No proposed company name' },
         { label: 'Agreement', value: getAgreementTypeLabel(agreementType) },
       ];
+
+      if (monthlyRetainerCents != null && monthlyRetainerCents > 0) {
+        summaryLines.push({
+          label: 'First invoice',
+          value: getInviteProrationModeLabel(inviteProrationMode),
+        });
+      }
 
       if (isManagedServicesAgreement) {
         summaryLines.push(
@@ -633,6 +680,7 @@ export default function SignNewClientPage() {
         inviteEmail={inviteEmail}
         inviteCompanyName={inviteCompanyName}
         monthlyRetainerCents={monthlyRetainerCents}
+        prorationMode={inviteProrationMode}
         agreementType={agreementType}
         isManagedServicesAgreement={isManagedServicesAgreement}
         managedOutreachVolume={managedOutreachVolume}

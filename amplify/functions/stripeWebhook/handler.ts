@@ -8,6 +8,7 @@ import {
 import {
   buildInviteRecurringCouponParams,
   buildUpgradeDeltaCouponParams,
+  resolveInviteRecurringCouponAmountCents,
 } from './couponParams';
 
 const INTERNAL_ADMIN_EMAILS = ['porter@getfurnace.io', 'kyle@getfurnace.io'];
@@ -217,9 +218,11 @@ async function ensureRecurringSubscription(session: ExpandedCheckoutSession) {
     paymentRoute,
     routeConfig: getServerPlatformPaymentFeeConfig()[paymentRoute],
   });
-  const firstRecurringCouponAmountCents =
-    parseMetadataInteger(metadata, 'firstRecurringCouponAmountCents') ||
-    recurringQuote.firstRecurringTotalDiscountCents;
+  const firstRecurringCouponAmountCents = resolveInviteRecurringCouponAmountCents({
+    metadataCouponAmountCents: parseMetadataInteger(metadata, 'firstRecurringCouponAmountCents'),
+    ongoingMonthlyTotalCents: recurringQuote.ongoingMonthlyTotalCents,
+    firstRecurringInvoiceTotalCents: recurringQuote.firstRecurringTotalCents,
+  });
   const ongoingMonthlyTotalCents =
     parseMetadataInteger(metadata, 'ongoingMonthlyTotalCents') ||
     recurringQuote.ongoingMonthlyTotalCents;

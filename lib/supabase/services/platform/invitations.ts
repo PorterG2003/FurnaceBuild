@@ -1,4 +1,8 @@
 import type { PlatformInvitation } from '../../types';
+import {
+  normalizePlatformInviteProrationMode,
+  type PlatformInviteProrationMode,
+} from '@/lib/billing/proration';
 import type { AgreementType } from '@/lib/platform/contract/terms';
 import { getPlatformInvitationErrorMessage } from './errors';
 import { rpc } from './rpc';
@@ -27,6 +31,7 @@ export async function createPlatformInvitation(params: {
   termsVersion?: string | null;
   termsSourceMarkdown?: string | null;
   autoAddInternalAdmins?: boolean;
+  prorationMode?: PlatformInviteProrationMode;
   expiresAt?: string | null;
 }): Promise<PlatformInvitation> {
   const { data, error } = await rpc('create_platform_invitation', {
@@ -39,6 +44,7 @@ export async function createPlatformInvitation(params: {
     p_agreement_type: params.agreementType ?? null,
     p_terms_source_markdown: params.termsSourceMarkdown ?? null,
     p_auto_add_internal_admins: params.autoAddInternalAdmins ?? true,
+    p_proration_mode: normalizePlatformInviteProrationMode(params.prorationMode),
     p_expires_at: params.expiresAt ?? null,
   });
   if (error) throw new Error(getPlatformInvitationErrorMessage(error));
@@ -55,6 +61,7 @@ export async function createPlatformInvitationDraft(params: {
   termsVersion?: string | null;
   termsSourceMarkdown?: string | null;
   autoAddInternalAdmins?: boolean;
+  prorationMode?: PlatformInviteProrationMode;
   expiresAt?: string | null;
 }): Promise<PlatformInvitation> {
   const { data, error } = await rpc('create_platform_invitation_draft', {
@@ -67,6 +74,7 @@ export async function createPlatformInvitationDraft(params: {
     p_agreement_type: params.agreementType ?? null,
     p_terms_source_markdown: params.termsSourceMarkdown ?? null,
     p_auto_add_internal_admins: params.autoAddInternalAdmins ?? true,
+    p_proration_mode: normalizePlatformInviteProrationMode(params.prorationMode),
     p_expires_at: params.expiresAt ?? null,
   });
   if (error) throw new Error(getPlatformInvitationErrorMessage(error));
@@ -84,6 +92,7 @@ export async function updatePlatformInvitationDraft(params: {
   termsVersion?: string | null;
   termsSourceMarkdown?: string | null;
   autoAddInternalAdmins?: boolean;
+  prorationMode?: PlatformInviteProrationMode;
   expiresAt?: string | null;
 }): Promise<PlatformInvitation> {
   const { data, error } = await rpc('update_platform_invitation_draft', {
@@ -97,6 +106,7 @@ export async function updatePlatformInvitationDraft(params: {
     p_agreement_type: params.agreementType ?? null,
     p_terms_source_markdown: params.termsSourceMarkdown ?? null,
     p_auto_add_internal_admins: params.autoAddInternalAdmins ?? true,
+    p_proration_mode: normalizePlatformInviteProrationMode(params.prorationMode),
     p_expires_at: params.expiresAt ?? null,
   });
   if (error) throw new Error(getPlatformInvitationErrorMessage(error));

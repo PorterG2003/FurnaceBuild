@@ -4,7 +4,10 @@ import {
   getServerPlatformPaymentFeeConfig,
   type PlatformPaymentRoute,
 } from '@/lib/billing/paymentRoutes';
-import { buildBillingAnchorPlan } from '@/lib/billing/proration';
+import {
+  buildBillingAnchorPlan,
+  normalizePlatformInviteProrationMode,
+} from '@/lib/billing/proration';
 import type { PlatformCheckoutQuote } from '@/lib/services/platform';
 import type { PlatformInvitationRevisionSummary } from '@/lib/supabase/services/platform';
 import type { PlatformContractViewData } from '../contract/types';
@@ -23,12 +26,17 @@ export function buildPlatformInvitePreviewQuote(
 ): PlatformCheckoutQuote {
   const feeConfig = getServerPlatformPaymentFeeConfig()[paymentRoute];
   const previewStartedAt = options?.startedAt ?? new Date();
+  const plan = buildBillingAnchorPlan(
+    previewStartedAt,
+    data.monthlyRetainerCents,
+    normalizePlatformInviteProrationMode(data.prorationMode),
+  );
   const quote = buildPlatformPaymentQuote({
     monthlyRetainerCents: data.monthlyRetainerCents,
+    dueTodaySubtotalCents: plan.dueTodaySubtotalCents,
     paymentRoute,
     routeConfig: feeConfig,
   });
-  const plan = buildBillingAnchorPlan(previewStartedAt, data.monthlyRetainerCents);
   const recurringQuote = buildPlatformRecurringInvoiceQuote({
     monthlyRetainerCents: data.monthlyRetainerCents,
     firstRecurringSubtotalCents: plan.firstRecurringAmountDueCents,
@@ -44,6 +52,9 @@ export function buildPlatformInvitePreviewQuote(
     routeFeeCents: quote.routeFeeCents,
     totalDueTodayCents: quote.totalDueTodayCents,
     recurringAnchorAt: plan.anchorDateIso,
+    prorationMode: plan.prorationMode,
+    dueTodayCoveredDays: plan.dueTodayCoveredDays,
+    dueTodayMonthDays: plan.dueTodayMonthDays,
     firstRecurringSubtotalCents: recurringQuote.firstRecurringSubtotalCents,
     firstRecurringRouteFeeCents: recurringQuote.firstRecurringRouteFeeCents,
     firstRecurringInvoiceCents: recurringQuote.firstRecurringTotalCents,
@@ -69,6 +80,7 @@ export function mapPlatformInvitationRevisionToPreviewData(
     currency: revision.currency ?? 'usd',
     proposalSnapshot: (revision.proposal_snapshot_json ?? {}) as Record<string, unknown>,
     agreementType: revision.agreement_type,
+    prorationMode: normalizePlatformInviteProrationMode(revision.proration_mode),
     termsVersion: revision.terms_version,
     termsSourceMarkdown: revision.terms_source_markdown ?? '',
     termsSnapshotMarkdown: revision.terms_snapshot_markdown ?? '',

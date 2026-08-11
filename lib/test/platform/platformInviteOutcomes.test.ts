@@ -752,3 +752,341 @@ test('platform invite admin RPCs reject duplicate emails once an account is acti
     }
   }
 });
+
+test('first-month invite persists its proration mode through draft, edit, and publish', async (t) => {
+  const namespace = createPlatformTestNamespace('proration');
+  const { service, anon } = getHarnessClients();
+  const supabaseUrl = process.env.PLATFORM_TEST_SUPABASE_URL || process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL!;
+  const adminEmail = `${namespace}-admin@furnace.test`;
+  const adminPassword = `Admin!${namespace.slice(-6)}Aa1`;
+  const cleanup = {
+    platformInvitationIds: [] as string[],
+    userIds: [] as string[],
+  };
+
+  try {
+    try {
+      await assertPlatformSchemaAvailable(service);
+    } catch (err) {
+      if (err instanceof Error && err.message === 'SKIP_PLATFORM_SCHEMA_MISSING') {
+        t.skip('Platform invite schema is not present in the current test database.');
+      }
+      throw err;
+    }
+
+    const { error: prorationProbeError } = await service
+      .from('platform_invitations')
+      .select('proration_mode')
+      .limit(1);
+    if (
+      prorationProbeError &&
+      (prorationProbeError.code === '42703' || prorationProbeError.code === 'PGRST204')
+    ) {
+      t.skip('Proration mode column is not present in the current test database.');
+      return;
+    }
+    assert.equal(prorationProbeError, null);
+
+    const { data: adminUserData, error: adminCreateError } = await service.auth.admin.createUser({
+      email: adminEmail,
+      password: adminPassword,
+      email_confirm: true,
+    });
+    if (adminCreateError || !adminUserData.user) {
+      throw new Error(adminCreateError?.message ?? 'Failed to create admin auth user');
+    }
+    cleanup.userIds.push(adminUserData.user.id);
+    await waitForPublicUser(service, adminUserData.user.id);
+    const { error: flagError } = await service.from('user_access_flags').insert({
+      user_id: adminUserData.user.id,
+      flag_key: 'platform_admin',
+    });
+    assert.equal(flagError, null);
+
+    const adminToken = await signIn(anon, adminEmail, adminPassword);
+    const adminClient = createClient(supabaseUrl, process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY!, {
+      auth: { persistSession: false, autoRefreshToken: false },
+      global: { headers: { Authorization: `Bearer ${adminToken}` } },
+    }) as DbClient;
+
+    const draftArgs = {
+      p_email: `${namespace}@example.com`,
+      p_proposed_account_name: 'Proration Workspace',
+      p_monthly_retainer_cents: 180000,
+      p_currency: 'usd',
+      p_proposal_snapshot_json: {},
+      p_terms_version: 'default-v1',
+      p_agreement_type: 'platform_agreement',
+      p_terms_source_markdown: '# Furnace Platform Agreement',
+      p_auto_add_internal_admins: true,
+      p_expires_at: null,
+    };
+
+    const { data: draft, error: draftError } = await adminClient.rpc(
+      'create_platform_invitation_draft',
+      { ...draftArgs, p_proration_mode: 'first_month' },
+    );
+    assert.equal(draftError, null);
+    assert.ok(draft?.id);
+    cleanup.platformInvitationIds.push(draft.id);
+    assert.equal(draft.proration_mode, 'first_month');
+
+    const { data: draftRevisions, error: draftRevisionsError } = await service
+      .from('platform_invitation_revisions')
+      .select('revision_number, proration_mode')
+      .eq('invitation_id', draft.id)
+      .order('revision_number', { ascending: true });
+    assert.equal(draftRevisionsError, null);
+    assert.equal(draftRevisions?.length, 1);
+    assert.equal(draftRevisions?.[0].proration_mode, 'first_month');
+
+    // Editing without naming a mode must not silently reset it to the default.
+    const { data: keptDraft, error: keptDraftError } = await adminClient.rpc(
+      'update_platform_invitation_draft',
+      { ...draftArgs, p_invitation_id: draft.id, p_proration_mode: null },
+    );
+    assert.equal(keptDraftError, null);
+    assert.equal(keptDraft.proration_mode, 'first_month');
+
+    const { data: switchedDraft, error: switchedDraftError } = await adminClient.rpc(
+      'update_platform_invitation_draft',
+      { ...draftArgs, p_invitation_id: draft.id, p_proration_mode: 'second_month' },
+    );
+    assert.equal(switchedDraftError, null);
+    assert.equal(switchedDraft.proration_mode, 'second_month');
+
+    const { data: restoredDraft, error: restoredDraftError } = await adminClient.rpc(
+      'update_platform_invitation_draft',
+      { ...draftArgs, p_invitation_id: draft.id, p_proration_mode: 'first_month' },
+    );
+    assert.equal(restoredDraftError, null);
+    assert.equal(restoredDraft.proration_mode, 'first_month');
+
+    const { data: allRevisions, error: allRevisionsError } = await service
+      .from('platform_invitation_revisions')
+      .select('revision_number, proration_mode')
+      .eq('invitation_id', draft.id)
+      .order('revision_number', { ascending: true });
+    assert.equal(allRevisionsError, null);
+    assert.deepEqual(
+      allRevisions?.map((revision) => revision.proration_mode),
+      ['first_month', 'first_month', 'second_month', 'first_month'],
+    );
+
+    // Restoring an old revision must carry that revision's mode rather than falling back
+    // to the column default, in both directions.
+    const { data: restoredSecondMonth, error: restoredSecondMonthError } = await adminClient.rpc(
+      'restore_platform_invitation_revision',
+      { p_invitation_id: draft.id, p_revision_number: 3 },
+    );
+    assert.equal(restoredSecondMonthError, null);
+    assert.equal(restoredSecondMonth.proration_mode, 'second_month');
+
+    const { data: restoredFirstMonth, error: restoredFirstMonthError } = await adminClient.rpc(
+      'restore_platform_invitation_revision',
+      { p_invitation_id: draft.id, p_revision_number: 1 },
+    );
+    assert.equal(restoredFirstMonthError, null);
+    assert.equal(restoredFirstMonth.proration_mode, 'first_month');
+
+    // An unrecognized mode is treated like "leave it alone" rather than corrupting the row.
+    const { data: coercedDraft, error: coercedDraftError } = await adminClient.rpc(
+      'update_platform_invitation_draft',
+      { ...draftArgs, p_invitation_id: draft.id, p_proration_mode: 'third_month' },
+    );
+    assert.equal(coercedDraftError, null);
+    assert.equal(coercedDraft.proration_mode, 'first_month');
+
+    // The check constraint is the backstop for anything writing the table directly.
+    const { error: constraintError } = await service
+      .from('platform_invitations')
+      .update({ proration_mode: 'third_month' })
+      .eq('id', draft.id);
+    assert.equal(constraintError?.code, '23514');
+
+    const { error: revisionConstraintError } = await service
+      .from('platform_invitation_revisions')
+      .update({ proration_mode: 'third_month' })
+      .eq('invitation_id', draft.id);
+    assert.equal(revisionConstraintError?.code, '23514');
+
+    const { error: publishError } = await adminClient.rpc('publish_platform_invitation', {
+      p_invitation_id: draft.id,
+    });
+    assert.equal(publishError, null);
+
+    // The billing columns the checkout writer locks are the ones the customer is charged from.
+    const { error: billingUpdateError } = await service
+      .from('platform_invitations')
+      .update({
+        selected_payment_route: 'ach',
+        selected_payment_route_fee_cents: 0,
+        selected_payment_subtotal_cents: 98710,
+        selected_payment_total_cents: 98710,
+        recurring_anchor_at: '2026-09-01T07:00:00.000Z',
+        first_recurring_invoice_target_cents: 180000,
+      })
+      .eq('id', draft.id);
+    assert.equal(billingUpdateError, null);
+
+    const { data: publicInfo, error: publicInfoError } = await anon.rpc(
+      'get_platform_invitation_info',
+      { p_invitation_id: draft.id },
+    );
+    assert.equal(publicInfoError, null);
+    assert.equal(publicInfo.proration_mode, 'first_month');
+    assert.equal(publicInfo.monthly_retainer_cents, 180000);
+    assert.equal(publicInfo.selected_payment_subtotal_cents, 98710);
+    assert.equal(publicInfo.selected_payment_total_cents, 98710);
+    assert.equal(publicInfo.first_recurring_invoice_target_cents, 180000);
+    assert.equal(new Date(publicInfo.recurring_anchor_at).toISOString(), '2026-09-01T07:00:00.000Z');
+
+    const { data: listedRevisions, error: listedRevisionsError } = await adminClient.rpc(
+      'list_platform_invitation_revisions',
+      { p_invitation_id: draft.id },
+    );
+    assert.equal(listedRevisionsError, null);
+    const publishedRevision = (listedRevisions as Array<Record<string, unknown>>).find(
+      (revision) => revision.is_published === true,
+    );
+    assert.equal(publishedRevision?.proration_mode, 'first_month');
+  } finally {
+    if (cleanup.platformInvitationIds.length > 0) {
+      await service.from('platform_invitations').delete().in('id', cleanup.platformInvitationIds);
+    }
+    if (cleanup.userIds.length > 0) {
+      await service.from('user_access_flags').delete().in('user_id', cleanup.userIds);
+      await service.from('users').delete().in('id', cleanup.userIds);
+      for (const userId of cleanup.userIds) {
+        await service.auth.admin.deleteUser(userId);
+      }
+    }
+  }
+});
+
+test('invites default to second-month proration when the mode is not specified', async (t) => {
+  const namespace = createPlatformTestNamespace('prordefault');
+  const { service, anon } = getHarnessClients();
+  const supabaseUrl = process.env.PLATFORM_TEST_SUPABASE_URL || process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL!;
+  const adminEmail = `${namespace}-admin@furnace.test`;
+  const adminPassword = `Admin!${namespace.slice(-6)}Aa1`;
+  const cleanup = {
+    platformInvitationIds: [] as string[],
+    userIds: [] as string[],
+  };
+
+  try {
+    try {
+      await assertPlatformSchemaAvailable(service);
+    } catch (err) {
+      if (err instanceof Error && err.message === 'SKIP_PLATFORM_SCHEMA_MISSING') {
+        t.skip('Platform invite schema is not present in the current test database.');
+      }
+      throw err;
+    }
+
+    const { error: prorationProbeError } = await service
+      .from('platform_invitations')
+      .select('proration_mode')
+      .limit(1);
+    if (
+      prorationProbeError &&
+      (prorationProbeError.code === '42703' || prorationProbeError.code === 'PGRST204')
+    ) {
+      t.skip('Proration mode column is not present in the current test database.');
+      return;
+    }
+    assert.equal(prorationProbeError, null);
+
+    const { data: adminUserData, error: adminCreateError } = await service.auth.admin.createUser({
+      email: adminEmail,
+      password: adminPassword,
+      email_confirm: true,
+    });
+    if (adminCreateError || !adminUserData.user) {
+      throw new Error(adminCreateError?.message ?? 'Failed to create admin auth user');
+    }
+    cleanup.userIds.push(adminUserData.user.id);
+    await waitForPublicUser(service, adminUserData.user.id);
+    const { error: flagError } = await service.from('user_access_flags').insert({
+      user_id: adminUserData.user.id,
+      flag_key: 'platform_admin',
+    });
+    assert.equal(flagError, null);
+
+    const adminToken = await signIn(anon, adminEmail, adminPassword);
+    const adminClient = createClient(supabaseUrl, process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY!, {
+      auth: { persistSession: false, autoRefreshToken: false },
+      global: { headers: { Authorization: `Bearer ${adminToken}` } },
+    }) as DbClient;
+
+    const { data: invitation, error: invitationError } = await adminClient.rpc(
+      'create_platform_invitation',
+      {
+        p_email: `${namespace}@example.com`,
+        p_proposed_account_name: 'Default Proration Workspace',
+        p_monthly_retainer_cents: 180000,
+        p_currency: 'usd',
+        p_proposal_snapshot_json: {},
+        p_terms_version: 'default-v1',
+        p_agreement_type: 'platform_agreement',
+        p_terms_source_markdown: '# Furnace Platform Agreement',
+        p_auto_add_internal_admins: true,
+        p_expires_at: null,
+      },
+    );
+    assert.equal(invitationError, null);
+    assert.ok(invitation?.id);
+    cleanup.platformInvitationIds.push(invitation.id);
+    assert.equal(invitation.proration_mode, 'second_month');
+
+    const { data: publicInfo, error: publicInfoError } = await anon.rpc(
+      'get_platform_invitation_info',
+      { p_invitation_id: invitation.id },
+    );
+    assert.equal(publicInfoError, null);
+    assert.equal(publicInfo.proration_mode, 'second_month');
+
+    // Callers that omit the new argument entirely must still resolve to exactly one function.
+    // A leftover pre-migration overload would surface here as a PostgREST ambiguity error.
+    const legacyDraftArgs = {
+      p_email: `${namespace}-draft@example.com`,
+      p_proposed_account_name: 'Legacy Caller Workspace',
+      p_monthly_retainer_cents: 180000,
+      p_currency: 'usd',
+      p_proposal_snapshot_json: {},
+      p_terms_version: 'default-v1',
+      p_agreement_type: 'platform_agreement',
+      p_terms_source_markdown: '# Furnace Platform Agreement',
+      p_auto_add_internal_admins: true,
+      p_expires_at: null,
+    };
+
+    const { data: legacyDraft, error: legacyDraftError } = await adminClient.rpc(
+      'create_platform_invitation_draft',
+      legacyDraftArgs,
+    );
+    assert.equal(legacyDraftError, null);
+    assert.ok(legacyDraft?.id);
+    cleanup.platformInvitationIds.push(legacyDraft.id);
+    assert.equal(legacyDraft.proration_mode, 'second_month');
+
+    const { data: legacyUpdated, error: legacyUpdateError } = await adminClient.rpc(
+      'update_platform_invitation_draft',
+      { ...legacyDraftArgs, p_invitation_id: legacyDraft.id },
+    );
+    assert.equal(legacyUpdateError, null);
+    assert.equal(legacyUpdated.proration_mode, 'second_month');
+  } finally {
+    if (cleanup.platformInvitationIds.length > 0) {
+      await service.from('platform_invitations').delete().in('id', cleanup.platformInvitationIds);
+    }
+    if (cleanup.userIds.length > 0) {
+      await service.from('user_access_flags').delete().in('user_id', cleanup.userIds);
+      await service.from('users').delete().in('id', cleanup.userIds);
+      for (const userId of cleanup.userIds) {
+        await service.auth.admin.deleteUser(userId);
+      }
+    }
+  }
+});

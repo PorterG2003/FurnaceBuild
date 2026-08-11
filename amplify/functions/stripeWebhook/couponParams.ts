@@ -36,6 +36,21 @@ export function buildInviteRecurringCouponParams(args: {
   };
 }
 
+/**
+ * Amount the once-off first-recurring coupon should discount. Zero means no coupon at all,
+ * which is the normal case for first-month proration and for accepts on the 1st MST.
+ */
+export function resolveInviteRecurringCouponAmountCents(args: {
+  metadataCouponAmountCents: number;
+  ongoingMonthlyTotalCents: number;
+  firstRecurringInvoiceTotalCents: number;
+}) {
+  if (args.metadataCouponAmountCents > 0) {
+    return args.metadataCouponAmountCents;
+  }
+  return Math.max(args.ongoingMonthlyTotalCents - args.firstRecurringInvoiceTotalCents, 0);
+}
+
 export function buildUpgradeDeltaCouponParams(args: {
   amountOff: number;
   currency: string;

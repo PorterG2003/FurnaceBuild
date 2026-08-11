@@ -1,4 +1,8 @@
 import { useMemo } from 'react';
+import {
+  normalizePlatformInviteProrationMode,
+  type PlatformInviteProrationMode,
+} from '@/lib/billing/proration';
 import type { PlatformContractViewData } from '@/lib/platform/contract/types';
 import type { AgreementType } from '@/lib/platform/contract/terms';
 
@@ -6,6 +10,7 @@ export type InviteReviewPreviewInput = {
   inviteEmail: string;
   inviteCompanyName: string;
   monthlyRetainerCents: number | null;
+  prorationMode: PlatformInviteProrationMode;
   proposalSnapshot: Record<string, unknown>;
   agreementType: AgreementType;
   selectedTermsVersion: string;
@@ -32,6 +37,7 @@ export function buildInviteReviewPreviewData(input: InviteReviewPreviewInput): P
     currency: 'usd',
     proposalSnapshot: input.proposalSnapshot,
     agreementType: input.agreementType,
+    prorationMode: normalizePlatformInviteProrationMode(input.prorationMode),
     termsVersion: input.selectedTermsVersion,
     termsSourceMarkdown: input.termsSourceMarkdown,
     termsSnapshotMarkdown: input.renderedTermsPreview,
@@ -47,6 +53,7 @@ export function useInviteReviewPreviewData(input: InviteReviewPreviewInput) {
     input.invitationId,
     input.isEditing,
     input.monthlyRetainerCents,
+    input.prorationMode,
     input.proposalSnapshot,
     input.renderedTermsPreview,
     input.selectedTermsVersion,

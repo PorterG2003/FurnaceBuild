@@ -54,6 +54,7 @@ function buildDraft(overrides: Partial<PlatformInviteWizardDraft> = {}): Platfor
     inviteCompanyName: 'Acme',
     inviteMonthlyRetainer: '1800',
     inviteFirstMonthDiscount: '0',
+    inviteProrationMode: 'second_month',
     planTier: 'silver',
     proposalClientLogoUrl: '',
     proposalClientLogoScale: 1,
@@ -156,5 +157,25 @@ test('platform invite wizard draft persistence round-trips without losing fields
 
     clearPlatformInviteWizardDraft(key);
     assert.equal(readPlatformInviteWizardDraft(key), null);
+  });
+});
+
+test('platform invite wizard draft round-trips a first-month proration choice', () => {
+  withMockLocalStorage(() => {
+    const key = buildPlatformInviteWizardStorageKey('invite-first-month');
+    const draft = buildDraft({ inviteProrationMode: 'first_month' });
+
+    writePlatformInviteWizardDraft(key, draft);
+    assert.equal(readPlatformInviteWizardDraft(key)?.inviteProrationMode, 'first_month');
+  });
+});
+
+test('drafts saved before the proration option existed default to second_month', () => {
+  withMockLocalStorage(() => {
+    const key = buildPlatformInviteWizardStorageKey('invite-legacy');
+    const { inviteProrationMode: _omitted, ...legacyDraft } = buildDraft();
+
+    writePlatformInviteWizardDraft(key, legacyDraft as PlatformInviteWizardDraft);
+    assert.equal(readPlatformInviteWizardDraft(key)?.inviteProrationMode, 'second_month');
   });
 });

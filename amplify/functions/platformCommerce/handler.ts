@@ -2,7 +2,11 @@ import { createClient } from '@supabase/supabase-js';
 import Stripe from 'stripe';
 import { buildAmendmentUpgradeQuote } from '../../../lib/billing/amendmentQuote';
 import { getNextMonthlyAnchorDate } from '../../../lib/billing/calendar';
-import { buildBillingAnchorPlan } from '../../../lib/billing/proration';
+import {
+  buildBillingAnchorPlan,
+  normalizePlatformInviteProrationMode,
+  type PlatformInviteProrationMode,
+} from '../../../lib/billing/proration';
 import { buildAccountUpgradeIdempotencyKey } from './idempotency';
 import {
   buildPlatformPaymentQuote,
@@ -42,6 +46,7 @@ type InvitationCheckoutRow = {
   status: string;
   currency: string;
   monthly_retainer_cents: number;
+  proration_mode: string | null;
   terms_accepted_at: string | null;
   prepared_full_name: string | null;
   prepared_account_name: string | null;
@@ -56,12 +61,14 @@ type InvitationRevisionRow = {
   email: string;
   currency: string;
   monthly_retainer_cents: number;
+  proration_mode: string | null;
 };
 
 type ResolvedInvitationCheckout = InvitationCheckoutRow & {
   effective_email: string;
   effective_currency: string;
   effective_monthly_retainer_cents: number;
+  effective_proration_mode: PlatformInviteProrationMode;
   effective_revision_number: number;
 };
 
@@ -90,7 +97,7 @@ async function loadInvitationForCheckout(invitationId: string): Promise<Resolved
   const { data: invitation, error: invitationError } = await supabase
     .from('platform_invitations')
     .select(
-      'id, email, status, currency, monthly_retainer_cents, terms_accepted_at, prepared_full_name, prepared_account_name, auto_add_internal_admins, current_revision_number, published_revision_number, checkout_revision_number, stripe_customer_id',
+      'id, email, status, currency, monthly_retainer_cents, proration_mode, terms_accepted_at, prepared_full_name, prepared_account_name, auto_add_internal_admins, current_revision_number, published_revision_number, checkout_revision_number, stripe_customer_id',
     )
     .eq('id', invitationId)
     .maybeSingle();
@@ -104,7 +111,7 @@ async function loadInvitationForCheckout(invitationId: string): Promise<Resolved
 
   const { data: revision, error: revisionError } = await supabase
     .from('platform_invitation_revisions')
-    .select('email, currency, monthly_retainer_cents')
+    .select('email, currency, monthly_retainer_cents, proration_mode')
     .eq('invitation_id', invitationId)
     .eq('revision_number', effectiveRevisionNumber)
     .maybeSingle();
@@ -117,13 +124,21 @@ async function loadInvitationForCheckout(invitationId: string): Promise<Resolved
     effective_currency: revisionData?.currency ?? invitation.currency,
     effective_monthly_retainer_cents:
       revisionData?.monthly_retainer_cents ?? invitation.monthly_retainer_cents,
+    effective_proration_mode: normalizePlatformInviteProrationMode(
+      revisionData?.proration_mode ?? invitation.proration_mode,
+    ),
     effective_revision_number: effectiveRevisionNumber,
   };
 }
 
-function buildCheckoutQuote(invitation: ResolvedInvitationCheckout, paymentRoute: PlatformPaymentRoute) {
+function buildCheckoutQuote(
+  invitation: ResolvedInvitationCheckout,
+  paymentRoute: PlatformPaymentRoute,
+  plan: ReturnType<typeof buildBillingAnchorPlan>,
+) {
   return buildPlatformPaymentQuote({
     monthlyRetainerCents: invitation.effective_monthly_retainer_cents,
+    dueTodaySubtotalCents: plan.dueTodaySubtotalCents,
     paymentRoute,
     routeConfig: getServerPlatformPaymentFeeConfig()[paymentRoute],
   });
@@ -156,6 +171,9 @@ function buildQuoteResponse(
     routeFeeCents: quote.routeFeeCents,
     totalDueTodayCents: quote.totalDueTodayCents,
     recurringAnchorAt: plan.anchorDateIso,
+    prorationMode: plan.prorationMode,
+    dueTodayCoveredDays: plan.dueTodayCoveredDays,
+    dueTodayMonthDays: plan.dueTodayMonthDays,
     firstRecurringSubtotalCents: recurringQuote.firstRecurringSubtotalCents,
     firstRecurringRouteFeeCents: recurringQuote.firstRecurringRouteFeeCents,
     firstRecurringInvoiceCents: recurringQuote.firstRecurringTotalCents,
@@ -262,7 +280,6 @@ async function createCheckoutSession(args: {
   if (invitation.effective_monthly_retainer_cents === 0) {
     throw new Error('Free invitations do not use checkout.');
   }
-  const quote = buildCheckoutQuote(invitation, args.paymentRoute);
   if ((user.email ?? '').toLowerCase() !== invitation.effective_email.toLowerCase()) {
     throw new Error('This invite is for a different email address.');
   }
@@ -271,7 +288,12 @@ async function createCheckoutSession(args: {
   }
 
   const startedAt = new Date();
-  const plan = buildBillingAnchorPlan(startedAt, invitation.effective_monthly_retainer_cents);
+  const plan = buildBillingAnchorPlan(
+    startedAt,
+    invitation.effective_monthly_retainer_cents,
+    invitation.effective_proration_mode,
+  );
+  const quote = buildCheckoutQuote(invitation, args.paymentRoute, plan);
   const recurringQuote = buildRecurringQuote(invitation, args.paymentRoute, plan);
   const customerId = await ensureStripeCustomer({ stripe, invitation });
   const routeOption = getPlatformPaymentRouteOption(args.paymentRoute);
@@ -320,6 +342,7 @@ async function createCheckoutSession(args: {
       monthlyRetainerCents: String(invitation.effective_monthly_retainer_cents),
       currency: invitation.effective_currency,
       anchorDateIso: plan.anchorDateIso,
+      prorationMode: plan.prorationMode,
       firstRecurringSubtotalCents: String(recurringQuote.firstRecurringSubtotalCents),
       firstRecurringRouteFeeCents: String(recurringQuote.firstRecurringRouteFeeCents),
       firstRecurringInvoiceAmountCents: String(recurringQuote.firstRecurringTotalCents),
@@ -956,8 +979,12 @@ async function quoteCheckout(args: {
   if (invitation.effective_monthly_retainer_cents === 0) {
     throw new Error('Free invitations do not require payment.');
   }
-  const quote = buildCheckoutQuote(invitation, args.paymentRoute);
-  const plan = buildBillingAnchorPlan(new Date(), invitation.effective_monthly_retainer_cents);
+  const plan = buildBillingAnchorPlan(
+    new Date(),
+    invitation.effective_monthly_retainer_cents,
+    invitation.effective_proration_mode,
+  );
+  const quote = buildCheckoutQuote(invitation, args.paymentRoute, plan);
   const recurringQuote = buildRecurringQuote(invitation, args.paymentRoute, plan);
   return buildQuoteResponse(invitation, quote, plan, recurringQuote);
 }

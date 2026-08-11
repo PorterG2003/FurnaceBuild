@@ -2,11 +2,14 @@ import { Text, View } from 'react-native';
 import { Button } from '@/components/ui/button';
 import { formatUsd } from '@/components/platform/admin/shared';
 import { getAgreementTypeLabel, type AgreementType } from '@/lib/platform/contract/terms';
+import type { PlatformInviteProrationMode } from '@/lib/billing/proration';
+import { getInviteProrationModeLabel } from '@/lib/platform/invite/prorationSummary';
 
 type InviteApprovalStepProps = {
   inviteEmail: string;
   inviteCompanyName: string;
   monthlyRetainerCents: number | null;
+  prorationMode: PlatformInviteProrationMode;
   agreementType: AgreementType;
   isManagedServicesAgreement: boolean;
   managedOutreachVolume: string;
@@ -22,6 +25,7 @@ export function InviteApprovalStep({
   inviteEmail,
   inviteCompanyName,
   monthlyRetainerCents,
+  prorationMode,
   agreementType,
   isManagedServicesAgreement,
   managedOutreachVolume,
@@ -47,6 +51,11 @@ export function InviteApprovalStep({
           <Text className="text-gray-400 font-instrument">
             Retainer: {formatUsd(monthlyRetainerCents ?? 0)}
           </Text>
+          {monthlyRetainerCents != null && monthlyRetainerCents > 0 ? (
+            <Text className="text-gray-400 font-instrument">
+              First invoice: {getInviteProrationModeLabel(prorationMode)}
+            </Text>
+          ) : null}
           <Text className="text-gray-400 font-instrument">
             Agreement: {getAgreementTypeLabel(agreementType)}
           </Text>

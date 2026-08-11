@@ -148,7 +148,9 @@ class MockSupabase {
         table === 'message_jobs' ||
         table === 'email_threads' ||
         table === 'email_messages' ||
-        table === 'enrollments'
+        table === 'enrollments' ||
+        table === 'notification_events' ||
+        table === 'webhook_events'
       ) {
         response = { data: null, error: null };
       } else {
@@ -604,6 +606,51 @@ test('handleReply scopes duplicate detection and job lookup to the mailbox accou
     parentMessageLookup.filters.find((filter) => filter.column === 'account_id'),
     { op: 'eq', column: 'account_id', value: 'account-1' }
   );
+});
+
+test('handleReply re-emits notification_events when the email_message already exists', async () => {
+  const prevQueue = process.env.NOTIFICATION_QUEUE_URL;
+  delete process.env.NOTIFICATION_QUEUE_URL;
+  try {
+    const supabase = new MockSupabase([
+      {
+        data: [
+          {
+            id: 'email-message-existing',
+            thread_id: 'thread-1',
+            received_at: '2026-08-10T19:13:24.000Z',
+          },
+        ],
+      },
+      // 23505 on insert → lookup existing event id, then no-op enqueue (queue URL unset)
+      { data: null, error: { code: '23505', message: 'duplicate key' } },
+      { data: { id: 'notification-event-existing' }, error: null },
+    ]);
+    const manager = new ThreadManager(supabase as any);
+    const mailbox = createMailbox({ account_id: 'account-1' });
+    const message = createProcessedMessage({
+      messageId: '<already-seen@example.com>',
+      subject: 'Re: already seen',
+    });
+
+    const handled = await manager.handleReply(mailbox, message);
+    assert.equal(handled, true);
+
+    const notificationInsert = supabase.calls.find(
+      (call) => (call as QueryCall).table === 'notification_events' && (call as QueryCall).insertPayloads.length > 0
+    ) as QueryCall | undefined;
+    assert.ok(notificationInsert);
+    const payload = notificationInsert.insertPayloads[0] as Record<string, unknown>;
+    assert.equal(payload.account_id, 'account-1');
+    assert.equal(payload.dedupe_key, 'email.received:email-message-existing');
+    const eventPayload = payload.payload as Record<string, unknown>;
+    assert.equal(eventPayload.email_message_id, 'email-message-existing');
+    assert.equal(eventPayload.thread_id, 'thread-1');
+    assert.equal(eventPayload.mailbox_id, mailbox.id);
+  } finally {
+    if (prevQueue === undefined) delete process.env.NOTIFICATION_QUEUE_URL;
+    else process.env.NOTIFICATION_QUEUE_URL = prevQueue;
+  }
 });
 
 test('handleReply treats inbound unsubscribe-like replies as normal replies', async () => {

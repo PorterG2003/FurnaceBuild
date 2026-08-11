@@ -3,13 +3,16 @@
 ## Overview
 
 1. **Inbox checker worker** inserts a row into `notification_events` and sends `{ eventId }` to **SQS** (`furnace-notification-events-{env}`).
-2. **Lambda** `processNotificationEvent` (Amplify) consumes the queue, creates **`notifications`** for the mailbox owner, and optionally sends **Web Push** using VAPID.
+2. **Lambda** `processNotificationEvent` (Amplify) consumes the queue, fans out **`notifications`** to every **account member**, and optionally sends **Web Push** using VAPID (gated by each member’s prefs).
 3. The **app** shows a bell with unread count, **Account → Notifications** for preferences, and registers **push subscriptions** on web.
 
 ## Multi-account model
 
+- Recipients are all rows in `account_users` for the event’s `account_id` (not only `mailboxes.user_id`).
+- Each member is gated independently by `notification_preferences` for `(user_id, account_id, event_type, channel)`.
+- `in_app` defaults to on; `web_push` defaults to off when no preference row exists.
 - `push_subscriptions` are stored per user + browser device, not per account.
-- `notification_preferences` remain per `(user_id, account_id, event_type, channel)` and gate whether a given account may send web push.
+- A member who already has a `notifications` row for the event is skipped; other members are still processed (retries can heal partial fan-out).
 - Push deep links include `accountId` so the app can switch to the right account before opening the target thread.
 
 ## Inbox deep link URL shape
@@ -90,13 +93,19 @@ If the VAPID push config is missing or invalid, Web Push is skipped but in-app n
 
 The inbox worker still inserts `notification_events`. If `NOTIFICATION_QUEUE_URL` is unset (local without ECS env), **no SQS message** is sent; notifications are not processed until you run the Lambda manually or deploy the full pipeline.
 
-## Idempotency
+## Idempotency and orphan recovery
 
 - `notification_events.dedupe_key` unique per account (`email.received:{email_message_id}`).
 - `notifications` unique on `(event_id, user_id)`.
+- If insert hits a duplicate `dedupe_key`, the worker **looks up the existing event id and re-enqueues** SQS (heals a dropped send after a successful insert).
+- If `email_messages` already exists for the inbound Message-ID (early duplicate or insert race), the worker still calls `emitEmailReceivedNotification` so a later IMAP pass can heal an orphaned event.
+- SQS enqueue is retried a few times; failures are logged and do not fail reply handling.
+- If Lambda cannot load the `notification_events` row, it reports the SQS record as a **batch item failure** (retry) instead of acking.
 
 ## Manual QA
 
 - Enable push under account A on a browser, switch to account B on the same browser, enable push again, then confirm both accounts still deliver to that browser.
+- With two account members, mute push for the mailbox owner and enable push for the other member; confirm only the opted-in member gets a device alert (and an in-app row if they want in-app).
 - Click a push notification for a non-active account and confirm the app switches accounts before opening the target inbox thread.
 - Revoke browser push permission or let the endpoint expire, then confirm a 404/410 response revokes the stored `push_subscriptions` row.
+- Force a duplicate IMAP delivery of an already-stored reply and confirm `notification_events` is looked up / re-enqueued without creating a second email_messages row.

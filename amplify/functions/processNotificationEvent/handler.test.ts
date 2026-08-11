@@ -15,35 +15,52 @@ type PushSubRow = {
   auth: string;
   revoked_at: string | null;
 };
+type MemberPrefs = {
+  inApp?: PrefRow;
+  webPush?: PrefRow;
+};
 
 function createFakeSupabase(params?: {
   pushSubscriptions?: PushSubRow[];
   webPushPref?: PrefRow;
   inAppPref?: PrefRow;
+  /** When set, overrides global prefs per user_id. */
+  prefsByUser?: Record<string, MemberPrefs>;
+  memberUserIds?: string[];
+  /** Existing notification rows keyed by `${eventId}:${userId}`. */
+  existingByUser?: Record<string, { id: string }>;
+  notificationEvent?: Record<string, unknown> | null;
+  mailbox?: { id: string } | null;
 }) {
   const pushSubscriptions = [...(params?.pushSubscriptions ?? [])];
   const deliveries: DeliveryRow[] = [];
   const notificationsInserted: Array<Record<string, unknown>> = [];
   const pushSubscriptionEqCalls: Array<[string, unknown]> = [];
   const pushSubscriptionIsCalls: Array<[string, unknown]> = [];
+  const memberUserIds = params?.memberUserIds ?? ['user-1'];
+  const prefsByUser = params?.prefsByUser ?? {};
+  const existingByUser: Record<string, { id: string }> = { ...(params?.existingByUser ?? {}) };
+  let notifSeq = 0;
 
   const state = {
-    notificationEvent: {
-      id: 'evt-1',
-      account_id: 'acct-1',
-      event_type: 'email.received',
-      payload: {
-        email_message_id: 'email-1',
-        thread_id: 'thread-1',
-        mailbox_id: 'mailbox-1',
-        from_email: 'person@example.com',
-        from_name: 'Person Example',
-        subject: 'Hello',
-        received_at: '2026-05-08T00:00:00.000Z',
-      },
-    },
-    mailbox: { user_id: 'user-1' },
-    existingNotification: null as { id: string } | null,
+    notificationEvent:
+      params?.notificationEvent === null
+        ? null
+        : (params?.notificationEvent ?? {
+            id: 'evt-1',
+            account_id: 'acct-1',
+            event_type: 'email.received',
+            payload: {
+              email_message_id: 'email-1',
+              thread_id: 'thread-1',
+              mailbox_id: 'mailbox-1',
+              from_email: 'person@example.com',
+              from_name: 'Person Example',
+              subject: 'Hello',
+              received_at: '2026-05-08T00:00:00.000Z',
+            },
+          }),
+    mailbox: params?.mailbox === null ? null : (params?.mailbox ?? { id: 'mailbox-1' }),
     inAppPref: params?.inAppPref ?? { enabled: true, frequency: 'instant' },
     webPushPref: params?.webPushPref ?? { enabled: true, frequency: 'instant' },
     emailMessage: { body_text: 'Body preview text', body_html: null as string | null },
@@ -52,6 +69,8 @@ function createFakeSupabase(params?: {
     notificationsInserted,
     pushSubscriptionEqCalls,
     pushSubscriptionIsCalls,
+    memberUserIds,
+    existingByUser,
   };
 
   const supabase = {
@@ -92,30 +111,49 @@ function createFakeSupabase(params?: {
         };
       }
 
-      if (table === 'notifications') {
+      if (table === 'account_users') {
         return {
           select() {
             return {
-              eq() {
+              async eq(column: string, value: unknown) {
+                assert.equal(column, 'account_id');
+                assert.equal(value, 'acct-1');
                 return {
-                  eq() {
-                    return {
-                      async maybeSingle() {
-                        return { data: state.existingNotification, error: null };
-                      },
-                    };
-                  },
+                  data: state.memberUserIds.map((user_id) => ({ user_id })),
+                  error: null,
                 };
+              },
+            };
+          },
+        };
+      }
+
+      if (table === 'notifications') {
+        return {
+          select() {
+            const filters: Record<string, unknown> = {};
+            return {
+              eq(column: string, value: unknown) {
+                filters[column] = value;
+                return this;
+              },
+              async maybeSingle() {
+                const key = `${filters.event_id}:${filters.user_id}`;
+                return { data: state.existingByUser[key] ?? null, error: null };
               },
             };
           },
           insert(row: Record<string, unknown>) {
             state.notificationsInserted.push(row);
+            notifSeq += 1;
+            const id = `notif-${notifSeq}`;
+            const key = `${row.event_id}:${row.user_id}`;
+            state.existingByUser[key] = { id };
             return {
               select() {
                 return {
                   async single() {
-                    return { data: { id: 'notif-1' }, error: null };
+                    return { data: { id }, error: null };
                   },
                 };
               },
@@ -134,12 +172,14 @@ function createFakeSupabase(params?: {
                 return this;
               },
               async maybeSingle() {
-                const row =
-                  filters.channel === 'in_app'
-                    ? state.inAppPref
-                    : filters.channel === 'web_push'
-                      ? state.webPushPref
-                      : null;
+                const userId = String(filters.user_id ?? '');
+                const perUser = prefsByUser[userId];
+                let row: PrefRow = null;
+                if (filters.channel === 'in_app') {
+                  row = perUser?.inApp !== undefined ? perUser.inApp : state.inAppPref;
+                } else if (filters.channel === 'web_push') {
+                  row = perUser?.webPush !== undefined ? perUser.webPush : state.webPushPref;
+                }
                 return { data: row, error: null };
               },
             };
@@ -260,7 +300,135 @@ test('processNotificationRecord still inserts an in-app notification when web pu
   assert.deepEqual(result, {});
   assert.equal(pushCallCount, 0);
   assert.equal(state.notificationsInserted.length, 1);
+  assert.equal(state.notificationsInserted[0]?.user_id, 'user-1');
   assert.equal(state.notificationsInserted[0]?.action_url, '/inbox/thread-1');
+});
+
+test('processNotificationRecord fans out to every account member with their own prefs', async () => {
+  const { supabase, state } = createFakeSupabase({
+    memberUserIds: ['owner-1', 'member-2'],
+    prefsByUser: {
+      'owner-1': {
+        inApp: { enabled: true, frequency: 'instant' },
+        webPush: { enabled: false, frequency: 'muted' },
+      },
+      'member-2': {
+        inApp: { enabled: true, frequency: 'instant' },
+        webPush: { enabled: true, frequency: 'instant' },
+      },
+    },
+    pushSubscriptions: [
+      { id: 'sub-m2', endpoint: 'https://push.example/m2', p256dh: 'p2', auth: 'a2', revoked_at: null },
+    ],
+  });
+  const pushUsers: string[] = [];
+
+  const result = await processNotificationRecord({
+    record: { body: JSON.stringify({ eventId: 'evt-1' }), messageId: 'msg-1' },
+    supabase: supabase as any,
+    webPushReady: true,
+    webOrigin: 'https://build.getfurnace.io',
+    async sendNotification() {
+      pushUsers.push('member-2');
+    },
+  });
+
+  assert.deepEqual(result, {});
+  assert.deepEqual(
+    state.notificationsInserted.map((row) => row.user_id),
+    ['owner-1', 'member-2']
+  );
+  assert.equal(pushUsers.length, 1);
+  assert.equal(state.deliveries.length, 1);
+  assert.equal(state.deliveries[0]?.status, 'delivered');
+});
+
+test('processNotificationRecord still inserts for member B when A already has a row', async () => {
+  const { supabase, state } = createFakeSupabase({
+    memberUserIds: ['user-a', 'user-b'],
+    existingByUser: { 'evt-1:user-a': { id: 'notif-existing-a' } },
+    prefsByUser: {
+      'user-a': {
+        inApp: { enabled: true, frequency: 'instant' },
+        webPush: { enabled: true, frequency: 'instant' },
+      },
+      'user-b': {
+        inApp: { enabled: true, frequency: 'instant' },
+        webPush: { enabled: false, frequency: 'muted' },
+      },
+    },
+  });
+
+  const result = await processNotificationRecord({
+    record: { body: JSON.stringify({ eventId: 'evt-1' }), messageId: 'msg-1' },
+    supabase: supabase as any,
+    webPushReady: true,
+    webOrigin: 'https://build.getfurnace.io',
+    async sendNotification() {
+      throw new Error('should not push');
+    },
+  });
+
+  assert.deepEqual(result, {});
+  assert.equal(state.notificationsInserted.length, 1);
+  assert.equal(state.notificationsInserted[0]?.user_id, 'user-b');
+});
+
+test('processNotificationRecord does not let a muted owner block a member with push on', async () => {
+  const { supabase, state } = createFakeSupabase({
+    memberUserIds: ['owner-muted', 'member-push'],
+    prefsByUser: {
+      'owner-muted': {
+        inApp: { enabled: false, frequency: 'muted' },
+        webPush: { enabled: false, frequency: 'muted' },
+      },
+      'member-push': {
+        inApp: { enabled: false, frequency: 'muted' },
+        webPush: { enabled: true, frequency: 'instant' },
+      },
+    },
+    pushSubscriptions: [
+      {
+        id: 'sub-1',
+        endpoint: 'https://push.example/1',
+        p256dh: 'p1',
+        auth: 'a1',
+        revoked_at: null,
+      },
+    ],
+  });
+  let pushCalls = 0;
+
+  const result = await processNotificationRecord({
+    record: { body: JSON.stringify({ eventId: 'evt-1' }), messageId: 'msg-1' },
+    supabase: supabase as any,
+    webPushReady: true,
+    webOrigin: 'https://build.getfurnace.io',
+    async sendNotification() {
+      pushCalls += 1;
+    },
+  });
+
+  assert.deepEqual(result, {});
+  assert.equal(state.notificationsInserted.length, 1);
+  assert.equal(state.notificationsInserted[0]?.user_id, 'member-push');
+  assert.equal(pushCalls, 1);
+});
+
+test('processNotificationRecord retries when notification_events row is missing', async () => {
+  const { supabase } = createFakeSupabase({
+    notificationEvent: null,
+  });
+
+  const result = await processNotificationRecord({
+    record: { body: JSON.stringify({ eventId: 'evt-missing' }), messageId: 'msg-missing' },
+    supabase: supabase as any,
+    webPushReady: true,
+    webOrigin: 'https://build.getfurnace.io',
+    async sendNotification() {},
+  });
+
+  assert.deepEqual(result, { itemIdentifier: 'msg-missing' });
 });
 
 test('sendWebPushDeliveries fans out to every active subscription for the user', async () => {

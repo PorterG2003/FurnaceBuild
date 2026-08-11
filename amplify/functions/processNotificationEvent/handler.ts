@@ -91,6 +91,26 @@ export async function listActivePushSubscriptionsForUser(
   return (data ?? []) as PushSubscriptionRow[];
 }
 
+export async function listAccountMemberUserIds(
+  supabase: SupabaseClient,
+  accountId: string
+): Promise<string[]> {
+  const { data, error } = await supabase
+    .from('account_users')
+    .select('user_id')
+    .eq('account_id', accountId);
+
+  if (error) {
+    console.error('[processNotificationEvent] account_users lookup failed', accountId, error);
+    return [];
+  }
+
+  const ids = (data ?? [])
+    .map((row) => (row as { user_id: string | null }).user_id)
+    .filter((id): id is string => typeof id === 'string' && id.length > 0);
+  return [...new Set(ids)];
+}
+
 export async function sendWebPushDeliveries(params: {
   supabase: SupabaseClient;
   userId: string;
@@ -208,8 +228,10 @@ export async function processNotificationRecord(params: {
       .eq('id', eventId)
       .maybeSingle();
 
+    // Missing row is retryable (eventual consistency / delayed insert). Do not ack.
     if (evtError || !evt) {
-      return {};
+      console.error('[processNotificationEvent] notification_events row missing; retrying', eventId, evtError);
+      return { itemIdentifier: record.messageId };
     }
     if (!HANDLED_NOTIFICATION_EVENT_TYPES.has(String(evt.event_type))) {
       console.log('[processNotificationEvent] unsupported event_type, skipping', evt.event_type);
@@ -217,53 +239,24 @@ export async function processNotificationRecord(params: {
     }
 
     const payload = evt.payload as EmailReceivedPayload;
+    const accountId = evt.account_id as string;
+
+    // Validate mailbox belongs to the account; recipients are account members, not mailbox.user_id.
     const { data: mailbox, error: mbError } = await supabase
       .from('mailboxes')
-      .select('user_id')
+      .select('id')
       .eq('id', payload.mailbox_id)
-      .eq('account_id', evt.account_id)
+      .eq('account_id', accountId)
       .maybeSingle();
 
-    if (mbError || !mailbox?.user_id) {
+    if (mbError || !mailbox) {
       console.error('[processNotificationEvent] mailbox not found', payload.mailbox_id, mbError);
       return {};
     }
 
-    const userId = mailbox.user_id as string;
-    const accountId = evt.account_id as string;
-
-    const { data: existing } = await supabase
-      .from('notifications')
-      .select('id')
-      .eq('event_id', eventId)
-      .eq('user_id', userId)
-      .maybeSingle();
-
-    if (existing) {
-      return {};
-    }
-
-    const inAppPref = await preferenceEnabled(
-      supabase,
-      userId,
-      accountId,
-      'email.received',
-      'in_app',
-      true,
-      'instant'
-    );
-    const pushPrefEarly = await preferenceEnabled(
-      supabase,
-      userId,
-      accountId,
-      'email.received',
-      'web_push',
-      false,
-      'instant'
-    );
-    const wantInApp = inAppPref.enabled && inAppPref.frequency !== 'muted';
-    const wantPush = pushPrefEarly.enabled && pushPrefEarly.frequency !== 'muted';
-    if (!wantInApp && !wantPush) {
+    const memberUserIds = await listAccountMemberUserIds(supabase, accountId);
+    if (memberUserIds.length === 0) {
+      console.error('[processNotificationEvent] no account members for', accountId);
       return {};
     }
 
@@ -286,41 +279,85 @@ export async function processNotificationRecord(params: {
       : '';
     const actionUrl = buildInboxNotificationActionUrl(payload.thread_id);
 
-    const { data: notif, error: insErr } = await supabase
-      .from('notifications')
-      .insert({
-        user_id: userId,
-        account_id: accountId,
-        event_id: eventId,
-        title,
-        body: bodyText,
-        status: 'unread',
-        action_url: actionUrl,
-      })
-      .select('id')
-      .single();
+    let hardFailure = false;
 
-    if (insErr) {
-      if (insErr.code === '23505') {
-        return {};
+    for (const userId of memberUserIds) {
+      const { data: existing } = await supabase
+        .from('notifications')
+        .select('id')
+        .eq('event_id', eventId)
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (existing) {
+        continue;
       }
-      console.error('[processNotificationEvent] insert notification', insErr);
-      return { itemIdentifier: record.messageId };
-    }
 
-    if (webPushReady && wantPush) {
-      await sendWebPushDeliveries({
+      const inAppPref = await preferenceEnabled(
         supabase,
         userId,
         accountId,
-        notificationId: notif.id,
-        eventId,
-        title,
-        bodyText,
-        actionUrl,
-        webOrigin,
-        sendNotification,
-      });
+        'email.received',
+        'in_app',
+        true,
+        'instant'
+      );
+      const pushPref = await preferenceEnabled(
+        supabase,
+        userId,
+        accountId,
+        'email.received',
+        'web_push',
+        false,
+        'instant'
+      );
+      const wantInApp = inAppPref.enabled && inAppPref.frequency !== 'muted';
+      const wantPush = pushPref.enabled && pushPref.frequency !== 'muted';
+      if (!wantInApp && !wantPush) {
+        continue;
+      }
+
+      const { data: notif, error: insErr } = await supabase
+        .from('notifications')
+        .insert({
+          user_id: userId,
+          account_id: accountId,
+          event_id: eventId,
+          title,
+          body: bodyText,
+          status: 'unread',
+          action_url: actionUrl,
+        })
+        .select('id')
+        .single();
+
+      if (insErr) {
+        if (insErr.code === '23505') {
+          continue;
+        }
+        console.error('[processNotificationEvent] insert notification', userId, insErr);
+        hardFailure = true;
+        continue;
+      }
+
+      if (webPushReady && wantPush && notif?.id) {
+        await sendWebPushDeliveries({
+          supabase,
+          userId,
+          accountId,
+          notificationId: notif.id,
+          eventId,
+          title,
+          bodyText,
+          actionUrl,
+          webOrigin,
+          sendNotification,
+        });
+      }
+    }
+
+    if (hardFailure) {
+      return { itemIdentifier: record.messageId };
     }
   } catch (e) {
     console.error('[processNotificationEvent] record failed', e);

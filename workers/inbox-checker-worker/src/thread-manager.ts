@@ -313,16 +313,31 @@ export class ThreadManager {
     // Check if this message already exists (duplicate check)
     const { data: existingMessages } = await this.supabase
       .from('email_messages')
-      .select('id, thread_id')
+      .select('id, thread_id, received_at')
       .eq('account_id', mailbox.account_id)
       .eq('message_id', normalizedMessageId)
       .order('created_at', { ascending: true })
       .limit(1);
 
-    const existingMessage = existingMessages?.[0];
+    const existingMessage = existingMessages?.[0] as
+      | { id: string; thread_id: string | null; received_at: string | null }
+      | undefined;
 
     if (existingMessage) {
-      console.log(`[INBOX CHECKER] Message ${normalizedMessageId} already processed, skipping duplicate`);
+      console.log(`[INBOX CHECKER] Message ${normalizedMessageId} already processed, re-emitting notification event`);
+      // Heal dropped SQS: re-enqueue even when the email_messages row already exists.
+      if (existingMessage.thread_id) {
+        await emitEmailReceivedNotification(this.supabase, {
+          accountId: mailbox.account_id,
+          threadId: existingMessage.thread_id,
+          emailMessageId: existingMessage.id,
+          mailboxId: mailbox.id,
+          fromEmail: message.from.address,
+          fromName: message.from.name || null,
+          subject: message.subject,
+          receivedAt: existingMessage.received_at || message.date.toISOString(),
+        });
+      }
       this.logReplyMatch(true, 'duplicate', mailbox, message);
       return true; // Already processed, return success
     }
@@ -573,7 +588,31 @@ export class ThreadManager {
     if (messageError) {
       // Check if it's a duplicate error (unique constraint violation)
       if (messageError.code === '23505' || messageError.message?.includes('duplicate')) {
-        console.log(`[INBOX CHECKER] Message ${normalizedMessageId} already exists (race condition), skipping`);
+        console.log(
+          `[INBOX CHECKER] Message ${normalizedMessageId} already exists (race condition), re-emitting notification event`
+        );
+        const { data: racedMessages } = await this.supabase
+          .from('email_messages')
+          .select('id, thread_id, received_at')
+          .eq('account_id', mailbox.account_id)
+          .eq('message_id', normalizedMessageId)
+          .order('created_at', { ascending: true })
+          .limit(1);
+        const raced = racedMessages?.[0] as
+          | { id: string; thread_id: string | null; received_at: string | null }
+          | undefined;
+        if (raced?.thread_id) {
+          await emitEmailReceivedNotification(this.supabase, {
+            accountId: mailbox.account_id,
+            threadId: raced.thread_id,
+            emailMessageId: raced.id,
+            mailboxId: mailbox.id,
+            fromEmail: message.from.address,
+            fromName: message.from.name || null,
+            subject: message.subject,
+            receivedAt: raced.received_at || message.date.toISOString(),
+          });
+        }
         return true; // Already processed by another worker, return success
       }
       console.error('Error creating email_message:', messageError);

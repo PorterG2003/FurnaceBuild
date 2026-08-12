@@ -128,6 +128,41 @@ export function buildWebhookTestPayload(
         }),
         includeTestFlag,
       );
+    case 'lead.added_to_list.completed':
+      return maybeWithTestFlag(
+        buildBatchCompletionPayload({
+          jobId: TEST_JOB_ID,
+          source: 'async',
+          campaignId: null,
+          operation: 'add_to_lead_list',
+          counts: { added: 2, skipped: 0, failed: 0 },
+          globalLeadIds: [TEST_GLOBAL_LEAD_ID],
+        }),
+        includeTestFlag,
+      );
+    case 'lead.removed_from_list.completed':
+      return maybeWithTestFlag(
+        buildBatchCompletionPayload({
+          jobId: TEST_JOB_ID,
+          source: 'async',
+          campaignId: null,
+          operation: 'remove_from_lead_list',
+          counts: { removed: 1, skipped: 0, failed: 0 },
+          globalLeadIds: [TEST_GLOBAL_LEAD_ID],
+        }),
+        includeTestFlag,
+      );
+    case 'lead.export.completed':
+      return maybeWithTestFlag(
+        buildBatchCompletionPayload({
+          jobId: TEST_JOB_ID,
+          source: 'async',
+          campaignId: null,
+          operation: 'export_leads',
+          counts: { rows_exported: 10, failed: 0 },
+        }),
+        includeTestFlag,
+      );
     case 'enrollment.pause_completed':
       return maybeWithTestFlag(
         buildBatchCompletionPayload({

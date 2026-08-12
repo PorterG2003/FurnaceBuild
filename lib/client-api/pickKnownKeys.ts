@@ -65,6 +65,16 @@ export const IMPORT_JOB_CREATE_KEYS = [
   'global_lead_ids',
   'list_id',
   'leads',
+  'scope',
+  'exclusions',
+  'preview_id',
+  'expected_count',
+  'upload_id',
+  'source_campaign_id',
+  'target_list_id',
+  'column_layout',
+  'filename_base',
+  'projection',
 ] as const;
 
 export const FLOW_UPDATE_KEYS = [

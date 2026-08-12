@@ -110,6 +110,150 @@ export function buildClientApiPaths() {
         },
       },
     },
+    '/v1/meta/limits': {
+      get: {
+        operationId: 'getLimits',
+        tags: ['Meta'],
+        summary: 'API limits and bulk capabilities',
+        description:
+          'Returns page sizes, sync/async bulk caps, queued vs running job quotas, supported scopes/operations, and file-ingress capabilities. Agents should configure chunking from this document rather than hard-coding limits.',
+        responses: {
+          200: jsonResponse('LimitsGuideResponse', 'Limits and capabilities.'),
+          ...authenticatedErrors(),
+        },
+      },
+    },
+    '/v1/bulk/preview': {
+      post: {
+        operationId: 'previewBulkOperation',
+        tags: ['Jobs'],
+        summary: 'Preview a bulk operation',
+        description:
+          'Estimates matched/excluded/actionable counts for a scoped bulk mutation. Pass the returned `preview_id` when creating the job to bind execution to the preview.',
+        requestBody: jsonRequestBody('BulkPreviewRequest', {
+          operation: 'add_to_campaign',
+          campaign_id: '1d8dc901-3d2d-4d9f-9dcc-4f8b3aa1a1fb',
+          scope: { kind: 'saved_list', list_id: '7c0d0f5a-2f61-4a2a-9f1d-1b2c3d4e5f60' },
+          exclusions: { list_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee' },
+        }),
+        responses: {
+          200: jsonResponse('BulkPreviewResponse', 'Bulk preview.'),
+          ...authenticatedErrors('ValidationError', 'NotFoundError'),
+        },
+      },
+    },
+    '/v1/campaigns/{id}/imports/staged': {
+      post: {
+        operationId: 'createStagedLeadImport',
+        tags: ['Leads'],
+        summary: 'Create staged lead import',
+        description:
+          'Creates an uploading import job. Append lead batches with `appendStagedLeadImportRows`, then finalize with `finalizeStagedLeadImport`. Prefer this over inline async import for multi-thousand-lead files. Local filesystem paths are not accepted.',
+        parameters: [parameterRef('CampaignId')],
+        responses: {
+          201: jsonResponse('StagedImportCreateResponse', 'Staged import job created.'),
+          ...authenticatedErrors('ValidationError', 'ForbiddenError', 'NotFoundError'),
+        },
+      },
+    },
+    '/v1/jobs/{id}/staging-rows': {
+      post: {
+        operationId: 'appendStagedLeadImportRows',
+        tags: ['Leads'],
+        summary: 'Append staged import rows',
+        description:
+          'Appends up to 500 lead objects to a staged import job in `uploading` status.',
+        parameters: [parameterRef('JobId')],
+        requestBody: jsonRequestBody('StagedImportAppendRequest'),
+        responses: {
+          200: jsonResponse('StagedImportAppendResponse', 'Rows appended.'),
+          ...authenticatedErrors('ValidationError', 'NotFoundError'),
+        },
+      },
+    },
+    '/v1/jobs/{id}/finalize': {
+      post: {
+        operationId: 'finalizeStagedLeadImport',
+        tags: ['Leads'],
+        summary: 'Finalize staged lead import',
+        description:
+          'Marks a staged import job queued and enqueues worker processing. Idempotent if already queued/running/completed.',
+        parameters: [parameterRef('JobId')],
+        responses: {
+          202: jsonResponse('ImportJobResponse', 'Staged import finalized.'),
+          ...authenticatedErrors('ValidationError', 'NotFoundError'),
+        },
+      },
+    },
+    '/v1/uploads/presign': {
+      post: {
+        operationId: 'createBulkUploadUrl',
+        tags: ['Leads'],
+        summary: 'Create presigned bulk upload URL',
+        description:
+          'Optional file ingress for MCP hosts that can PUT directly to S3. Returns `upload_id` + temporary `upload_url`. Generic MCP clients that cannot perform arbitrary HTTP uploads should use staged JSON append instead. Local paths are never accepted by the server.',
+        requestBody: jsonRequestBody('BulkUploadCreateRequest'),
+        responses: {
+          201: jsonResponse('BulkUploadCreateResponse', 'Presigned upload created.'),
+          ...authenticatedErrors('ValidationError'),
+        },
+      },
+    },
+    '/v1/people/export': {
+      post: {
+        operationId: 'exportPeople',
+        tags: ['People'],
+        summary: 'Export people (async)',
+        description:
+          'Starts one logical export job for a server-side scope. Use `projection: compact` for email/global_lead_id dumps. Poll `GET /v1/jobs/{id}` for `result.download_url`.',
+        requestBody: jsonRequestBody('ImportJobCreate', {
+          operation: 'export_leads',
+          scope: { kind: 'saved_list', list_id: '7c0d0f5a-2f61-4a2a-9f1d-1b2c3d4e5f60' },
+          projection: 'compact',
+        }),
+        responses: {
+          202: jsonResponse('ImportJobResponse', 'Export job queued.'),
+          ...authenticatedErrors('ValidationError', 'NotFoundError'),
+        },
+      },
+    },
+    '/v1/campaigns/{id}/enroll': {
+      post: {
+        operationId: 'enrollPeople',
+        tags: ['Leads'],
+        summary: 'Enroll people into campaign (async)',
+        description:
+          'Starts one logical enroll job from a server-side scope (saved list, campaign, selection) with optional exclusions. Prefer this over sync add for large sets.',
+        parameters: [parameterRef('CampaignId')],
+        requestBody: jsonRequestBody('ImportJobCreate', {
+          operation: 'add_to_campaign',
+          scope: { kind: 'saved_list', list_id: '7c0d0f5a-2f61-4a2a-9f1d-1b2c3d4e5f60' },
+          exclusions: { list_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee' },
+        }),
+        responses: {
+          202: jsonResponse('ImportJobResponse', 'Enroll job queued.'),
+          ...authenticatedErrors('ValidationError', 'ForbiddenError', 'NotFoundError'),
+        },
+      },
+    },
+    '/v1/lead-lists/{id}/members:bulk': {
+      post: {
+        operationId: 'updateLeadListMembership',
+        tags: ['Lead Lists'],
+        summary: 'Bulk update lead list membership (async)',
+        description:
+          'Starts one logical add/remove membership job. Body.operation must be `add_to_lead_list` or `remove_from_lead_list`. Source may be scope (list/campaign/selection) with optional exclusions on add.',
+        parameters: [parameterRef('LeadListId')],
+        requestBody: jsonRequestBody('ImportJobCreate', {
+          operation: 'add_to_lead_list',
+          scope: { kind: 'campaign', campaign_id: '1d8dc901-3d2d-4d9f-9dcc-4f8b3aa1a1fb' },
+        }),
+        responses: {
+          202: jsonResponse('ImportJobResponse', 'Membership job queued.'),
+          ...authenticatedErrors('ValidationError', 'NotFoundError'),
+        },
+      },
+    },
     '/v1/campaigns': {
       get: {
         operationId: 'listCampaigns',
@@ -817,11 +961,11 @@ export function buildClientApiPaths() {
         operationId: 'createAsyncJob',
         tags: ['Jobs'],
         summary: 'Create async bulk job',
-        description: `Creates an async job for any supported bulk operation. Poll \`GET /v1/jobs/{id}\` for completion. Furnace allows at most ${MAX_ASYNC_JOBS_PER_ACCOUNT} queued or running async jobs per account. One operation-specific \`*.completed\` webhook is emitted when the job finishes successfully.`,
+        description: `Creates one logical async job for a supported bulk operation. Prefer server-side \`scope\` (+ optional \`exclusions\`) over inline ID batches. Running concurrency is capped at ${MAX_ASYNC_JOBS_PER_ACCOUNT} jobs per account; additional jobs remain queued. Poll \`GET /v1/jobs/{id}\`; cancel with \`POST /v1/jobs/{id}/cancel\`. One operation-specific \`*.completed\` webhook is emitted when the job finishes successfully.`,
         requestBody: jsonRequestBody('ImportJobCreate', {
           operation: 'add_to_campaign',
           campaign_id: '1d8dc901-3d2d-4d9f-9dcc-4f8b3aa1a1fb',
-          global_lead_ids: ['abc123'],
+          scope: { kind: 'saved_list', list_id: '7c0d0f5a-2f61-4a2a-9f1d-1b2c3d4e5f60' },
         }),
         responses: {
           202: jsonResponse('ImportJobResponse', 'Async job queued.'),
@@ -1011,10 +1155,24 @@ export function buildClientApiPaths() {
         operationId: 'getAsyncImportJob',
         tags: ['Jobs'],
         summary: 'Get async import job',
-        description: 'Returns one async lead import job for the authenticated account.',
+        description: 'Returns one async bulk job for the authenticated account.',
         parameters: [parameterRef('JobId')],
         responses: {
           200: jsonResponse('ImportJobResponse', 'Async import job.'),
+          ...authenticatedErrors('NotFoundError'),
+        },
+      },
+    },
+    '/v1/jobs/{id}/cancel': {
+      post: {
+        operationId: 'cancelBulkJob',
+        tags: ['Jobs'],
+        summary: 'Cancel async bulk job',
+        description:
+          'Requests cancellation. Queued/uploading jobs become cancelled immediately; running jobs stop between chunks.',
+        parameters: [parameterRef('JobId')],
+        responses: {
+          200: jsonResponse('ImportJobResponse', 'Cancellation requested.'),
           ...authenticatedErrors('NotFoundError'),
         },
       },

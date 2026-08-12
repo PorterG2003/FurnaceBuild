@@ -80,3 +80,26 @@ export function bulkScopeFromCampaignList(savedListId: string | null, globalLead
   }
   return { kind: 'selection', globalLeadIds };
 }
+
+/** Map UI workbench BulkScope into Client API / MCP scope JSON. */
+export function toApiBulkScope(scope: BulkScope): {
+  kind: string;
+  global_lead_ids?: string[];
+  list_id?: string;
+  query?: unknown;
+} {
+  switch (scope.kind) {
+    case 'selection':
+      return { kind: 'selection', global_lead_ids: scope.globalLeadIds };
+    case 'explorerView':
+      return { kind: 'explorer_view', query: scope.query };
+    case 'savedListAll':
+      return { kind: 'saved_list', list_id: scope.listId };
+    case 'savedListFiltered':
+      return { kind: 'saved_list_filtered', list_id: scope.listId, query: scope.query };
+    default: {
+      const _exhaustive: never = scope;
+      return _exhaustive;
+    }
+  }
+}

@@ -72,21 +72,29 @@ Env for sandbox without custom domain:
 ## Manual dogfood checklist
 
 1. `listAccounts`
-2. `listCampaigns` (with `account_id` if multiple grants)
-3. `getCampaign`
-4. `listThreads`
+2. `getLimits`
+3. `listCampaigns` (with `account_id` if multiple grants)
+4. `getCampaign` (verify `mailbox_ids` + lead-source `bucketId`)
+5. Bulk path: `previewBulkOperation` → `enrollPeople` / `createStagedLeadImport` → poll `getAsyncImportJob`
+6. Prefer server-side scopes over paging `listCampaignLeads`; use `exportPeople` for full dumps
+7. Do **not** pass local filesystem paths — use staged JSON append or optional `createBulkUploadUrl`
+8. `listThreads`
+
+See also: [`MCP_LIMITATIONS.md`](./MCP_LIMITATIONS.md) (capabilities + remaining limits).
 
 ## Tests
 
 ```bash
 npm run test:mcp
+npm run test:client-api
 ```
 
-Covers session/oauth/account-selection unit tests plus `mcpUserAuthOutcomes` when DB env is present. Business outcomes for `f_` keys stay in `npm run test:client-api`.
+Covers session/oauth/account-selection unit tests plus `mcpUserAuthOutcomes` when DB env is present. Bulk-first business outcomes live in `lib/test/client-api/bulkFirstMcpOutcomes.test.ts`.
 
 ## Deploy notes
 
 1. Apply migration `20260724010000_mcp_user_sessions.sql` (adds `mcp_oauth_sessions`, extends auth codes, purges legacy access tokens).
-2. Deploy MCP + Client API Lambdas that stop writing plaintext `api_key_secret`.
-3. Later follow-up: drop `api_key_secret` columns once the new code is live everywhere.
-4. Existing OAuth connections break once — users reconnect.
+2. Apply migration `20260812160000_bulk_first_mcp_jobs.sql` (cancel/claim, list membership jobs, previews, uploads).
+3. Deploy MCP + Client API Lambdas that stop writing plaintext `api_key_secret`.
+4. Later follow-up: drop `api_key_secret` columns once the new code is live everywhere.
+5. Existing OAuth connections break once — users reconnect.

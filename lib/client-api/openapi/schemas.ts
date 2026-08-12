@@ -6,8 +6,11 @@ import {
   IMPORT_JOB_OPERATIONS,
   MAX_ASYNC_JOBS_PER_ACCOUNT,
   MAX_PAGE_SIZE,
+  MAX_QUEUED_ASYNC_JOBS_PER_ACCOUNT,
   RATE_LIMIT_REQUESTS_PER_MINUTE,
+  STAGED_IMPORT_APPEND_LIMIT,
 } from './constants.js';
+import { API_BULK_SCOPE_KINDS } from '../bulk/scope.js';
 import {
   CAMPAIGN_FLOW_EXAMPLE_CATEGORIZER,
   CAMPAIGN_FLOW_EXAMPLE_DATASENDER,
@@ -586,6 +589,11 @@ export function buildClientApiComponents() {
             type: 'array',
             items: schemaRef('CampaignTag'),
             description: 'Campaign tags assigned to this campaign.',
+          },
+          mailbox_ids: {
+            type: 'array',
+            items: { type: 'string', format: 'uuid' },
+            description: 'Mailbox ids currently attached to this campaign.',
           },
         },
         required: ['id', 'status', 'created_at'],
@@ -1309,6 +1317,8 @@ export function buildClientApiComponents() {
           paused: { type: 'integer' },
           resumed: { type: 'integer' },
           removed: { type: 'integer' },
+          added: { type: 'integer' },
+          rows_exported: { type: 'integer' },
           imported: {
             type: 'integer',
             description: 'Convenience total (`created + updated`) set on lead-import completion.',
@@ -1323,20 +1333,31 @@ export function buildClientApiComponents() {
       ImportJobInput: {
         type: 'object',
         description:
-          'Stored job payload. Uses `saved_list_id` when scoped to a list (the create request field is `list_id`). Includes `operation` plus one scope: `global_lead_ids`, `saved_list_id`, or `leads`.',
+          'Stored job payload. Uses `saved_list_id` when scoped to a list (the create request field is `list_id`). Includes `operation` plus scope fields (`global_lead_ids`, `saved_list_id`, `source_campaign_id`, `leads`, `exclusions`, etc.).',
         properties: {
           operation: { type: 'string', enum: [...IMPORT_JOB_OPERATIONS] },
           global_lead_ids: { type: 'array', items: { type: 'string' } },
           saved_list_id: { type: 'string', format: 'uuid' },
+          source_campaign_id: { type: 'string', format: 'uuid' },
+          target_list_id: { type: 'string', format: 'uuid' },
+          upload_id: { type: 'string', format: 'uuid' },
+          list_id: { type: 'string', format: 'uuid' },
           leads: {
             type: 'array',
             items: schemaRef('LeadCreate'),
           },
           total_count: { type: 'integer' },
           source: { type: 'string' },
+          exclusions: schemaRef('BulkExclusions'),
+          preview_id: { type: 'string' },
+          expected_count: { type: 'integer' },
+          projection: { type: 'string', enum: ['full', 'compact'] },
+          query: { type: 'object', additionalProperties: true },
+          column_layout: { type: 'array', items: { type: 'object', additionalProperties: true } },
+          filename_base: { type: 'string' },
         },
         required: ['operation'],
-        additionalProperties: false,
+        additionalProperties: true,
       },
       ImportJob: {
         type: 'object',
@@ -1345,7 +1366,10 @@ export function buildClientApiComponents() {
           account_id: { type: 'string', format: 'uuid' },
           campaign_id: { type: 'string', format: 'uuid', nullable: true },
           created_by_api_key_id: { type: 'string', format: 'uuid', nullable: true },
-          status: { type: 'string', enum: ['queued', 'running', 'completed', 'failed'] },
+          status: {
+            type: 'string',
+            enum: ['uploading', 'queued', 'running', 'completed', 'failed', 'cancelled'],
+          },
           progress: { type: 'integer', minimum: 0, maximum: 100 },
           cursor: { type: 'integer', minimum: 0 },
           input: schemaRef('ImportJobInput'),
@@ -1354,6 +1378,7 @@ export function buildClientApiComponents() {
             type: 'array',
             items: schemaRef('ImportJobError'),
           },
+          cancel_requested_at: { type: 'string', format: 'date-time', nullable: true },
           started_at: { type: 'string', format: 'date-time', nullable: true },
           completed_at: { type: 'string', format: 'date-time', nullable: true },
           created_at: { type: 'string', format: 'date-time', nullable: true },
@@ -1364,12 +1389,23 @@ export function buildClientApiComponents() {
       },
       ImportJobCreate: {
         type: 'object',
-        description: 'Create an async bulk job. Poll `GET /v1/jobs/{id}` for completion.',
+        description:
+          'Create one logical async bulk job. Prefer `scope` (+ optional `exclusions`) over inline ID batches. Poll `GET /v1/jobs/{id}`; cancel with `POST /v1/jobs/{id}/cancel`.',
         properties: {
           operation: { type: 'string', enum: [...IMPORT_JOB_OPERATIONS] },
           campaign_id: { type: 'string', format: 'uuid', nullable: true },
           global_lead_ids: { type: 'array', items: { type: 'string' } },
           list_id: { type: 'string', format: 'uuid' },
+          target_list_id: { type: 'string', format: 'uuid' },
+          source_campaign_id: { type: 'string', format: 'uuid' },
+          upload_id: { type: 'string', format: 'uuid' },
+          scope: schemaRef('BulkScope'),
+          exclusions: schemaRef('BulkExclusions'),
+          preview_id: { type: 'string' },
+          expected_count: { type: 'integer' },
+          projection: { type: 'string', enum: ['full', 'compact'] },
+          filename_base: { type: 'string' },
+          column_layout: { type: 'array', items: { type: 'object', additionalProperties: true } },
           leads: {
             type: 'array',
             maxItems: BULK_ASYNC_LIMIT,
@@ -1378,6 +1414,138 @@ export function buildClientApiComponents() {
         },
         required: ['operation'],
         additionalProperties: false,
+      },
+      BulkScope: {
+        type: 'object',
+        description: 'Server-side population selector. Prefer list/campaign/staged scopes for bulk work.',
+        properties: {
+          kind: { type: 'string', enum: [...API_BULK_SCOPE_KINDS] },
+          global_lead_ids: { type: 'array', items: { type: 'string' } },
+          list_id: { type: 'string', format: 'uuid' },
+          campaign_id: { type: 'string', format: 'uuid' },
+          upload_id: { type: 'string', format: 'uuid' },
+          query: { type: 'object', additionalProperties: true },
+        },
+        required: ['kind'],
+        additionalProperties: false,
+      },
+      BulkExclusions: {
+        type: 'object',
+        description: 'People to exclude from a scoped bulk mutation.',
+        properties: {
+          list_id: { type: 'string', format: 'uuid' },
+          campaign_id: { type: 'string', format: 'uuid' },
+          global_lead_ids: { type: 'array', items: { type: 'string' } },
+          emails: { type: 'array', items: { type: 'string', format: 'email' } },
+        },
+        additionalProperties: false,
+      },
+      BulkPreviewRequest: {
+        type: 'object',
+        properties: {
+          operation: { type: 'string', enum: [...IMPORT_JOB_OPERATIONS] },
+          campaign_id: { type: 'string', format: 'uuid', nullable: true },
+          target_list_id: { type: 'string', format: 'uuid' },
+          list_id: { type: 'string', format: 'uuid' },
+          global_lead_ids: { type: 'array', items: { type: 'string' } },
+          scope: schemaRef('BulkScope'),
+          exclusions: schemaRef('BulkExclusions'),
+        },
+        required: ['operation'],
+        additionalProperties: false,
+      },
+      BulkPreviewResponse: {
+        type: 'object',
+        properties: {
+          data: {
+            type: 'object',
+            properties: {
+              preview_id: { type: 'string' },
+              operation: { type: 'string' },
+              operation_hash: { type: 'string' },
+              expires_at: { type: 'string', format: 'date-time' },
+              counts: {
+                type: 'object',
+                properties: {
+                  matched: { type: 'integer' },
+                  excluded: { type: 'integer' },
+                  duplicate: { type: 'integer' },
+                  ineligible: { type: 'integer' },
+                  actionable: { type: 'integer' },
+                },
+                required: ['matched', 'excluded', 'duplicate', 'ineligible', 'actionable'],
+              },
+              warnings: { type: 'array', items: { type: 'string' } },
+              scope: schemaRef('BulkScope'),
+              exclusions: { allOf: [schemaRef('BulkExclusions')], nullable: true },
+              target: { type: 'object', additionalProperties: true },
+            },
+            required: ['preview_id', 'operation', 'operation_hash', 'expires_at', 'counts', 'warnings', 'scope'],
+          },
+        },
+        required: ['data'],
+      },
+      StagedImportCreateResponse: {
+        type: 'object',
+        properties: {
+          data: schemaRef('ImportJob'),
+        },
+        required: ['data'],
+      },
+      StagedImportAppendRequest: {
+        type: 'object',
+        properties: {
+          leads: {
+            type: 'array',
+            minItems: 1,
+            maxItems: STAGED_IMPORT_APPEND_LIMIT,
+            items: schemaRef('LeadCreate'),
+          },
+        },
+        required: ['leads'],
+        additionalProperties: false,
+      },
+      StagedImportAppendResponse: {
+        type: 'object',
+        properties: {
+          uploaded_count: { type: 'integer' },
+          total_count: { type: 'integer' },
+        },
+        required: ['uploaded_count', 'total_count'],
+      },
+      BulkUploadCreateRequest: {
+        type: 'object',
+        properties: {
+          campaign_id: { type: 'string', format: 'uuid' },
+          filename: { type: 'string' },
+          content_type: { type: 'string' },
+        },
+        required: ['campaign_id'],
+        additionalProperties: false,
+      },
+      BulkUploadCreateResponse: {
+        type: 'object',
+        properties: {
+          data: {
+            type: 'object',
+            properties: {
+              upload_id: { type: 'string', format: 'uuid' },
+              upload_url: { type: 'string', format: 'uri' },
+              expires_at: { type: 'string', format: 'date-time' },
+              filename: { type: 'string' },
+              content_type: { type: 'string' },
+            },
+            required: ['upload_id', 'upload_url', 'expires_at'],
+          },
+        },
+        required: ['data'],
+      },
+      LimitsGuideResponse: {
+        type: 'object',
+        properties: {
+          data: schemaRef('LimitsGuide'),
+        },
+        required: ['data'],
       },
       Mailbox: {
         type: 'object',
@@ -2491,7 +2659,33 @@ export function buildClientApiComponents() {
           max_page_size: { type: 'integer', example: MAX_PAGE_SIZE },
           bulk_sync_limit: { type: 'integer', example: BULK_SYNC_LIMIT },
           bulk_async_limit: { type: 'integer', example: BULK_ASYNC_LIMIT },
-          max_async_jobs_per_account: { type: 'integer', example: MAX_ASYNC_JOBS_PER_ACCOUNT },
+          max_async_jobs_per_account: {
+            type: 'integer',
+            example: MAX_ASYNC_JOBS_PER_ACCOUNT,
+            description: 'Max concurrent running jobs per account (worker claim slots).',
+          },
+          max_queued_async_jobs_per_account: {
+            type: 'integer',
+            example: MAX_QUEUED_ASYNC_JOBS_PER_ACCOUNT,
+            description: 'Max jobs allowed in queued status while waiting for a running slot.',
+          },
+          staged_import_append_limit: { type: 'integer', example: STAGED_IMPORT_APPEND_LIMIT },
+          supported_scope_kinds: {
+            type: 'array',
+            items: { type: 'string', enum: [...API_BULK_SCOPE_KINDS] },
+          },
+          supported_job_operations: {
+            type: 'array',
+            items: { type: 'string', enum: [...IMPORT_JOB_OPERATIONS] },
+          },
+          file_ingress: {
+            type: 'object',
+            properties: {
+              staged_json_batches: { type: 'boolean' },
+              presigned_object_upload: { type: 'boolean' },
+              local_path_not_supported: { type: 'boolean' },
+            },
+          },
         },
       },
     },

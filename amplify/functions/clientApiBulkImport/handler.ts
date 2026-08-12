@@ -56,6 +56,22 @@ function mergeStats(existing: ChunkStats, chunk: ChunkStats): ChunkStats {
   };
 }
 
+function emptyStats(): ChunkStats {
+  return {
+    created: 0,
+    updated: 0,
+    enrolled: 0,
+    skipped: 0,
+    incomplete: 0,
+    failed: 0,
+    paused: 0,
+    resumed: 0,
+    removed: 0,
+    added: 0,
+    errors: [],
+  };
+}
+
 function parseStats(value: Json | null | undefined): ChunkStats {
   const row = value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
   return {
@@ -442,18 +458,7 @@ async function processEnrollmentActionListChunk(
 
   if (chunk.length === 0) {
     return {
-      stats: {
-        created: 0,
-        updated: 0,
-        enrolled: 0,
-        paused: 0,
-        resumed: 0,
-        removed: 0,
-        skipped: 0,
-        incomplete: 0,
-        failed: 0,
-        errors: [],
-      },
+      stats: emptyStats(),
       chunkSize: 0,
     };
   }
@@ -491,18 +496,7 @@ async function processRemoveActionListChunk(
 
   if (chunk.length === 0) {
     return {
-      stats: {
-        created: 0,
-        updated: 0,
-        enrolled: 0,
-        paused: 0,
-        resumed: 0,
-        removed: 0,
-        skipped: 0,
-        incomplete: 0,
-        failed: 0,
-        errors: [],
-      },
+      stats: emptyStats(),
       chunkSize: 0,
     };
   }

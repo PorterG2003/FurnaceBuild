@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import type { Database } from '../supabase/types/supabase-client-database.js';
+import type { Database } from '../../supabase/types/supabase-client-database.js';
 import { invalidRequest, notFound } from '../errors.js';
 import { STAGED_IMPORT_APPEND_LIMIT } from '../openapi/constants.js';
 
@@ -91,7 +91,7 @@ export async function finalizeStagedImportJob(
 ) {
   const { data: job, error: jobError } = await supabase
     .from('api_import_jobs')
-    .select('id, account_id, status')
+    .select('id, account_id, status, input')
     .eq('id', jobId)
     .eq('account_id', accountId)
     .maybeSingle();

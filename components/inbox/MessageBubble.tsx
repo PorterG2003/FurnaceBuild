@@ -112,6 +112,7 @@ export function MessageBubble({
     format: message.body_text ? 'text' : 'html',
   });
   const sender = message.from_name || message.from_email;
+  const subject = message.subject?.trim();
   const headerDisplay = buildMessageHeaderDisplay({
     message,
     pendingSecondaryLabel,
@@ -248,12 +249,24 @@ export function MessageBubble({
             </View>
             <View className="ml-3 items-start flex-1 min-w-0 gap-0.5">
               <View className="flex-row items-center w-full min-w-0 gap-2">
-                <Text
-                  className="text-white font-instrument-semibold text-base flex-1 min-w-0"
-                  numberOfLines={1}
-                >
-                  {pendingDisplayLabel ?? (isSent ? 'You' : sender)}
-                </Text>
+                <View className="flex-row items-center flex-1 min-w-0 gap-2">
+                  <Text
+                    className="text-white font-instrument-semibold text-base min-w-0"
+                    numberOfLines={1}
+                    style={{ flexShrink: 1 }}
+                  >
+                    {pendingDisplayLabel ?? (isSent ? 'You' : sender)}
+                  </Text>
+                  {subject ? (
+                    <Text
+                      className="text-gray-500 font-instrument text-sm min-w-0"
+                      numberOfLines={1}
+                      style={{ flexShrink: 1, fontStyle: 'italic', paddingEnd: 3 }}
+                    >
+                      {subject}
+                    </Text>
+                  ) : null}
+                </View>
                 {(!fullWidthCard || isFailed || isPending) && (
                   <View className="flex-row items-center gap-2 flex-shrink-0">
                     {showHeaderCancelButton ? (

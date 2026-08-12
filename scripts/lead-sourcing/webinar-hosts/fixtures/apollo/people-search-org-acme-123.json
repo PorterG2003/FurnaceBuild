@@ -1,0 +1,12 @@
+{
+  "people": [
+    {
+      "id": "person_acme_1",
+      "first_name": "Sarah",
+      "last_name": "Marketing",
+      "title": "Director of Marketing",
+      "email": "sarah.marketing@acme-corp.com",
+      "linkedin_url": "https://www.linkedin.com/in/sarah-marketing"
+    }
+  ]
+}

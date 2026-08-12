@@ -1,0 +1,10 @@
+{
+  "organization": {
+    "id": "org_acme_123",
+    "name": "Acme Corp",
+    "primary_domain": "acme-corp.com",
+    "linkedin_url": "https://www.linkedin.com/company/acme-corp",
+    "estimated_num_employees": 120,
+    "industry": "Computer Software"
+  }
+}

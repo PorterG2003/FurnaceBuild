@@ -1,0 +1,25 @@
+{
+  "name": "@furnace/exp-agents",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "scrape": "tsx src/run.ts",
+    "verify": "tsx src/verify.ts",
+    "probe:managers": "tsx src/analyzeManagerProbe.ts",
+    "managers": "tsx src/runManagers.ts",
+    "brokers": "tsx src/runBrokerExpansion.ts",
+    "brokers:baseline": "tsx src/runBrokerExpansion.ts --merge-only --no-discover --no-collect --bio --resume",
+    "brokers:discover": "tsx src/runBrokerExpansion.ts --discover --no-collect --no-bio --resume",
+    "brokers:collect": "tsx src/runBrokerExpansion.ts --no-discover --collect --no-bio --resume",
+    "test": "node --import tsx --test src/**/*.test.ts src/**/**/*.test.ts"
+  },
+  "dependencies": {
+    "playwright": "1.58.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "tsx": "^4.20.6",
+    "typescript": "^5.6.0"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "people": [
+    {
+      "id": "person_tiny_1",
+      "first_name": "Alex",
+      "last_name": "Founder",
+      "title": "CEO & Founder",
+      "email": "alex.founder@tiny-co.com",
+      "linkedin_url": "https://www.linkedin.com/in/alex-founder",
+      "organization": {
+        "id": "org_tiny_789",
+        "name": "Tiny Co",
+        "primary_domain": "tiny-co.com"
+      }
+    }
+  ]
+}

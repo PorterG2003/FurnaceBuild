@@ -1,0 +1,20 @@
+{
+  "name": "@furnace/hubspot-partners",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "scrape": "tsx src/run.ts",
+    "stage1": "tsx src/stage1-search/scrape.ts",
+    "stage2": "tsx src/stage2-detail/enrich.ts",
+    "test": "node --import tsx --test src/**/*.test.ts"
+  },
+  "dependencies": {
+    "csv-parse": "^5.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "tsx": "^4.20.6",
+    "typescript": "^5.6.0"
+  }
+}

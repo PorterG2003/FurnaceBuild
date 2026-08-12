@@ -1,0 +1,4682 @@
+{
+  "bySlug": {
+    "smartbug-media": {
+      "value": {
+        "urlSlug": {
+          "value": "smartbug-media",
+          "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+          "@type": "string"
+        },
+        "services": {
+          "value": [
+            {
+              "value": 1,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 3,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 4,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 5,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 6,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 7,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 8,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 9,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 53001,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 10,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 11,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 12,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 13,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 14,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 15,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 16,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 17,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 18,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 19,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 20,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 21,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 22,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 23,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 24,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 25,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 39001,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 26,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 33,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            }
+          ],
+          "__typename": "com.hubspot.chirp.ext.models.ListFieldValue",
+          "@type": "list"
+        },
+        "sourceId": {
+          "value": "5626",
+          "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+          "@type": "string"
+        },
+        "languages": {
+          "value": [
+            {
+              "value": "en",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "fr",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            }
+          ],
+          "__typename": "com.hubspot.chirp.ext.models.ListFieldValue",
+          "@type": "list"
+        },
+        "listingId": {
+          "value": 30344501,
+          "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+          "@type": "integer"
+        },
+        "companyUrl": {
+          "value": "https://www.smartbugmedia.com/full-service-digital-agency-hubspot?utm_campaign=Partner%20Marketing&utm_source=HubSpot%20Directory&utm_content=HubSpot%20Agency%20LP%20v2",
+          "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+          "@type": "string"
+        },
+        "companyName": {
+          "value": "SmartBug \ud83d\ude80 RevOps, CRM & Integration Experts",
+          "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+          "@type": "string"
+        },
+        "description": {
+          "value": "As a 3x HubSpot North America Partner of the Year, SmartBug Media transforms your customer lifecycle into a revenue engine. Our unified ecosystem includes specialized divisions Globalia (AI & Software) and Point Success Media (Paid Media), making this the official home for all three brands.\n\n\ud83d\udd04 Implementation & Integration\n\n- Seamless migrations and system integrations powered by Globalia\u2019s technical development team.\n\n- 19 HubSpot-certified trainers to drive platform adoption.\n\n\ud83d\udcc8 Revenue Generation\n\n- Full-funnel marketing and high-performance advertising via Point Success Media.\n\n- Expert deployment of Breeze AI and custom agents to automate growth.\n\n\ud83c\udfc6 Elite Excellence\n\n- 8 platform accreditations and deep HIPAA-compliance expertise.\n\n- A team of 250+ experts dedicated to your resilient growth.",
+          "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+          "@type": "string"
+        },
+        "listingIcon": {
+          "value": {
+            "value": {
+              "value": "https://142915.fs1.hubspotusercontent-na1.net/hubfs/142915/__hs-marketplace__/SmartBug_Logo_Final_Black_Large-1.png",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            "altText": {
+              "value": "",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            }
+          },
+          "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+          "@type": "map"
+        },
+        "productType": {
+          "value": "AGENT",
+          "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+          "@type": "string"
+        },
+        "budgetChoice": {
+          "value": [
+            {
+              "value": "UPPER",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            }
+          ],
+          "__typename": "com.hubspot.chirp.ext.models.ListFieldValue",
+          "@type": "list"
+        },
+        "installCount": {
+          "value": 0,
+          "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+          "@type": "integer"
+        },
+        "integrations": {
+          "value": [
+            {
+              "value": 30050944,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30050829,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30051346,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30053745,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30050833,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30050895,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30050837,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30050898,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30051130,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30051017,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30050960,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30050845,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30051717,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30050907,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30051961,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30052652,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30050970,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30052105,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30053834,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30052606,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30051551,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30052615,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30051042,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30050930,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30051108,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30051539,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30050995,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30051887,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30051343,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            }
+          ],
+          "__typename": "com.hubspot.chirp.ext.models.ListFieldValue",
+          "@type": "list"
+        },
+        "regionChoice": {
+          "value": [
+            {
+              "value": "NORTH_AMERICA",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            }
+          ],
+          "__typename": "com.hubspot.chirp.ext.models.ListFieldValue",
+          "@type": "list"
+        },
+        "industryChoice": {
+          "value": [
+            {
+              "value": "BANKING_FINANCIAL_SERVICES",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "FINANCE_INSURANCE",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "MANUFACTURING",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "MEDICAL_WELLNESS",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "TECHNOLOGY_SOFTWARE",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            }
+          ],
+          "__typename": "com.hubspot.chirp.ext.models.ListFieldValue",
+          "@type": "list"
+        },
+        "officeLocation": {
+          "value": [
+            {
+              "value": "REMOTE",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            }
+          ],
+          "__typename": "com.hubspot.chirp.ext.models.ListFieldValue",
+          "@type": "list"
+        },
+        "remoteLocations": {
+          "value": [
+            {
+              "value": {
+                "remoteLocation": {
+                  "value": {
+                    "zip": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "full": {
+                      "value": "United States",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "state": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "country": {
+                      "value": "US",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "locality": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "streetLine1": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "streetLine2": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    }
+                  },
+                  "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+                  "@type": "map"
+                }
+              },
+              "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+              "@type": "map"
+            },
+            {
+              "value": {
+                "remoteLocation": {
+                  "value": {
+                    "zip": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "full": {
+                      "value": "Montreal, QC, Canada",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "state": {
+                      "value": "QC",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "country": {
+                      "value": "CA",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "locality": {
+                      "value": "Montreal",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "streetLine1": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "streetLine2": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    }
+                  },
+                  "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+                  "@type": "map"
+                }
+              },
+              "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+              "@type": "map"
+            },
+            {
+              "value": {
+                "remoteLocation": {
+                  "value": {
+                    "zip": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "full": {
+                      "value": "Seattle, WA, USA",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "state": {
+                      "value": "WA",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "country": {
+                      "value": "US",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "locality": {
+                      "value": "Seattle",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "streetLine1": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "streetLine2": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    }
+                  },
+                  "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+                  "@type": "map"
+                }
+              },
+              "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+              "@type": "map"
+            },
+            {
+              "value": {
+                "remoteLocation": {
+                  "value": {
+                    "zip": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "full": {
+                      "value": "Los Angeles, CA, USA",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "state": {
+                      "value": "CA",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "country": {
+                      "value": "US",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "locality": {
+                      "value": "Los Angeles",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "streetLine1": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "streetLine2": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    }
+                  },
+                  "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+                  "@type": "map"
+                }
+              },
+              "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+              "@type": "map"
+            },
+            {
+              "value": {
+                "remoteLocation": {
+                  "value": {
+                    "zip": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "full": {
+                      "value": "Charlotte, NC, USA",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "state": {
+                      "value": "NC",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "country": {
+                      "value": "US",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "locality": {
+                      "value": "Charlotte",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "streetLine1": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "streetLine2": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    }
+                  },
+                  "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+                  "@type": "map"
+                }
+              },
+              "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+              "@type": "map"
+            }
+          ],
+          "__typename": "com.hubspot.chirp.ext.models.ListFieldValue",
+          "@type": "list"
+        },
+        "listingVersionId": {
+          "value": 30701114,
+          "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+          "@type": "integer"
+        },
+        "companySizeSpecialty": {
+          "value": [
+            {
+              "value": "RANGE_1001_10000",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "RANGE_10001_",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "RANGE_201_1000",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "RANGE_51_200",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            }
+          ],
+          "__typename": "com.hubspot.chirp.ext.models.ListFieldValue",
+          "@type": "list"
+        }
+      },
+      "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+      "@type": "map"
+    },
+    "new-breed": {
+      "value": {
+        "urlSlug": {
+          "value": "new-breed",
+          "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+          "@type": "string"
+        },
+        "companySizeSpecialty": {
+          "value": [
+            {
+              "value": "RANGE_11_25",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "RANGE_1001_10000",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "RANGE_201_1000",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "RANGE_26_50",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "RANGE_51_200",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            }
+          ],
+          "__typename": "com.hubspot.chirp.ext.models.ListFieldValue",
+          "@type": "list"
+        },
+        "languages": {
+          "value": [
+            {
+              "value": "en",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            }
+          ],
+          "__typename": "com.hubspot.chirp.ext.models.ListFieldValue",
+          "@type": "list"
+        },
+        "companyName": {
+          "value": "CRM Implementations, RevOps, AEO + Web, Demand Gen",
+          "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+          "@type": "string"
+        },
+        "description": {
+          "value": "New Breed is where go-to-market teams partner to unlock growth, scale, and transformation. We help companies activate HubSpot\u2019s AI-powered customer platform and operationalize HubSpot\u2019s Loop Marketing framework through expert-led services, smart agents, and purpose-built apps, tailored to your business. Together, we unlock results, fast.\n\n\n\u2699\ufe0fCRM & RevOps: Align all Hubs to your buyer journey for clean data, scalability, & reporting.\n\n\ud83c\udfafDemand Gen & ABM: Drive pipeline with inbound, ABM, AEO, SEO, & paid media.\n\n\ud83d\udc69\u200d\ud83d\udcbbWeb Design: Build high-performing websites with UX, messaging, & conversion strategy that drive results.\n\n\ud83e\udd16AI Strategy: Activate Breeze Agents, configure HubSpot AI, & maximize AEO with tailored AI services.\n\n\ud83e\udde9Integrations: Extend HubSpot with custom integrations, hosting, & maintenance.",
+          "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+          "@type": "string"
+        },
+        "companyUrl": {
+          "value": "https://www.newbreedrevenue.com/hubspot-partner-consultation",
+          "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+          "@type": "string"
+        },
+        "physicalOfficeLocations": {
+          "value": [
+            {
+              "value": {
+                "physicalOfficeLocation": {
+                  "value": {
+                    "streetLine2": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "zip": {
+                      "value": "05401",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "country": {
+                      "value": "US",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "streetLine1": {
+                      "value": "44 Lakeside Avenue",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "locality": {
+                      "value": "Burlington",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "state": {
+                      "value": "VT",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "full": {
+                      "value": "44 Lakeside Ave suite 103, Burlington, VT 05401, USA",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    }
+                  },
+                  "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+                  "@type": "map"
+                }
+              },
+              "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+              "@type": "map"
+            }
+          ],
+          "__typename": "com.hubspot.chirp.ext.models.ListFieldValue",
+          "@type": "list"
+        },
+        "services": {
+          "value": [
+            {
+              "value": 1,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 2,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 3,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 4,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 5,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 6,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 7,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 8,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 9,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 53001,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 10,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 11,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 12,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 13,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 14,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 15,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 16,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 18,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 19,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 20,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 21,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 23,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 24,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 25,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 39001,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 26,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 33,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            }
+          ],
+          "__typename": "com.hubspot.chirp.ext.models.ListFieldValue",
+          "@type": "list"
+        },
+        "budgetChoice": {
+          "value": [
+            {
+              "value": "UPPER",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            }
+          ],
+          "__typename": "com.hubspot.chirp.ext.models.ListFieldValue",
+          "@type": "list"
+        },
+        "listingIcon": {
+          "value": {
+            "altText": {
+              "value": "New Breed Logo",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            "value": {
+              "value": "https://www.newbreedrevenue.com/hubfs/__hs-marketplace__/Black-1-1.png",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            }
+          },
+          "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+          "@type": "map"
+        },
+        "regionChoice": {
+          "value": [
+            {
+              "value": "APAC",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "EMEA",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "NORTH_AMERICA",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "SOUTH_AMERICA",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            }
+          ],
+          "__typename": "com.hubspot.chirp.ext.models.ListFieldValue",
+          "@type": "list"
+        },
+        "officeLocation": {
+          "value": [
+            {
+              "value": "PHYSICAL",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            }
+          ],
+          "__typename": "com.hubspot.chirp.ext.models.ListFieldValue",
+          "@type": "list"
+        },
+        "industryChoice": {
+          "value": [
+            {
+              "value": "BUSINESS_SERVICES_GENERAL",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "FINANCE_INSURANCE",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "MANUFACTURING",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "TECHNOLOGY_HARDWARE_STORAGE",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "TECHNOLOGY_SOFTWARE",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            }
+          ],
+          "__typename": "com.hubspot.chirp.ext.models.ListFieldValue",
+          "@type": "list"
+        },
+        "integrations": {
+          "value": [
+            {
+              "value": 30055891,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30052171,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30053744,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30054802,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30050891,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30051656,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30050893,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30050895,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30051440,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30052961,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30050837,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30050896,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30054766,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30050898,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30051130,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30050899,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30062534,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30052604,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30052603,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30050905,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30056665,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30051131,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30051961,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30052610,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30052652,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30055627,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30055057,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30052606,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30050973,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30051966,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30052619,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30055198,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30051411,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30051041,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30051873,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30054464,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30050983,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30051461,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30051052,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30051539,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30051883,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30051054,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30056301,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30051887,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30051118,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30056423,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30056434,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30050943,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            }
+          ],
+          "__typename": "com.hubspot.chirp.ext.models.ListFieldValue",
+          "@type": "list"
+        },
+        "sourceId": {
+          "value": "4590",
+          "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+          "@type": "string"
+        },
+        "installCount": {
+          "value": 0,
+          "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+          "@type": "integer"
+        },
+        "productType": {
+          "value": "AGENT",
+          "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+          "@type": "string"
+        },
+        "listingId": {
+          "value": 30344506,
+          "__typename": "com.hubspot.chirp.ext.models.LongFieldValue",
+          "@type": "long"
+        },
+        "listingVersionId": {
+          "value": 30830788,
+          "__typename": "com.hubspot.chirp.ext.models.LongFieldValue",
+          "@type": "long"
+        }
+      },
+      "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+      "@type": "map"
+    },
+    "markentive": {
+      "value": {
+        "urlSlug": {
+          "value": "markentive",
+          "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+          "@type": "string"
+        },
+        "companySizeSpecialty": {
+          "value": [
+            {
+              "value": "RANGE_1001_10000",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "RANGE_10001_",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "RANGE_201_1000",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "RANGE_51_200",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            }
+          ],
+          "__typename": "com.hubspot.chirp.ext.models.ListFieldValue",
+          "@type": "list"
+        },
+        "languages": {
+          "value": [
+            {
+              "value": "en",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "fr",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "de",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "it",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "ro",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "es",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            }
+          ],
+          "__typename": "com.hubspot.chirp.ext.models.ListFieldValue",
+          "@type": "list"
+        },
+        "companyName": {
+          "value": "Markentive - Agence HubSpot - FR - EN",
+          "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+          "@type": "string"
+        },
+        "description": {
+          "value": "Markentive fournit des services de conseil, d'int\u00e9gration et d'agence dans la r\u00e9gion EMEA et North America. Avec plus de 115 experts en marketing automation, Growth, Revops, CRM et webdesign.\n\nMarkentive is both a consulting firm, a digital agency and an integrator. With over 115 experts in marketing automation, growth, revops, CRM and webdesign (We focus on EMEA - USA customers).",
+          "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+          "@type": "string"
+        },
+        "companyUrl": {
+          "value": "https://www.markentive.com/en",
+          "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+          "@type": "string"
+        },
+        "physicalOfficeLocations": {
+          "value": [
+            {
+              "value": {
+                "physicalOfficeLocation": {
+                  "value": {
+                    "streetLine2": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "zip": {
+                      "value": "75008",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "country": {
+                      "value": "FR",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "streetLine1": {
+                      "value": "52 rue de Ponthieu",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "locality": {
+                      "value": "Paris",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "state": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "full": {
+                      "value": "52 rue de Ponthieu 75008, Paris, France",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    }
+                  },
+                  "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+                  "@type": "map"
+                }
+              },
+              "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+              "@type": "map"
+            },
+            {
+              "value": {
+                "physicalOfficeLocation": {
+                  "value": {
+                    "streetLine2": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "zip": {
+                      "value": "33800",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "country": {
+                      "value": "FR",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "streetLine1": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "locality": {
+                      "value": "Bordeaux",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "state": {
+                      "value": "Nouvelle-Aquitaine",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "full": {
+                      "value": "4 Cr de la Somme, 33800 Bordeaux, France",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    }
+                  },
+                  "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+                  "@type": "map"
+                }
+              },
+              "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+              "@type": "map"
+            },
+            {
+              "value": {
+                "physicalOfficeLocation": {
+                  "value": {
+                    "streetLine2": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "zip": {
+                      "value": "B2 4BT",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "country": {
+                      "value": "GB",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "streetLine1": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "locality": {
+                      "value": "Birmingham",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "state": {
+                      "value": "England",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "full": {
+                      "value": "Navigation St, Birmingham B2 4BT, Royaume-Uni",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    }
+                  },
+                  "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+                  "@type": "map"
+                }
+              },
+              "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+              "@type": "map"
+            },
+            {
+              "value": {
+                "physicalOfficeLocation": {
+                  "value": {
+                    "streetLine2": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "zip": {
+                      "value": "2192",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "country": {
+                      "value": "ZA",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "streetLine1": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "locality": {
+                      "value": "Johannesburg",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "state": {
+                      "value": "GP",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "full": {
+                      "value": "16 Louis Rd, Orchards, Johannesburg, 2192, Afrique du Sud",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    }
+                  },
+                  "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+                  "@type": "map"
+                }
+              },
+              "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+              "@type": "map"
+            },
+            {
+              "value": {
+                "physicalOfficeLocation": {
+                  "value": {
+                    "streetLine2": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "zip": {
+                      "value": "69002",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "country": {
+                      "value": "FR",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "streetLine1": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "locality": {
+                      "value": "Lyon",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "state": {
+                      "value": "Auvergne-Rh\u00f4ne-Alpes",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "full": {
+                      "value": "26 Rue Victor Hugo, 69002 Lyon, France",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    }
+                  },
+                  "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+                  "@type": "map"
+                }
+              },
+              "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+              "@type": "map"
+            }
+          ],
+          "__typename": "com.hubspot.chirp.ext.models.ListFieldValue",
+          "@type": "list"
+        },
+        "services": {
+          "value": [
+            {
+              "value": 1,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 2,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 3,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 4,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 5,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 6,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 7,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 8,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 9,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 53001,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 10,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 11,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 12,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 13,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 14,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 15,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 16,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 17,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 18,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 19,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 20,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 21,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 22,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 23,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 24,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 25,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 26,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 33,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            }
+          ],
+          "__typename": "com.hubspot.chirp.ext.models.ListFieldValue",
+          "@type": "list"
+        },
+        "budgetChoice": {
+          "value": [
+            {
+              "value": "UPPER",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            }
+          ],
+          "__typename": "com.hubspot.chirp.ext.models.ListFieldValue",
+          "@type": "list"
+        },
+        "listingIcon": {
+          "value": {
+            "altText": {
+              "value": "",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            "value": {
+              "value": "https://www.markentive.com/hubfs/__hs-marketplace__/logo-markentive-png-couleur%20(1)-1.png",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            }
+          },
+          "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+          "@type": "map"
+        },
+        "regionChoice": {
+          "value": [
+            {
+              "value": "EMEA",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "NORTH_AMERICA",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            }
+          ],
+          "__typename": "com.hubspot.chirp.ext.models.ListFieldValue",
+          "@type": "list"
+        },
+        "officeLocation": {
+          "value": [
+            {
+              "value": "PHYSICAL",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            }
+          ],
+          "__typename": "com.hubspot.chirp.ext.models.ListFieldValue",
+          "@type": "list"
+        },
+        "industryChoice": {
+          "value": [
+            {
+              "value": "BUSINESS_SERVICES_GENERAL",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "CONSULTING_ADVISORY",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "FINANCE_INSURANCE",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "MANUFACTURING",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "TECHNOLOGY_SOFTWARE",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            }
+          ],
+          "__typename": "com.hubspot.chirp.ext.models.ListFieldValue",
+          "@type": "list"
+        },
+        "integrations": {
+          "value": [
+            {
+              "value": 30052594,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30051123,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30051842,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30051009,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30050895,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30050837,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30050896,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30051128,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30054046,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30054691,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30052603,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30050904,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30050905,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30051177,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30052652,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30051776,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30055023,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30050973,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30052621,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30052619,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30052658,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30052475,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30051456,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30051144,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30050983,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30051052,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30054907,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30051057,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30051156,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30050943,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            }
+          ],
+          "__typename": "com.hubspot.chirp.ext.models.ListFieldValue",
+          "@type": "list"
+        },
+        "sourceId": {
+          "value": "3265",
+          "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+          "@type": "string"
+        },
+        "installCount": {
+          "value": 0,
+          "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+          "@type": "integer"
+        },
+        "productType": {
+          "value": "AGENT",
+          "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+          "@type": "string"
+        },
+        "listingId": {
+          "value": 30344584,
+          "__typename": "com.hubspot.chirp.ext.models.LongFieldValue",
+          "@type": "long"
+        },
+        "listingVersionId": {
+          "value": 30791909,
+          "__typename": "com.hubspot.chirp.ext.models.LongFieldValue",
+          "@type": "long"
+        }
+      },
+      "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+      "@type": "map"
+    },
+    "digitalj2": {
+      "value": {
+        "urlSlug": {
+          "value": "digitalj2",
+          "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+          "@type": "string"
+        },
+        "companySizeSpecialty": {
+          "value": [
+            {
+              "value": "RANGE_26_50",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "RANGE_51_200",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "RANGE_201_1000",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "RANGE_1001_10000",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "RANGE_10001_",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            }
+          ],
+          "__typename": "com.hubspot.chirp.ext.models.ListFieldValue",
+          "@type": "list"
+        },
+        "languages": {
+          "value": [
+            {
+              "value": "en",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            }
+          ],
+          "__typename": "com.hubspot.chirp.ext.models.ListFieldValue",
+          "@type": "list"
+        },
+        "companyName": {
+          "value": "digitalJ2 | RevOps & HubSpot Implementations",
+          "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+          "@type": "string"
+        },
+        "description": {
+          "value": "digitalJ2 helps organizations design and optimize revenue systems that drive scalable, predictable growth.\n\nAs a triple-accredited HubSpot Solutions Partner, we specialize in both strategic RevOps planning and hands-on technical execution - building the operational foundation companies need to thrive.\n\nIndustries we specialize in:\n- Manufacturing\n- Healthcare\n- Financial Services\n- Managed IT (MSP)\n- Franchises\n- Professional Services\n- And more!\n\nHow we help:\n\u2714\ufe0f Full HubSpot implementations and portal optimization\n\u2714\ufe0f Data migrations, CRM architecture, and reporting foundations\n\u2714\ufe0f Custom integrations and workflow automation\n\u2714\ufe0f User adoption programs, training, and enablement\n\nThrough project-based engagements and ongoing RevOps partnerships, we guide organizations through the revenue maturity model - delivering the right improvements at the right time so operations evolve strategically and sustainably as the business grows.",
+          "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+          "@type": "string"
+        },
+        "companyUrl": {
+          "value": "https://digitalj2.com/?utm_campaign=HubSpot&utm_source=HubSpot%20Directory%20Page",
+          "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+          "@type": "string"
+        },
+        "services": {
+          "value": [
+            {
+              "value": 33,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 5,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 6,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 7,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 9,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 53001,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 10,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 14,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 15,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 18,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 19,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 20,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 23,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 24,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 25,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 78,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 80,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 81,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 85,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 79,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 82,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 83,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 84,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 186001,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            }
+          ],
+          "__typename": "com.hubspot.chirp.ext.models.ListFieldValue",
+          "@type": "list"
+        },
+        "budgetChoice": {
+          "value": [
+            {
+              "value": "UPPER",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            }
+          ],
+          "__typename": "com.hubspot.chirp.ext.models.ListFieldValue",
+          "@type": "list"
+        },
+        "listingIcon": {
+          "value": {
+            "altText": {
+              "value": "",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            "value": {
+              "value": "https://f.hubspotusercontent20.net/hubfs/2473070/__hs-marketplace__/9g472.png",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            }
+          },
+          "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+          "@type": "map"
+        },
+        "remoteLocations": {
+          "value": [
+            {
+              "value": {
+                "remoteLocation": {
+                  "value": {
+                    "streetLine2": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "zip": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "country": {
+                      "value": "US",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "streetLine1": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "locality": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "state": {
+                      "value": "NC",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "full": {
+                      "value": "North Carolina, USA",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    }
+                  },
+                  "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+                  "@type": "map"
+                }
+              },
+              "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+              "@type": "map"
+            },
+            {
+              "value": {
+                "remoteLocation": {
+                  "value": {
+                    "streetLine2": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "zip": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "country": {
+                      "value": "US",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "streetLine1": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "locality": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "state": {
+                      "value": "SC",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "full": {
+                      "value": "South Carolina, USA",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    }
+                  },
+                  "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+                  "@type": "map"
+                }
+              },
+              "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+              "@type": "map"
+            },
+            {
+              "value": {
+                "remoteLocation": {
+                  "value": {
+                    "streetLine2": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "zip": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "country": {
+                      "value": "US",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "streetLine1": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "locality": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "state": {
+                      "value": "FL",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "full": {
+                      "value": "Florida, USA",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    }
+                  },
+                  "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+                  "@type": "map"
+                }
+              },
+              "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+              "@type": "map"
+            },
+            {
+              "value": {
+                "remoteLocation": {
+                  "value": {
+                    "streetLine2": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "zip": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "country": {
+                      "value": "US",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "streetLine1": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "locality": {
+                      "value": "New York",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "state": {
+                      "value": "NY",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "full": {
+                      "value": "New York, NY, USA",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    }
+                  },
+                  "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+                  "@type": "map"
+                }
+              },
+              "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+              "@type": "map"
+            },
+            {
+              "value": {
+                "remoteLocation": {
+                  "value": {
+                    "streetLine2": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "zip": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "country": {
+                      "value": "US",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "streetLine1": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "locality": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "state": {
+                      "value": "TX",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "full": {
+                      "value": "Texas, USA",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    }
+                  },
+                  "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+                  "@type": "map"
+                }
+              },
+              "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+              "@type": "map"
+            }
+          ],
+          "__typename": "com.hubspot.chirp.ext.models.ListFieldValue",
+          "@type": "list"
+        },
+        "regionChoice": {
+          "value": [
+            {
+              "value": "EMEA",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "NORTH_AMERICA",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            }
+          ],
+          "__typename": "com.hubspot.chirp.ext.models.ListFieldValue",
+          "@type": "list"
+        },
+        "officeLocation": {
+          "value": [
+            {
+              "value": "REMOTE",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            }
+          ],
+          "__typename": "com.hubspot.chirp.ext.models.ListFieldValue",
+          "@type": "list"
+        },
+        "industryChoice": {
+          "value": [
+            {
+              "value": "BANKING_FINANCIAL_SERVICES",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "BUSINESS_SERVICES_GENERAL",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "HEALTH",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "MANUFACTURING",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "TECHNOLOGY_SOFTWARE",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            }
+          ],
+          "__typename": "com.hubspot.chirp.ext.models.ListFieldValue",
+          "@type": "list"
+        },
+        "integrations": {
+          "value": [
+            {
+              "value": 12,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 71,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 73,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 75,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 76,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 77,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 74,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 78,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 79,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 83,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 86,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 111,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 148,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 160,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 173,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 185,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 206,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 210,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 223,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 229,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 234,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 239,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 245,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 292,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 305,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 332,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 333,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 334,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 373,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 382,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 437,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 487,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 537,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 539,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 697,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 1297,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 1561,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 1593,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 1691,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 1698,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 1745,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 1881,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 1987,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 2071,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 253250,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 253251,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 525440,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 507263,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 513235,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 996,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            }
+          ],
+          "__typename": "com.hubspot.chirp.ext.models.ListFieldValue",
+          "@type": "list"
+        },
+        "sourceId": {
+          "value": "745",
+          "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+          "@type": "string"
+        },
+        "installCount": {
+          "value": 0,
+          "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+          "@type": "integer"
+        },
+        "productType": {
+          "value": "AGENT",
+          "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+          "@type": "string"
+        },
+        "listingId": {
+          "value": 30343876,
+          "__typename": "com.hubspot.chirp.ext.models.LongFieldValue",
+          "@type": "long"
+        },
+        "listingVersionId": {
+          "value": 30812980,
+          "__typename": "com.hubspot.chirp.ext.models.LongFieldValue",
+          "@type": "long"
+        }
+      },
+      "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+      "@type": "map"
+    },
+    "avidly": {
+      "value": {
+        "urlSlug": {
+          "value": "avidly",
+          "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+          "@type": "string"
+        },
+        "companySizeSpecialty": {
+          "value": [
+            {
+              "value": "RANGE_11_25",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "RANGE_1001_10000",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "RANGE_10001_",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "RANGE_201_1000",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "RANGE_26_50",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "RANGE_51_200",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            }
+          ],
+          "__typename": "com.hubspot.chirp.ext.models.ListFieldValue",
+          "@type": "list"
+        },
+        "languages": {
+          "value": [
+            {
+              "value": "da",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "en",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "fi",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "fr",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "de",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "el",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "it",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "no",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "nb",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "es",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "sv",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            }
+          ],
+          "__typename": "com.hubspot.chirp.ext.models.ListFieldValue",
+          "@type": "list"
+        },
+        "companyName": {
+          "value": "AVIDLY \ud83c\uddec\ud83c\udde7\ud83c\uddeb\ud83c\uddee\ud83c\uddf8\ud83c\uddea\ud83c\udde9\ud83c\uddf0\ud83c\uddfa\ud83c\uddf8\ud83c\udde8\ud83c\udde6\ud83c\uddf3\ud83c\uddf4\ud83c\udde9\ud83c\uddea\ud83c\udde6\ud83c\uddfa\ud83c\uddf3\ud83c\uddff",
+          "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+          "@type": "string"
+        },
+        "description": {
+          "value": "HubSpot\u2019s 5x Global Partner of the Year and 2024 EMEA & APAC Partner of the Year. The world\u2019s most experienced and fully accredited HubSpot Solutions Partner.\n\n\ud83d\ude80 With 2,750+ HubSpot projects delivered and 370+ specialists across EMEA, APAC and NAM, we de-risk complex CRM programmes and accelerate ROI across every HubSpot Hub.\n\n\ud83e\udded From multi-region migrations to AI-powered automation, we turn complexity into clarity, human at global scale.\n\n\ud83c\udfc6 HubSpot\u2019s CEO called us \u201cthe partner of the future.\u201d Others agree it is proof of trust built through measurable impact.",
+          "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+          "@type": "string"
+        },
+        "companyUrl": {
+          "value": "https://www.avidlyagency.com/hubspot-directory",
+          "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+          "@type": "string"
+        },
+        "physicalOfficeLocations": {
+          "value": [
+            {
+              "value": {
+                "physicalOfficeLocation": {
+                  "value": {
+                    "streetLine2": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "zip": {
+                      "value": "BB7 1EB",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "country": {
+                      "value": "GB",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "streetLine1": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "locality": {
+                      "value": "Clitheroe",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "state": {
+                      "value": "England",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "full": {
+                      "value": "Greenacre St, Clitheroe BB7 1EB, UK",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    }
+                  },
+                  "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+                  "@type": "map"
+                }
+              },
+              "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+              "@type": "map"
+            },
+            {
+              "value": {
+                "physicalOfficeLocation": {
+                  "value": {
+                    "streetLine2": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "zip": {
+                      "value": "120 33",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "country": {
+                      "value": "SE",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "streetLine1": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "locality": {
+                      "value": "S\u00f6dermalm",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "state": {
+                      "value": "Stockholms l\u00e4n",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "full": {
+                      "value": "Hammarby Fabriksv\u00e4g 43, 120 33 Stockholm, Sweden",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    }
+                  },
+                  "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+                  "@type": "map"
+                }
+              },
+              "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+              "@type": "map"
+            },
+            {
+              "value": {
+                "physicalOfficeLocation": {
+                  "value": {
+                    "streetLine2": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "zip": {
+                      "value": "8520",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "country": {
+                      "value": "DK",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "streetLine1": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "locality": {
+                      "value": "Lystrup",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "state": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "full": {
+                      "value": "Lysh\u00f8jen 12, 8520 Lystrup, Denmark",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    }
+                  },
+                  "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+                  "@type": "map"
+                }
+              },
+              "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+              "@type": "map"
+            },
+            {
+              "value": {
+                "physicalOfficeLocation": {
+                  "value": {
+                    "streetLine2": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "zip": {
+                      "value": "0152",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "country": {
+                      "value": "NO",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "streetLine1": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "locality": {
+                      "value": "Sentrum",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "state": {
+                      "value": "Oslo",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "full": {
+                      "value": "Dronningens Gate 8A, 0152 Oslo, Norway",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    }
+                  },
+                  "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+                  "@type": "map"
+                }
+              },
+              "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+              "@type": "map"
+            },
+            {
+              "value": {
+                "physicalOfficeLocation": {
+                  "value": {
+                    "streetLine2": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "zip": {
+                      "value": "85521",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "country": {
+                      "value": "DE",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "streetLine1": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "locality": {
+                      "value": "Ottobrunn",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "state": {
+                      "value": "BY",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "full": {
+                      "value": "Alte Landstra\u00dfe 21, 85521 Ottobrunn, Germany",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    }
+                  },
+                  "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+                  "@type": "map"
+                }
+              },
+              "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+              "@type": "map"
+            },
+            {
+              "value": {
+                "physicalOfficeLocation": {
+                  "value": {
+                    "streetLine2": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "zip": {
+                      "value": "00510",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "country": {
+                      "value": "FI",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "streetLine1": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "locality": {
+                      "value": "HKI",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "state": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "full": {
+                      "value": "Konepajankuja 1, 00510 Helsinki, Finland",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    }
+                  },
+                  "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+                  "@type": "map"
+                }
+              },
+              "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+              "@type": "map"
+            },
+            {
+              "value": {
+                "physicalOfficeLocation": {
+                  "value": {
+                    "streetLine2": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "zip": {
+                      "value": "B3J 3R5",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "country": {
+                      "value": "CA",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "streetLine1": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "locality": {
+                      "value": "Halifax",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "state": {
+                      "value": "NS",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "full": {
+                      "value": "1496 Lower Water St, Halifax, NS B3J 3R5, Canada",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    }
+                  },
+                  "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+                  "@type": "map"
+                }
+              },
+              "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+              "@type": "map"
+            },
+            {
+              "value": {
+                "physicalOfficeLocation": {
+                  "value": {
+                    "streetLine2": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "zip": {
+                      "value": "19702",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "country": {
+                      "value": "US",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "streetLine1": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "locality": {
+                      "value": "Newark",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "state": {
+                      "value": "DE",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "full": {
+                      "value": "256 Chapman Rd, Newark, DE 19702, USA",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    }
+                  },
+                  "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+                  "@type": "map"
+                }
+              },
+              "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+              "@type": "map"
+            },
+            {
+              "value": {
+                "physicalOfficeLocation": {
+                  "value": {
+                    "streetLine2": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "zip": {
+                      "value": "1011",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "country": {
+                      "value": "NZ",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "streetLine1": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "locality": {
+                      "value": "Auckland",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "state": {
+                      "value": "Auckland",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "full": {
+                      "value": "level 1/14 Jervois Road, Ponsonby, Auckland 1011, New Zealand",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    }
+                  },
+                  "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+                  "@type": "map"
+                }
+              },
+              "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+              "@type": "map"
+            },
+            {
+              "value": {
+                "physicalOfficeLocation": {
+                  "value": {
+                    "streetLine2": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "zip": {
+                      "value": "2000",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "country": {
+                      "value": "AU",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "streetLine1": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "locality": {
+                      "value": "Sydney",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "state": {
+                      "value": "NSW",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "full": {
+                      "value": "level 8/60 Pitt St, Sydney NSW 2000, Australia",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    }
+                  },
+                  "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+                  "@type": "map"
+                }
+              },
+              "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+              "@type": "map"
+            }
+          ],
+          "__typename": "com.hubspot.chirp.ext.models.ListFieldValue",
+          "@type": "list"
+        },
+        "services": {
+          "value": [
+            {
+              "value": 1,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 3,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 4,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 5,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 6,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 7,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 8,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 9,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 53001,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 10,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 11,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 12,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 13,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 14,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 15,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 16,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 18,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 19,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 20,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 21,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 22,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 23,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 24,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 25,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 39001,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 26,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 33,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            }
+          ],
+          "__typename": "com.hubspot.chirp.ext.models.ListFieldValue",
+          "@type": "list"
+        },
+        "budgetChoice": {
+          "value": [
+            {
+              "value": "UPPER",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            }
+          ],
+          "__typename": "com.hubspot.chirp.ext.models.ListFieldValue",
+          "@type": "list"
+        },
+        "listingIcon": {
+          "value": {
+            "altText": {
+              "value": "",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            "value": {
+              "value": "https://www.avidlyagency.com/hubfs/__hs-marketplace__/Avidly_logo-1.png",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            }
+          },
+          "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+          "@type": "map"
+        },
+        "regionChoice": {
+          "value": [
+            {
+              "value": "APAC",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "EMEA",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "NORTH_AMERICA",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "SOUTH_AMERICA",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            }
+          ],
+          "__typename": "com.hubspot.chirp.ext.models.ListFieldValue",
+          "@type": "list"
+        },
+        "officeLocation": {
+          "value": [
+            {
+              "value": "PHYSICAL",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            }
+          ],
+          "__typename": "com.hubspot.chirp.ext.models.ListFieldValue",
+          "@type": "list"
+        },
+        "industryChoice": {
+          "value": [
+            {
+              "value": "BANKING_FINANCIAL_SERVICES",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "CONSTRUCTION_RENOVATION",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "ENERGY",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "MANUFACTURING",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "TECHNOLOGY_SOFTWARE",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            }
+          ],
+          "__typename": "com.hubspot.chirp.ext.models.ListFieldValue",
+          "@type": "list"
+        },
+        "integrations": {
+          "value": [
+            {
+              "value": 30054910,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30051255,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30051123,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30099816,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30050889,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30051308,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30050891,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30050833,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30050893,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30050895,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30052960,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30054766,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30050898,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30050899,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30051017,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30052604,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30050845,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30051853,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30051858,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30051961,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30052150,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30051031,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30050973,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30050976,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30051551,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30056029,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30052658,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30055918,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30051099,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30054492,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30055158,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30054464,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30050983,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30053558,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30052536,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30050932,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30056326,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30051052,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30050877,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30050999,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30051120,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30051156,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30055002,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30055634,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            }
+          ],
+          "__typename": "com.hubspot.chirp.ext.models.ListFieldValue",
+          "@type": "list"
+        },
+        "sourceId": {
+          "value": "4002",
+          "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+          "@type": "string"
+        },
+        "installCount": {
+          "value": 0,
+          "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+          "@type": "integer"
+        },
+        "productType": {
+          "value": "AGENT",
+          "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+          "@type": "string"
+        },
+        "listingId": {
+          "value": 30344541,
+          "__typename": "com.hubspot.chirp.ext.models.LongFieldValue",
+          "@type": "long"
+        },
+        "listingVersionId": {
+          "value": 30720293,
+          "__typename": "com.hubspot.chirp.ext.models.LongFieldValue",
+          "@type": "long"
+        }
+      },
+      "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+      "@type": "map"
+    },
+    "_default": {
+      "value": {
+        "urlSlug": {
+          "value": "smartbug-media",
+          "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+          "@type": "string"
+        },
+        "services": {
+          "value": [
+            {
+              "value": 1,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 3,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 4,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 5,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 6,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 7,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 8,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 9,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 53001,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 10,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 11,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 12,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 13,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 14,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 15,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 16,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 17,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 18,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 19,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 20,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 21,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 22,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 23,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 24,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 25,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 39001,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 26,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 33,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            }
+          ],
+          "__typename": "com.hubspot.chirp.ext.models.ListFieldValue",
+          "@type": "list"
+        },
+        "sourceId": {
+          "value": "5626",
+          "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+          "@type": "string"
+        },
+        "languages": {
+          "value": [
+            {
+              "value": "en",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "fr",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            }
+          ],
+          "__typename": "com.hubspot.chirp.ext.models.ListFieldValue",
+          "@type": "list"
+        },
+        "listingId": {
+          "value": 30344501,
+          "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+          "@type": "integer"
+        },
+        "companyUrl": {
+          "value": "https://www.smartbugmedia.com/full-service-digital-agency-hubspot?utm_campaign=Partner%20Marketing&utm_source=HubSpot%20Directory&utm_content=HubSpot%20Agency%20LP%20v2",
+          "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+          "@type": "string"
+        },
+        "companyName": {
+          "value": "SmartBug \ud83d\ude80 RevOps, CRM & Integration Experts",
+          "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+          "@type": "string"
+        },
+        "description": {
+          "value": "As a 3x HubSpot North America Partner of the Year, SmartBug Media transforms your customer lifecycle into a revenue engine. Our unified ecosystem includes specialized divisions Globalia (AI & Software) and Point Success Media (Paid Media), making this the official home for all three brands.\n\n\ud83d\udd04 Implementation & Integration\n\n- Seamless migrations and system integrations powered by Globalia\u2019s technical development team.\n\n- 19 HubSpot-certified trainers to drive platform adoption.\n\n\ud83d\udcc8 Revenue Generation\n\n- Full-funnel marketing and high-performance advertising via Point Success Media.\n\n- Expert deployment of Breeze AI and custom agents to automate growth.\n\n\ud83c\udfc6 Elite Excellence\n\n- 8 platform accreditations and deep HIPAA-compliance expertise.\n\n- A team of 250+ experts dedicated to your resilient growth.",
+          "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+          "@type": "string"
+        },
+        "listingIcon": {
+          "value": {
+            "value": {
+              "value": "https://142915.fs1.hubspotusercontent-na1.net/hubfs/142915/__hs-marketplace__/SmartBug_Logo_Final_Black_Large-1.png",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            "altText": {
+              "value": "",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            }
+          },
+          "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+          "@type": "map"
+        },
+        "productType": {
+          "value": "AGENT",
+          "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+          "@type": "string"
+        },
+        "budgetChoice": {
+          "value": [
+            {
+              "value": "UPPER",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            }
+          ],
+          "__typename": "com.hubspot.chirp.ext.models.ListFieldValue",
+          "@type": "list"
+        },
+        "installCount": {
+          "value": 0,
+          "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+          "@type": "integer"
+        },
+        "integrations": {
+          "value": [
+            {
+              "value": 30050944,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30050829,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30051346,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30053745,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30050833,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30050895,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30050837,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30050898,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30051130,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30051017,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30050960,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30050845,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30051717,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30050907,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30051961,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30052652,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30050970,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30052105,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30053834,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30052606,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30051551,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30052615,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30051042,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30050930,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30051108,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30051539,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30050995,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30051887,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            },
+            {
+              "value": 30051343,
+              "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+              "@type": "integer"
+            }
+          ],
+          "__typename": "com.hubspot.chirp.ext.models.ListFieldValue",
+          "@type": "list"
+        },
+        "regionChoice": {
+          "value": [
+            {
+              "value": "NORTH_AMERICA",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            }
+          ],
+          "__typename": "com.hubspot.chirp.ext.models.ListFieldValue",
+          "@type": "list"
+        },
+        "industryChoice": {
+          "value": [
+            {
+              "value": "BANKING_FINANCIAL_SERVICES",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "FINANCE_INSURANCE",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "MANUFACTURING",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "MEDICAL_WELLNESS",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "TECHNOLOGY_SOFTWARE",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            }
+          ],
+          "__typename": "com.hubspot.chirp.ext.models.ListFieldValue",
+          "@type": "list"
+        },
+        "officeLocation": {
+          "value": [
+            {
+              "value": "REMOTE",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            }
+          ],
+          "__typename": "com.hubspot.chirp.ext.models.ListFieldValue",
+          "@type": "list"
+        },
+        "remoteLocations": {
+          "value": [
+            {
+              "value": {
+                "remoteLocation": {
+                  "value": {
+                    "zip": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "full": {
+                      "value": "United States",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "state": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "country": {
+                      "value": "US",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "locality": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "streetLine1": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "streetLine2": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    }
+                  },
+                  "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+                  "@type": "map"
+                }
+              },
+              "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+              "@type": "map"
+            },
+            {
+              "value": {
+                "remoteLocation": {
+                  "value": {
+                    "zip": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "full": {
+                      "value": "Montreal, QC, Canada",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "state": {
+                      "value": "QC",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "country": {
+                      "value": "CA",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "locality": {
+                      "value": "Montreal",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "streetLine1": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "streetLine2": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    }
+                  },
+                  "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+                  "@type": "map"
+                }
+              },
+              "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+              "@type": "map"
+            },
+            {
+              "value": {
+                "remoteLocation": {
+                  "value": {
+                    "zip": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "full": {
+                      "value": "Seattle, WA, USA",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "state": {
+                      "value": "WA",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "country": {
+                      "value": "US",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "locality": {
+                      "value": "Seattle",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "streetLine1": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "streetLine2": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    }
+                  },
+                  "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+                  "@type": "map"
+                }
+              },
+              "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+              "@type": "map"
+            },
+            {
+              "value": {
+                "remoteLocation": {
+                  "value": {
+                    "zip": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "full": {
+                      "value": "Los Angeles, CA, USA",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "state": {
+                      "value": "CA",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "country": {
+                      "value": "US",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "locality": {
+                      "value": "Los Angeles",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "streetLine1": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "streetLine2": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    }
+                  },
+                  "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+                  "@type": "map"
+                }
+              },
+              "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+              "@type": "map"
+            },
+            {
+              "value": {
+                "remoteLocation": {
+                  "value": {
+                    "zip": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "full": {
+                      "value": "Charlotte, NC, USA",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "state": {
+                      "value": "NC",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "country": {
+                      "value": "US",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "locality": {
+                      "value": "Charlotte",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "streetLine1": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    },
+                    "streetLine2": {
+                      "value": "",
+                      "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+                      "@type": "string"
+                    }
+                  },
+                  "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+                  "@type": "map"
+                }
+              },
+              "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+              "@type": "map"
+            }
+          ],
+          "__typename": "com.hubspot.chirp.ext.models.ListFieldValue",
+          "@type": "list"
+        },
+        "listingVersionId": {
+          "value": 30701114,
+          "__typename": "com.hubspot.chirp.ext.models.IntFieldValue",
+          "@type": "integer"
+        },
+        "companySizeSpecialty": {
+          "value": [
+            {
+              "value": "RANGE_1001_10000",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "RANGE_10001_",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "RANGE_201_1000",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            },
+            {
+              "value": "RANGE_51_200",
+              "__typename": "com.hubspot.chirp.ext.models.StringFieldValue",
+              "@type": "string"
+            }
+          ],
+          "__typename": "com.hubspot.chirp.ext.models.ListFieldValue",
+          "@type": "list"
+        }
+      },
+      "__typename": "com.hubspot.chirp.ext.models.MapFieldValue",
+      "@type": "map"
+    }
+  }
+}

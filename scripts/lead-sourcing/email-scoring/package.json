@@ -1,0 +1,21 @@
+{
+  "name": "@furnace/email-scoring",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "pick": "tsx src/pick-best-email.ts",
+    "verify": "tsx src/verify-emails.ts",
+    "verify:webinar": "tsx src/verify-webinar-imports.ts",
+    "test": "node --import tsx --test src/**/*.test.ts"
+  },
+  "dependencies": {
+    "@aws-sdk/client-ssm": "^3.1031.0",
+    "csv-parse": "^5.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "tsx": "^4.20.6",
+    "typescript": "^5.6.0"
+  }
+}

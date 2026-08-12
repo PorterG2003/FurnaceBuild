@@ -1,0 +1,28 @@
+{
+  "organic": [
+    {
+      "title": "Acme Corp on LinkedIn: Register for our webinar on demand gen",
+      "link": "https://www.linkedin.com/posts/acme-corp_register-for-our-webinar-activity-1234567890-abcd",
+      "snippet": "Join us for a webinar about demand generation.",
+      "position": 1
+    },
+    {
+      "title": "Jane Doe on LinkedIn: Join me for a webinar",
+      "link": "https://www.linkedin.com/posts/jane-doe-12345_join-me-for-a-webinar-activity-9876543210-efgh",
+      "snippet": "Excited to host a webinar. Register at https://zoom.us/j/123456789",
+      "position": 2
+    },
+    {
+      "title": "Blocked post example",
+      "link": "https://www.linkedin.com/posts/blocked-user_blocked-post-activity-1111111111-zzzz",
+      "snippet": "",
+      "position": 3
+    },
+    {
+      "title": "Random blog not linkedin",
+      "link": "https://example.com/webinar-tips",
+      "snippet": "Tips for webinars",
+      "position": 4
+    }
+  ]
+}

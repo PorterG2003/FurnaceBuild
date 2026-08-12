@@ -1,0 +1,78 @@
+pipeline_filter:
+  enabled: true
+
+contact_search:
+  max_contacts_per_company: 2
+  per_page: 15
+  contact_tiers:
+    tier1_webinar:
+      - marketing
+      - events
+      - demand gen
+      - webinar
+      - field marketing
+      - community
+      - product marketing
+      - chief marketing officer
+      - cmo
+    tier2_pipeline:
+      - sales
+      - business development
+      - revenue
+      - go-to-market
+      - gtm
+      - chief revenue officer
+      - cro
+      - commercial
+    tier2_seniority:
+      - director
+      - vp
+      - vice president
+      - head of
+      - chief
+    tier3_executive:
+      - founder
+      - co-founder
+      - ceo
+      - chief executive officer
+      - executive director
+      - managing director
+      - president
+      - owner
+    exclude:
+      - account executive
+      - account exec
+      - ae
+      - sdr
+      - bdr
+      - sales development
+      - business development representative
+      - customer success
+      - customer support
+      - customer partnerships
+      - support
+      - engineer
+      - legal
+      - hr
+      - finance
+
+industry_blocklist:
+  - government
+  - government administration
+  - military
+  - nonprofit
+  - nonprofit organization
+  - civic & social organization
+  - philanthropy
+  - think tanks
+  - international affairs
+  - law enforcement
+  - judiciary
+  - legislative office
+
+entity_blocklist:
+  - armed forces
+  - attorney general
+  - ministry for
+
+industry_allowlist: []

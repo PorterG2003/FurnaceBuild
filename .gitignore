@@ -85,11 +85,10 @@ lib/client-api/webhooks/*.js.map
 lib/client-api/webhooks/*.d.ts
 lib/client-api/webhooks/*.d.ts.map
 
-# scripts
-scripts/lead-sourcing/
-!scripts/lead-sourcing/
-scripts/lead-sourcing/*/
-!scripts/lead-sourcing/linkedin-webinar-ads/
-!scripts/lead-sourcing/linkedin-webinar-ads/**
-scripts/lead-sourcing/linkedin-webinar-ads/node_modules/
-scripts/lead-sourcing/linkedin-webinar-ads/output/
+# Lead-sourcing scripts are tracked; keep run data and local dumps out of git.
+# (node_modules/ and .env are already ignored globally.)
+scripts/lead-sourcing/**/output/
+scripts/lead-sourcing/**/data/
+scripts/lead-sourcing/**/inputs/
+scripts/lead-sourcing/**/src/*.csv
+scripts/lead-sourcing/.cursor/

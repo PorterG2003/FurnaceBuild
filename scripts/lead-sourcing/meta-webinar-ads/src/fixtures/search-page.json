@@ -1,0 +1,26 @@
+[
+  {
+    "libraryId": "1234567890",
+    "pageName": "Acme Security",
+    "pageUrl": "https://www.facebook.com/acmesecurity",
+    "primaryText": "Reserve your spot for our free live webinar with Dana Reed on security workflows.",
+    "headline": "Register now",
+    "landingUrl": "https://events.acme.com/webinar/response",
+    "cta": "Sign Up",
+    "startedRunning": "August 1, 2026",
+    "linkUrls": ["https://events.acme.com/webinar/response"],
+    "rawText": "Library ID: 1234567890 Started running on August 1, 2026 See ad details Acme Security Sponsored Reserve your spot for our free live webinar with Dana Reed on security workflows. events.acme.com Sign Up"
+  },
+  {
+    "libraryId": "9876543210",
+    "pageName": "Cash Coach Academy",
+    "pageUrl": null,
+    "primaryText": "Make money online with my coaching program. Reserve your spot today.",
+    "headline": "Work from home",
+    "landingUrl": "https://cashcoach.example.com/offer",
+    "cta": "Learn More",
+    "startedRunning": "August 2, 2026",
+    "linkUrls": ["https://cashcoach.example.com/offer"],
+    "rawText": "Library ID: 9876543210 Make money online with my coaching program."
+  }
+]

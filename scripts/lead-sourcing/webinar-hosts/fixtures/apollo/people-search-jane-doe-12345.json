@@ -1,0 +1,20 @@
+{
+  "people": [
+    {
+      "id": "person_jane",
+      "first_name": "Jane",
+      "last_name": "Doe",
+      "title": "Growth Marketing Manager",
+      "email": "jane.doe@growthco.io",
+      "linkedin_url": "https://www.linkedin.com/in/jane-doe-12345",
+      "organization": {
+        "id": "org_growth_456",
+        "name": "GrowthCo",
+        "primary_domain": "growthco.io",
+        "linkedin_url": "https://www.linkedin.com/company/growthco",
+        "estimated_num_employees": 85,
+        "industry": "Marketing and Advertising"
+      }
+    }
+  ]
+}

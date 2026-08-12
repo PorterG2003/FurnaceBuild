@@ -1,0 +1,36 @@
+{
+  "name": "@furnace/webinar-host-leads",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "stage1": "tsx src/stage1-serp/scrape.ts",
+    "stage2": "tsx src/stage2-linkedin/extract.ts",
+    "stage3": "tsx src/stage3-enrich/enrich.ts",
+    "stage4": "tsx src/stage4-contacts/filterAndFind.ts",
+    "all": "tsx src/run-all.ts",
+    "all:fixtures": "tsx src/run-all.ts --fixtures",
+    "test": "node --import tsx --test src/**/*.test.ts",
+    "test:pipeline": "node --import tsx --test src/pipelineOutcomes.test.ts",
+    "test:smoke": "tsx src/test-smoke.ts",
+    "capture-fixtures": "tsx src/capture-fixtures.ts",
+    "create-campaigns": "tsx src/createWebinarCampaigns.ts",
+    "backfill-topics": "tsx src/stage3-enrich/backfillSalesTopics.ts",
+    "backfill-locations": "tsx src/stage4-contacts/backfillLocations.ts",
+    "score-pipeline-intent": "tsx src/stage4-contacts/scorePipelineIntent.ts",
+    "backfill-pass-topics": "tsx src/stage4-contacts/backfillPassTopics.ts",
+    "generate-topic-hooks": "tsx src/stage4-contacts/generateTopicHooks.ts"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.99.1",
+    "csv-parse": "^5.6.0",
+    "dotenv": "^16.4.7",
+    "playwright": "1.58.2",
+    "yaml": "^2.7.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "tsx": "^4.20.6",
+    "typescript": "^5.6.0"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "people": [
+    {
+      "id": "person_growth_1",
+      "first_name": "Alex",
+      "last_name": "Demand",
+      "title": "Head of Demand Gen",
+      "email": "alex.demand@growthco.io",
+      "linkedin_url": "https://www.linkedin.com/in/alex-demand"
+    }
+  ]
+}

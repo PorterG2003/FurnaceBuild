@@ -1,0 +1,36 @@
+[
+  {
+    "text": "Advertiser\nAcme Security\nSponsored\nReserve your spot for our live webinar with Dana Reed.\nHeadline\nHow security teams respond faster\nStarted on\n2026-08-01",
+    "links": [
+      { "href": "https://www.linkedin.com/company/acme-security/", "text": "Acme Security" },
+      { "href": "https://www.linkedin.com/ad-library/detail/918273645", "text": "View ad details" },
+      { "href": "https://events.acme.com/webinar/response", "text": "Register" }
+    ],
+    "attributes": {
+      "data-ad-id": "918273645",
+      "data-advertiser-name": "Acme Security",
+      "data-advertiser-url": "https://www.linkedin.com/company/acme-security/",
+      "data-primary-text": "Reserve your spot for our live webinar with Dana Reed.",
+      "data-headline": "How security teams respond faster",
+      "data-landing-url": "https://events.acme.com/webinar/response",
+      "data-active-from": "2026-08-01",
+      "data-status": "active"
+    }
+  },
+  {
+    "text": "Advertiser\nReplay Academy\nSponsored\nWatch our on-demand webinar replay now.\nHeadline\nCatch the recording",
+    "links": [
+      { "href": "https://www.linkedin.com/company/replay-academy/", "text": "Replay Academy" },
+      { "href": "https://www.linkedin.com/ad-library/detail/918273646", "text": "View ad details" },
+      { "href": "https://replay.example.com/webinar", "text": "Watch" }
+    ],
+    "attributes": {
+      "data-ad-id": "918273646",
+      "data-advertiser-name": "Replay Academy",
+      "data-primary-text": "Watch our on-demand webinar replay now.",
+      "data-headline": "Catch the recording",
+      "data-landing-url": "https://replay.example.com/webinar",
+      "data-status": "active"
+    }
+  }
+]

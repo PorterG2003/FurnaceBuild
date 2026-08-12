@@ -1,0 +1,23 @@
+{
+  "name": "@furnace/linkedin-webinar-ads",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "scrape": "tsx src/run.ts",
+    "review": "tsx src/review.ts",
+    "apply-review": "tsx src/apply-review.ts",
+    "calibrate": "tsx src/calibrate.ts",
+    "test": "node --import tsx --test src/**/*.test.ts",
+    "test:fixtures": "tsx src/run.ts --fixtures --run-dir output/runs/fixture-pilot"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "playwright": "1.58.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "tsx": "^4.20.6",
+    "typescript": "^5.6.0"
+  }
+}

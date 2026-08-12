@@ -1,0 +1,4 @@
+License Type,License Number,Full Name,Status,License Expiration Date,Designated Supervisor Flag,County,Related License Full Name,Email,Phone
+Broker,654321,Casey Supervisor,Active,2027-01-01,Y,Travis,,casey@example.com,5125550100
+Sales Agent,111222,Ordinary Agent,Active,2027-01-01,N,Travis,Casey Supervisor,agent@example.com,
+Broker,777888,Blake Broker,Active,2027-01-01,N,Harris,,blake@example.com,

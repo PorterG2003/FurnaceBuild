@@ -1,0 +1,78 @@
+contact_search:
+  max_contacts_per_company: 2
+  per_page: 15
+  fill_order:
+    - executive
+    - sales_marketing
+  contact_tiers:
+    executive:
+      - founder
+      - co-founder
+      - ceo
+      - chief executive officer
+      - president
+      - owner
+    # Kept for classify/tests; not in fill_order (Furnace GTM buyers prefer sales/marketing).
+    revops_function:
+      - revenue operations
+      - revops
+      - rev ops
+      - chief revenue officer
+      - cro
+    revops_seniority:
+      - chief
+      - vp
+      - vice president
+      - head of
+    sales_marketing_function:
+      - sales
+      - marketing
+      - demand gen
+      - demand generation
+      - growth
+      - go-to-market
+      - gtm
+      - business development
+      - chief marketing officer
+      - cmo
+      - chief revenue officer
+      - cro
+      - chief sales officer
+      - cso
+    sales_marketing_seniority:
+      - chief
+      - vp
+      - vice president
+      - head of
+      - director
+    exclude:
+      - account executive
+      - account exec
+      - ae
+      - sdr
+      - bdr
+      - sales development
+      - business development representative
+      - customer success
+      - customer support
+      - customer partnerships
+      - support
+      - engineer
+      - legal
+      - hr
+      - finance
+      - board member
+      - franchise owner
+      - director of revenue operations
+      - revops manager
+      - revenue operations manager
+      - revenue operations specialist
+      - revops specialist
+      - revops analyst
+      - revenue operations analyst
+      - marketing coordinator
+      - marketing specialist
+      - sales coordinator
+      - inside sales
+      - sales rep
+      - sales representative

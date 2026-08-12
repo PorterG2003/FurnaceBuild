@@ -1,0 +1,25 @@
+{
+  "people": [
+    {
+      "id": "person_1",
+      "first_name": "Sarah",
+      "last_name": "Marketing",
+      "title": "Director of Marketing",
+      "email": "sarah.marketing@acme-corp.com",
+      "linkedin_url": "https://www.linkedin.com/in/sarah-marketing",
+      "organization": {
+        "id": "org_acme_123",
+        "name": "Acme Corp",
+        "primary_domain": "acme-corp.com"
+      }
+    },
+    {
+      "id": "person_2",
+      "first_name": "Tom",
+      "last_name": "Events",
+      "title": "Events Manager",
+      "email": "tom.events@acme-corp.com",
+      "linkedin_url": "https://www.linkedin.com/in/tom-events"
+    }
+  ]
+}

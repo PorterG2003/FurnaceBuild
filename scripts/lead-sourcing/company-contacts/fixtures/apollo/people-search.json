@@ -1,0 +1,31 @@
+{
+  "people": [
+    {
+      "id": "person_acme_ceo",
+      "first_name": "Jane",
+      "last_name": "Founder",
+      "title": "CEO & Co-Founder",
+      "email": "jane@acme-corp.com",
+      "has_email": true,
+      "linkedin_url": "https://www.linkedin.com/in/jane-founder"
+    },
+    {
+      "id": "person_acme_revops",
+      "first_name": "Sam",
+      "last_name": "Ops",
+      "title": "VP of Revenue Operations",
+      "email": "sam.ops@acme-corp.com",
+      "has_email": true,
+      "linkedin_url": "https://www.linkedin.com/in/sam-ops"
+    },
+    {
+      "id": "person_acme_mid",
+      "first_name": "Pat",
+      "last_name": "Mid",
+      "title": "Revenue Operations Manager",
+      "email": "pat.mid@acme-corp.com",
+      "has_email": true,
+      "linkedin_url": "https://www.linkedin.com/in/pat-mid"
+    }
+  ]
+}

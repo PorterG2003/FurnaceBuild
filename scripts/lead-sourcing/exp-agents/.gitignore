@@ -1,0 +1,7 @@
+node_modules/
+dist/
+output/
+data/licenses/
+.chrome-cdp-profile/
+*.log
+.DS_Store

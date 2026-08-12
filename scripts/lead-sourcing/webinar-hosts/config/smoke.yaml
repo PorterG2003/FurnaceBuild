@@ -1,0 +1,6 @@
+max_queries: 1
+max_pages: 1
+max_linkedin_urls: 2
+max_apollo_org_lookups: 1
+max_apollo_people_searches: 1
+max_openrouter_calls: 0

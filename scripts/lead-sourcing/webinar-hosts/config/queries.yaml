@@ -1,0 +1,22 @@
+time_filter: qdr:m
+serper_rate_ms: 500
+yield_stop:
+  zero_new_pages: 1
+  low_yield_threshold: 1
+  low_yield_streak: 2
+phrases:
+  - '"register for our webinar"'
+  - '"register for the webinar"'
+  - '"join us for a webinar"'
+  - '"join us for our webinar"'
+  - '"join me for a webinar"'
+  - '"hosting a webinar"'
+  - '"we''re hosting a webinar"'
+  - '"upcoming webinar" "register"'
+  - '"save your seat" "webinar"'
+  - '"RSVP" "webinar"'
+  - '"free webinar" "register"'
+  - '"live webinar" "register"'
+  - '"join us live" "webinar"'
+  - '"online workshop" "register"'
+  - '"masterclass" "register" "live"'

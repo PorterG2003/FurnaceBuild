@@ -267,6 +267,7 @@ function EmailNodeModal({ visible, onClose, onSave, initialData }: EmailNodeModa
     body_text?: string;
     template: string;
     editor_mode?: EmailEditorMode;
+    variantId?: string;
   } | null>(null);
   const initialDraftRef = useRef<EmailNodeDraftSnapshot | null>(null);
 
@@ -507,6 +508,7 @@ function EmailNodeModal({ visible, onClose, onSave, initialData }: EmailNodeModa
       body_text: draftText ?? undefined,
       template: draftText ?? template,
       editor_mode: selectedVariantMode,
+      variantId: selectedVariant?.id,
     });
     setPreviewOpen(true);
   };

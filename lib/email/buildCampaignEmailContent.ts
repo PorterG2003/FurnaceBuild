@@ -10,7 +10,11 @@
 
 import { stripHtml } from './parse-body.js';
 import { mergeTemplate, type LeadLike } from './mergeTemplate.js';
-import { processSpintax, type ProcessSpintaxOptions } from './processSpintax.js';
+import {
+  processSpintax,
+  type ProcessSpintaxOptions,
+  type SpintaxScope,
+} from './processSpintax.js';
 import { stripSignatureStyles } from './strip-signature-styles.js';
 import {
   canonicalizeEmailHtml,
@@ -18,6 +22,13 @@ import {
   mergeHtmlEmailWithSignature,
   type EmailEditorMode,
 } from './emailHtmlMode.js';
+
+function withSpintaxScope(
+  options: ProcessSpintaxOptions | undefined,
+  scope: SpintaxScope
+): ProcessSpintaxOptions {
+  return { ...(options ?? {}), scope };
+}
 
 /**
  * Convert block-level HTML (from TipTap or signature editor) to a flat <br>-separated
@@ -102,7 +113,7 @@ export function mergeInboxComposeHtml(
     bodyRaw = bodySource;
   }
 
-  const bodyHtmlMerged = processSpintax(bodyRaw, options);
+  const bodyHtmlMerged = processSpintax(bodyRaw, withSpintaxScope(options, 'body'));
   return {
     bodyHtmlMerged,
     isHtmlBody: /<[a-z][\s\S]*>/i.test(bodyHtmlMerged),
@@ -138,7 +149,7 @@ export function buildCampaignEmailContent(
   options?: BuildCampaignEmailContentOptions
 ): BuildCampaignEmailContentResult {
   const subjectRaw = String(config.subject ?? '');
-  const subjectSpun = processSpintax(subjectRaw, options);
+  const subjectSpun = processSpintax(subjectRaw, withSpintaxScope(options, 'subject'));
   const subject = mergeTemplate(subjectSpun, lead);
 
   const bodySource = selectCampaignBodySource(config);
@@ -148,6 +159,7 @@ export function buildCampaignEmailContent(
     config.signature?.trim() ? stripSignatureStyles(config.signature.trim()) : '';
   const bodyPart = bodySource.replace(/\s+$/, '');
   const sigPart = normalizedSignature.replace(/^\s+/, '');
+  const bodyOptions = withSpintaxScope(options, 'body');
   const bodySpun =
     editorMode === 'html'
       ? processSpintax(
@@ -156,19 +168,22 @@ export function buildCampaignEmailContent(
             normalizedSignature,
             Boolean(normalizedSignature)
           ),
-          options
+          bodyOptions
         )
       : mergeInboxComposeHtml(
           bodySource,
           config.signature ?? null,
           Boolean(config.signature?.trim()),
-          options
+          bodyOptions
         ).bodyHtmlMerged;
   const bodyMerged = mergeTemplate(bodySpun, lead);
   const isHtmlBody = /<[a-z][\s\S]*>/i.test(bodyMerged);
   const bodyText =
     typeof config.body_text === 'string' && !isHtmlBody
-      ? mergeTemplate(processSpintax(config.body_text, options), lead)
+      ? mergeTemplate(
+          processSpintax(config.body_text, withSpintaxScope(options, 'body_text')),
+          lead
+        )
       : isHtmlBody
         ? stripHtml(bodyMerged)
         : bodyMerged;

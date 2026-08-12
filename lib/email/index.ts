@@ -29,7 +29,17 @@ export {
 } from './normalize-render-html.js';
 
 export { mergeTemplate, extractVariableKeys, extractMalformedVariables, hasMissingValues, type LeadLike } from './mergeTemplate.js';
-export { processSpintax, type ProcessSpintaxOptions } from './processSpintax.js';
+export {
+  processSpintax,
+  buildSpintaxSeed,
+  selectSpintaxOptionIndex,
+  fnv1a32,
+  SPINTAX_SEED_VERSION,
+  LEGACY_MISSING_VARIANT_ID,
+  type ProcessSpintaxOptions,
+  type SpintaxScope,
+  type SpintaxSeedIdentity,
+} from './processSpintax.js';
 export { getLeadVariables, STANDARD_MERGE_FIELD_KEYS, type LeadVariable } from './leadVariables.js';
 export { stripSignatureStyles } from './strip-signature-styles.js';
 export {

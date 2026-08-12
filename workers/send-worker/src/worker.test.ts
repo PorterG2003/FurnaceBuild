@@ -1,7 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { resetSlackAggregationStateForTests } from '@furnace/slack-lib';
-import { buildTimelineFromRows, type SentJobRow } from '../../../lib/email/dist/index.js';
+import {
+  buildCampaignEmailContent,
+  buildSpintaxSeed,
+  buildTimelineFromRows,
+  type SentJobRow,
+} from '../../../lib/email/dist/index.js';
 import { SendWorker } from './worker.js';
 import type { MessageJob } from './types.js';
 
@@ -958,23 +963,33 @@ test('SendWorker warns when locked lead mailbox mismatches sent job mailbox', as
 });
 
 test('SendWorker persists rendered text and html payloads for campaign sends', async () => {
+  const nodeConfig = {
+    subject: '{Hi {{first_name}}|Hello {{first_name}}}',
+    body_html: '<p>{Hey|Hello} {{first_name}},</p><p>{Appreciate it|Thanks} for your time.</p>',
+    body_text: '{Hey|Hello} {{first_name}},\n\n{Appreciate it|Thanks} for your time.',
+  };
+  const expected = buildCampaignEmailContent(nodeConfig, { first_name: 'Casey' }, {
+    seed: buildSpintaxSeed({
+      campaignId: 'campaign-1',
+      leadId: 'lead-1',
+      variantId: 'var-parity-1',
+    }),
+  });
+
   const supabase = new ProcessMessageSupabase();
   const worker = new SendWorker({
     supabase: supabase as any,
     databaseClient: {} as any,
     campaignEmailSender: async (_transporter, _mailbox, _job, _lead, _subject, _body, _inReplyTo, _references, options) => {
-      assert.equal(options?.bodyHtml, 'Hey Casey,<br>Appreciate it for your time.');
-      assert.equal(options?.bodyText, 'Hey Casey, Appreciate it for your time.');
+      assert.equal(options?.bodyHtml, expected.bodyMerged);
+      assert.equal(options?.bodyText, expected.bodyText);
       return { submittedMessageId: '<job-1@furnace.build>', providerMessageId: '<provider@example.com>' };
     },
   });
   const messageJob = createCampaignMessageJob({
+    variant_id: 'var-parity-1',
     message_data: {
-      node_config: {
-        subject: '{Hi {{first_name}}|Hello {{first_name}}}',
-        body_html: '<p>{Hey|Hello} {{first_name}},</p><p>{Appreciate it|Thanks} for your time.</p>',
-        body_text: '{Hey|Hello} {{first_name}},\n\n{Appreciate it|Thanks} for your time.',
-      },
+      node_config: nodeConfig,
     },
   });
 
@@ -1002,14 +1017,7 @@ test('SendWorker persists rendered text and html payloads for campaign sends', a
     markMessageSent: () => {},
   };
 
-  const originalRandom = Math.random;
-  Math.random = () => 0;
-
-  try {
-    await (worker as any).processMessageJob(messageJob);
-  } finally {
-    Math.random = originalRandom;
-  }
+  await (worker as any).processMessageJob(messageJob);
 
   const sentEventCall = supabase.rpcCalls.find((call) => call.fn === 'record_sent_event_and_increment');
   assert.ok(sentEventCall);
@@ -1018,11 +1026,100 @@ test('SendWorker persists rendered text and html payloads for campaign sends', a
     provider_message_id: '<provider@example.com>',
     sent_at: eventData.sent_at,
     test_mode: false,
-    sent_subject: 'Hi Casey',
-    sent_body_html: 'Hey Casey,<br>Appreciate it for your time.',
-    sent_body_text: 'Hey Casey, Appreciate it for your time.',
+    sent_subject: expected.subject,
+    sent_body_html: expected.bodyMerged,
+    sent_body_text: expected.bodyText,
   });
   assert.equal(typeof eventData.sent_at, 'string');
+});
+
+test('SendWorker seeded spintax is stable across retries and matches shared renderer', async () => {
+  const nodeConfig = {
+    subject: '{Hi {{first_name}}|Hello {{first_name}}}',
+    body_html: '<p>{Hey|Hello} {{first_name}},</p><p>{Appreciate it|Thanks} for your time.</p>',
+    body_text: '{Hey|Hello} {{first_name}},\n\n{Appreciate it|Thanks} for your time.',
+  };
+  const expected = buildCampaignEmailContent(nodeConfig, { first_name: 'Casey' }, {
+    seed: buildSpintaxSeed({
+      campaignId: 'campaign-1',
+      leadId: 'lead-1',
+      variantId: null,
+    }),
+  });
+
+  const captured: Array<{ subject: string; bodyHtml?: string; bodyText?: string | null }> = [];
+  const supabase = new ProcessMessageSupabase();
+  const worker = new SendWorker({
+    supabase: supabase as any,
+    databaseClient: {} as any,
+    campaignEmailSender: async (
+      _transporter,
+      _mailbox,
+      _job,
+      _lead,
+      subject,
+      _body,
+      _inReplyTo,
+      _references,
+      options,
+    ) => {
+      captured.push({
+        subject,
+        bodyHtml: options?.bodyHtml,
+        bodyText: options?.bodyText,
+      });
+      return { submittedMessageId: '<job-1@furnace.build>', providerMessageId: '<provider@example.com>' };
+    },
+  });
+
+  const makeJob = () =>
+    createCampaignMessageJob({
+      // Missing variant_id exercises the legacy seed stand-in.
+      variant_id: null,
+      message_data: { node_config: nodeConfig },
+    });
+
+  const stub = (messageJob: MessageJob) => {
+    (worker as any).loadJobData = async () => ({
+      lead: {
+        id: 'lead-1',
+        email: 'lead@example.com',
+        first_name: 'Casey',
+        mailbox_id: 'mailbox-1',
+      },
+      mailbox: {
+        id: 'mailbox-1',
+        email_address: 'sender@example.com',
+        display_name: 'Sender',
+        signature: null,
+      },
+      nodeConfig: (messageJob.message_data as any).node_config,
+    });
+    (worker as any).isEmailBlocked = async () => false;
+    (worker as any).loadThreadTimelineForJob = async () => [];
+    (worker as any).finalizeCampaignMessageJobSent = async () => {};
+    (worker as any).reconcileLeadMailboxAfterSuccessfulSend = async () => {};
+    (worker as any).smtpPool = {
+      getTransporter: async () => ({}),
+      markMessageSent: () => {},
+    };
+  };
+
+  const firstJob = makeJob();
+  stub(firstJob);
+  await (worker as any).processMessageJob(firstJob);
+
+  const retryJob = makeJob();
+  stub(retryJob);
+  await (worker as any).processMessageJob(retryJob);
+
+  assert.equal(captured.length, 2);
+  assert.deepEqual(captured[0], {
+    subject: expected.subject,
+    bodyHtml: expected.bodyMerged,
+    bodyText: expected.bodyText,
+  });
+  assert.deepEqual(captured[0], captured[1]);
 });
 
 test('SendWorker preserves html-mode full-document payloads', async () => {
@@ -1184,13 +1281,7 @@ test('SendWorker follow-up with empty subject reuses exact first sent_subject an
     },
   });
 
-  const originalRandom = Math.random;
-  Math.random = () => 0.99;
-  try {
-    await (worker as any).processMessageJob(messageJob);
-  } finally {
-    Math.random = originalRandom;
-  }
+  await (worker as any).processMessageJob(messageJob);
 
   assert.equal(captured.subject, 'Quick Eval and Draft Question');
   assert.equal(captured.inReplyTo, '<first@furnace.build>');
@@ -1230,13 +1321,7 @@ test('SendWorker follow-up with (No subject) reuses exact first sent_subject', a
     },
   });
 
-  const originalRandom = Math.random;
-  Math.random = () => 0.99;
-  try {
-    await (worker as any).processMessageJob(messageJob);
-  } finally {
-    Math.random = originalRandom;
-  }
+  await (worker as any).processMessageJob(messageJob);
 
   assert.equal(capturedSubject, 'Quick question');
 });
@@ -1411,13 +1496,23 @@ test('SendWorker persists sent_subject onto message_jobs.message_data', async ()
   });
   stubCampaignSendWorker(worker, messageJob, { firstSent: null });
 
-  const originalRandom = Math.random;
-  Math.random = () => 0;
-  try {
-    await (worker as any).processMessageJob(messageJob);
-  } finally {
-    Math.random = originalRandom;
-  }
+  const expected = buildCampaignEmailContent(
+    {
+      subject: '{Hi {{first_name}}|Hello {{first_name}}}',
+      body_html: '<p>Hey {{first_name}}</p>',
+      body_text: 'Hey {{first_name}}',
+    },
+    { first_name: 'Casey' },
+    {
+      seed: buildSpintaxSeed({
+        campaignId: 'campaign-1',
+        leadId: 'lead-1',
+        variantId: null,
+      }),
+    }
+  );
+
+  await (worker as any).processMessageJob(messageJob);
 
   const persistCall = supabase.tableUpdates.find(
     (call) =>
@@ -1426,8 +1521,8 @@ test('SendWorker persists sent_subject onto message_jobs.message_data', async ()
       typeof (call.updates.message_data as any)?.sent_subject === 'string',
   );
   assert.ok(persistCall, 'expected message_data.sent_subject persistence');
-  assert.equal((persistCall.updates.message_data as any).sent_subject, 'Hi Casey');
-  assert.equal((messageJob.message_data as any).sent_subject, 'Hi Casey');
+  assert.equal((persistCall.updates.message_data as any).sent_subject, expected.subject);
+  assert.equal((messageJob.message_data as any).sent_subject, expected.subject);
 });
 
 test('SendWorker.stop awaits active batch before closing SMTP pool', async () => {

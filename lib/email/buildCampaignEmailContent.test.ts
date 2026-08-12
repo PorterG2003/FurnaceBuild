@@ -6,6 +6,7 @@ import {
   mergeInboxComposeHtml,
 } from './buildCampaignEmailContent.js';
 import { canonicalizeEmailContentForSave } from './emailHtmlMode.js';
+import { buildSpintaxSeed } from './processSpintax.js';
 
 const lead = {
   first_name: 'Casey',
@@ -180,5 +181,62 @@ describe('buildCampaignEmailContent', () => {
 
     assert.equal(result.bodyMerged, 'Hello Casey');
     assert.equal(result.bodyText, 'Hello Casey');
+  });
+
+  it('renders identical preview/send payloads for the same seeded identity', () => {
+    const config = {
+      subject: '{Hi {{first_name}}|Hello {{first_name}}} from {Austin|Dallas}',
+      body_html:
+        '<p>{Hey|Hello} {{first_name}},</p><p>{outer {one|two}|fallback} and {thanks|appreciate it}.</p>',
+      body_text:
+        '{Hey|Hello} {{first_name}},\n\n{outer {one|two}|fallback} and {thanks|appreciate it}.',
+      template: 'unused',
+      signature: '<p>{Cheers|Thanks},<br>Porter</p>',
+    };
+    const seed = buildSpintaxSeed({
+      campaignId: 'camp-parity',
+      leadId: 'lead-parity',
+      variantId: 'var-parity',
+    });
+
+    const previewOptions = { seed };
+    const sendOptions = {
+      seed: buildSpintaxSeed({
+        campaignId: 'camp-parity',
+        leadId: 'lead-parity',
+        variantId: 'var-parity',
+      }),
+    };
+
+    const preview = buildCampaignEmailContent(config, lead, previewOptions);
+    const send = buildCampaignEmailContent(config, lead, sendOptions);
+
+    assert.deepEqual(preview, send);
+    assert.doesNotMatch(preview.subject, /\{[^}]*\|/);
+    assert.doesNotMatch(preview.bodyMerged, /\{[^}]*\|/);
+    assert.match(preview.subject, /Casey/);
+    assert.match(preview.bodyMerged, /Casey/);
+    assert.match(preview.bodyMerged ?? '', /Porter/);
+
+    // Retry / re-render stability
+    assert.deepEqual(buildCampaignEmailContent(config, lead, previewOptions), preview);
+  });
+
+  it('keeps subject and body scopes independent under the same seed', () => {
+    const seed = buildSpintaxSeed({
+      campaignId: 'camp-scope',
+      leadId: 'lead-scope',
+      variantId: 'var-scope',
+    });
+    const result = buildCampaignEmailContent(
+      {
+        subject: '{Alpha|Beta|Gamma}',
+        body_html: '<p>{Alpha|Beta|Gamma}</p>',
+      },
+      lead,
+      { seed }
+    );
+    assert.match(result.subject, /^(Alpha|Beta|Gamma)$/);
+    assert.match(result.bodyMerged, /^(Alpha|Beta|Gamma)$/);
   });
 });

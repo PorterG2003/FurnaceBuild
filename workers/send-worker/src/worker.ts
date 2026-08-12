@@ -1,6 +1,7 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import {
   buildCampaignEmailContent,
+  buildSpintaxSeed,
   buildStableSubmittedMessageId,
   formatMessageId,
   formatReferencesHeader,
@@ -1136,7 +1137,15 @@ export class SendWorker {
             signature: mailbox.signature ?? undefined,
           },
           lead as unknown as LeadLike,
-          { deterministic: false }
+          {
+            seed: buildSpintaxSeed({
+              campaignId: messageJob.campaign_id,
+              leadId: messageJob.lead_id,
+              // Historical jobs may lack variant_id; buildSpintaxSeed uses a
+              // stable legacy stand-in so retries stay consistent.
+              variantId: messageJob.variant_id,
+            }),
+          }
         );
       } catch (err) {
         const msg = formatUnknownError(err);

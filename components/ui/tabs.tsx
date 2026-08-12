@@ -72,12 +72,12 @@ export function Tabs({
   color = 'brand',
 }: TabsProps) {
   const palette = TAB_COLORS[color];
-  const [tabPositions, setTabPositions] = useState<Array<number | null>>([]);
-  const [tabWidths, setTabWidths] = useState<Array<number | null>>([]);
+  const [containerWidth, setContainerWidth] = useState(0);
   const [tabTextWidths, setTabTextWidths] = useState<Array<number | null>>([]);
   const tabIndicator = useRef(new Animated.Value(0)).current;
   const tabIndicatorWidth = useRef(new Animated.Value(0)).current;
 
+  const BORDER_WIDTH = 1;
   const CONTAINER_PADDING = compact ? 2 : 4;
   const INDICATOR_INSET = compact ? 3 : 4;
   const TAB_HORIZONTAL_PADDING = compact ? 8 : 12;
@@ -109,10 +109,19 @@ export function Tabs({
   }, [activeTabIndex, tabIndicator]);
 
   useEffect(() => {
-    setTabPositions(Array(tabs.length).fill(null));
-    setTabWidths(Array(tabs.length).fill(null));
     setTabTextWidths(Array(tabs.length).fill(null));
   }, [tabsKey, tabs.length]);
+
+  // Equal tabs are laid out by flex, so the indicator geometry is derived from the
+  // container instead of per-tab measurements: mixing the container border box (x from
+  // onLayout) with the padding box (absolute `left`) skews the indicator by the border
+  // width, which is visible on narrow tab bars.
+  const equalTabWidth = useMemo(() => {
+    if (layout !== 'equal' || tabs.length === 0) return null;
+    const inner = containerWidth - (CONTAINER_PADDING + BORDER_WIDTH) * 2;
+    if (inner <= 0) return null;
+    return inner / tabs.length;
+  }, [BORDER_WIDTH, CONTAINER_PADDING, containerWidth, layout, tabs.length]);
 
   const computedTabWidths = useMemo(() => {
     if (layout !== 'content') return null;
@@ -139,9 +148,8 @@ export function Tabs({
       if (!computedTabWidths || !computedTabPositions) return false;
       return computedTabWidths.every((v) => v !== null) && computedTabPositions.every((v) => v !== null);
     }
-    if (tabPositions.length !== tabs.length || tabWidths.length !== tabs.length) return false;
-    return tabPositions.every((v) => v !== null) && tabWidths.every((v) => v !== null);
-  }, [computedTabPositions, computedTabWidths, layout, tabPositions, tabWidths, tabs.length]);
+    return equalTabWidth !== null;
+  }, [computedTabPositions, computedTabWidths, equalTabWidth, layout]);
 
   const fallbackTranslateX = useMemo(() => Animated.multiply(tabIndicator, 0), [tabIndicator]);
 
@@ -150,7 +158,7 @@ export function Tabs({
       const positions =
         layout === 'content'
           ? (computedTabPositions as number[]).map((v) => v ?? 0)
-          : (tabPositions as number[]).map((v) => v ?? 0);
+          : tabs.map((_, index) => index * (equalTabWidth ?? 0));
       // interpolate() requires outputRange to have at least 2 elements
       const inputRange = tabs.map((_, index) => index);
       const outputRange = positions.length >= 2 ? positions : [positions[0] ?? 0, positions[0] ?? 0];
@@ -161,31 +169,33 @@ export function Tabs({
       });
     }
     return fallbackTranslateX;
-  }, [computedTabPositions, fallbackTranslateX, hasMeasurements, layout, tabIndicator, tabPositions, tabs]);
+  }, [computedTabPositions, equalTabWidth, fallbackTranslateX, hasMeasurements, layout, tabIndicator, tabs]);
 
   useEffect(() => {
-    const w =
-      layout === 'content'
-        ? computedTabWidths?.[activeTabIndex] ?? null
-        : tabWidths[activeTabIndex];
+    const w = layout === 'content' ? computedTabWidths?.[activeTabIndex] ?? null : equalTabWidth;
     if (!w) return;
     Animated.timing(tabIndicatorWidth, {
       toValue: w,
       duration: 220,
       useNativeDriver: false,
     }).start();
-  }, [activeTabIndex, computedTabWidths, layout, tabIndicatorWidth, tabWidths]);
+  }, [activeTabIndex, computedTabWidths, equalTabWidth, layout, tabIndicatorWidth]);
 
   const isEqual = layout === 'equal';
 
   return (
     <View
+      onLayout={
+        isEqual
+          ? (event: LayoutChangeEvent) => setContainerWidth(event.nativeEvent.layout.width)
+          : undefined
+      }
       style={{
         position: 'relative',
         flexDirection: 'row',
         backgroundColor: '#1A1A1A',
         borderRadius: 12,
-        borderWidth: 1,
+        borderWidth: BORDER_WIDTH,
         borderColor: '#2A2A2A',
         padding: CONTAINER_PADDING,
         marginBottom,
@@ -220,23 +230,6 @@ export function Tabs({
             key={tab.id}
             onPress={() => onTabChange(tab.id)}
             activeOpacity={0.85}
-            onLayout={
-              isEqual
-                ? (event: LayoutChangeEvent) => {
-                    const { width, x } = event.nativeEvent.layout;
-                    setTabPositions((prev) => {
-                      const next = prev.length === tabs.length ? [...prev] : Array(tabs.length).fill(null);
-                      next[index] = snapPx(Math.max(0, x - CONTAINER_PADDING), 'round');
-                      return next;
-                    });
-                    setTabWidths((prev) => {
-                      const next = prev.length === tabs.length ? [...prev] : Array(tabs.length).fill(null);
-                      next[index] = snapPx(width, 'ceil');
-                      return next;
-                    });
-                  }
-                : undefined
-            }
             style={{
               ...(isEqual ? { flex: 1 } : { flexGrow: 0, flexShrink: 0 }),
               ...(layout === 'content' && contentWidth ? { width: contentWidth } : null),

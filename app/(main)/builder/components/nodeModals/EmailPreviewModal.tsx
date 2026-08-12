@@ -1,14 +1,25 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Platform, useWindowDimensions } from 'react-native';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  ScrollView,
+  FlatList,
+  Platform,
+  useWindowDimensions,
+} from 'react-native';
+import { MagnifyingGlassIcon } from 'react-native-heroicons/outline';
 import { BaseModal } from '@/components/ui/modals';
 import { Button } from '@/components/ui/button';
-import { SegmentControl } from '@/components/ui/segment-control';
+import { Tabs, type Tab } from '@/components/ui/tabs';
 import {
   PlatformInvitePreviewFrame,
   type PlatformInvitePreviewViewport,
 } from '@/components/platform/invite/PlatformInvitePreviewFrame';
 import {
   buildCampaignEmailContent,
+  buildSpintaxSeed,
   hasMissingValues,
   isFullHtmlDocument,
   sanitizeEmailBody,
@@ -39,12 +50,24 @@ const SAMPLE_LEAD: LeadLike = {
   source: 'Preview',
 };
 
+const LEAD_FILTER_TABS: Tab[] = [
+  { id: 'missing', label: 'Missing values' },
+  { id: 'all', label: 'All leads' },
+];
+
+const VIEWPORT_TABS: Tab[] = [
+  { id: 'mobile', label: 'Mobile' },
+  { id: 'desktop', label: 'Desktop' },
+];
+
 export interface EmailPreviewConfig {
   subject: string;
   body_html?: string;
   body_text?: string;
   template: string;
   editor_mode?: EmailEditorMode;
+  /** Stable A/B variant UUID; required for preview/send spintax seed parity. */
+  variantId?: string;
 }
 
 interface EmailPreviewModalProps {
@@ -58,6 +81,27 @@ interface EmailPreviewModalProps {
 
 const PREVIEW_LEAD_LIMIT = 50;
 
+function MissingSignatureBanner() {
+  return (
+    <View
+      style={{
+        backgroundColor: 'rgba(75, 85, 99, 0.25)',
+        borderWidth: 1,
+        borderColor: 'rgba(75, 85, 99, 0.5)',
+        borderRadius: 8,
+        paddingVertical: 10,
+        paddingHorizontal: 12,
+        marginTop: 16,
+        borderStyle: 'dashed',
+      }}
+    >
+      <Text className="text-gray-500 text-xs font-instrument" style={{ fontStyle: 'italic' }}>
+        Signature will appear here once mailboxes are assigned to this campaign.
+      </Text>
+    </View>
+  );
+}
+
 function EmailPreviewModal({
   visible,
   onClose,
@@ -69,10 +113,14 @@ function EmailPreviewModal({
   const isMobileLayout = windowWidth < LAYOUT_BREAKPOINT;
   const [leads, setLeads] = useState<Lead[]>([]);
   const [leadsLoading, setLeadsLoading] = useState(false);
+  const [leadsLoadingMore, setLeadsLoadingMore] = useState(false);
+  const [hasMoreLeads, setHasMoreLeads] = useState(false);
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [leadSearch, setLeadSearch] = useState('');
   const lastFetchedSearchRef = useRef<string | undefined>(undefined);
+  const leadsFetchGenRef = useRef(0);
+  const loadingMoreRef = useRef(false);
   /** Signature from first campaign mailbox (for preview). */
   const [previewSignature, setPreviewSignature] = useState<string | null>(null);
   const [previewViewport, setPreviewViewport] =
@@ -81,6 +129,7 @@ function EmailPreviewModal({
   const [previewViewportHeight, setPreviewViewportHeight] = useState(0);
 
   const hasVariables = (variableKeys?.length ?? 0) > 0;
+  const showMissingSignatureBanner = Boolean(campaignId) && !previewSignature;
 
   // Fetch first campaign mailbox signature when preview opens and we have a campaign
   useEffect(() => {
@@ -99,7 +148,9 @@ function EmailPreviewModal({
       .catch(() => {
         if (!cancelled) setPreviewSignature(null);
       });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [visible, campaignId]);
 
   // null = not yet determined (count query in progress)
@@ -119,30 +170,113 @@ function EmailPreviewModal({
       .catch(() => {
         if (!cancelled) setShowMissingOnly(false);
       });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [visible, campaignId, hasVariables, variableKeys]);
 
-  const fetchLeads = useCallback(
-    (search: string, missingOnly: boolean) => {
+  const fetchLeadsPage = useCallback(
+    async (params: {
+      search: string;
+      missingOnly: boolean;
+      offset: number;
+      mode: 'replace' | 'append';
+      gen: number;
+    }) => {
       if (!campaignId) return;
-      setLeadsLoading(true);
-      getLeads({
-        campaignId,
-        limit: PREVIEW_LEAD_LIMIT,
-        search: search.trim() || undefined,
-        missingFields: missingOnly && variableKeys?.length ? variableKeys : undefined,
-      })
-        .then((data) => {
+      const { search, missingOnly, offset, mode, gen } = params;
+      if (mode === 'replace') {
+        setLeadsLoading(true);
+        setHasMoreLeads(false);
+      } else {
+        if (loadingMoreRef.current) return;
+        loadingMoreRef.current = true;
+        setLeadsLoadingMore(true);
+      }
+
+      try {
+        const data = await getLeads({
+          campaignId,
+          limit: PREVIEW_LEAD_LIMIT,
+          offset,
+          search: search.trim() || undefined,
+          missingFields: missingOnly && variableKeys?.length ? variableKeys : undefined,
+        });
+        if (leadsFetchGenRef.current !== gen) return;
+
+        setHasMoreLeads(data.length === PREVIEW_LEAD_LIMIT);
+        if (mode === 'replace') {
           setLeads(data);
-          const nextId = data.length > 0 ? data[0].id : null;
+          const nextId = data.length > 0 ? data[0]!.id : null;
           setSelectedLeadId(nextId);
-          setSelectedLead(data.length > 0 ? data[0] : null);
-        })
-        .catch(() => setLeads([]))
-        .finally(() => setLeadsLoading(false));
+          setSelectedLead(data.length > 0 ? data[0]! : null);
+        } else {
+          setLeads((prev) => {
+            const seen = new Set(prev.map((lead) => lead.id));
+            const appended = data.filter((lead) => !seen.has(lead.id));
+            return appended.length > 0 ? [...prev, ...appended] : prev;
+          });
+        }
+      } catch {
+        if (leadsFetchGenRef.current !== gen) return;
+        if (mode === 'replace') {
+          setLeads([]);
+          setSelectedLeadId(null);
+          setSelectedLead(null);
+          setHasMoreLeads(false);
+        }
+      } finally {
+        if (leadsFetchGenRef.current === gen) {
+          if (mode === 'replace') setLeadsLoading(false);
+          else {
+            loadingMoreRef.current = false;
+            setLeadsLoadingMore(false);
+          }
+        } else if (mode === 'append') {
+          loadingMoreRef.current = false;
+          setLeadsLoadingMore(false);
+        }
+      }
     },
     [campaignId, variableKeys]
   );
+
+  const fetchLeads = useCallback(
+    (search: string, missingOnly: boolean) => {
+      const gen = ++leadsFetchGenRef.current;
+      loadingMoreRef.current = false;
+      void fetchLeadsPage({
+        search,
+        missingOnly,
+        offset: 0,
+        mode: 'replace',
+        gen,
+      });
+    },
+    [fetchLeadsPage]
+  );
+
+  const loadMoreLeads = useCallback(() => {
+    if (!campaignId || showMissingOnly === null) return;
+    if (!hasMoreLeads || leadsLoading || leadsLoadingMore || loadingMoreRef.current) return;
+    const gen = leadsFetchGenRef.current;
+    void fetchLeadsPage({
+      search: leadSearch,
+      missingOnly: showMissingOnly,
+      offset: leads.length,
+      mode: 'append',
+      gen,
+    });
+  }, [
+    campaignId,
+    fetchLeadsPage,
+    hasMoreLeads,
+    leadSearch,
+    leads.length,
+    leadsLoading,
+    leadsLoadingMore,
+    showMissingOnly,
+  ]);
 
   const debouncedSearchLeads = useMemo(
     () => debounce((search: string, missingOnly: boolean) => fetchLeads(search, missingOnly), 300),
@@ -153,10 +287,14 @@ function EmailPreviewModal({
   useEffect(() => {
     if (!visible || !campaignId || showMissingOnly === null) {
       if (!visible) {
+        leadsFetchGenRef.current += 1;
+        loadingMoreRef.current = false;
         setLeads([]);
         setSelectedLeadId(null);
         setSelectedLead(null);
         setLeadSearch('');
+        setHasMoreLeads(false);
+        setLeadsLoadingMore(false);
         lastFetchedSearchRef.current = undefined;
         setShowMissingOnly(hasVariables ? null : false);
       }
@@ -170,7 +308,15 @@ function EmailPreviewModal({
     } else {
       debouncedSearchLeads(leadSearch, showMissingOnly);
     }
-  }, [visible, campaignId, leadSearch, showMissingOnly, fetchLeads, debouncedSearchLeads, hasVariables]);
+  }, [
+    visible,
+    campaignId,
+    leadSearch,
+    showMissingOnly,
+    fetchLeads,
+    debouncedSearchLeads,
+    hasVariables,
+  ]);
 
   const resolvedLead: LeadLike = useMemo(() => {
     if (!selectedLeadId) return SAMPLE_LEAD;
@@ -181,6 +327,10 @@ function EmailPreviewModal({
 
   const content = useMemo(() => {
     if (!config) return null;
+    const leadIdForSeed =
+      selectedLeadId && resolvedLead !== SAMPLE_LEAD ? selectedLeadId : null;
+    const canSeed =
+      Boolean(campaignId) && Boolean(leadIdForSeed) && Boolean(config.variantId);
     const result = buildCampaignEmailContent(
       {
         subject: config.subject,
@@ -191,7 +341,15 @@ function EmailPreviewModal({
         signature: previewSignature ?? undefined,
       },
       resolvedLead,
-      { deterministic: true }
+      canSeed
+        ? {
+            seed: buildSpintaxSeed({
+              campaignId: campaignId!,
+              leadId: leadIdForSeed!,
+              variantId: config.variantId,
+            }),
+          }
+        : { deterministic: true }
     );
     if (typeof process !== 'undefined' && process.env?.NODE_ENV === 'development') {
       console.log('[EmailPreviewModal] previewSignature', {
@@ -206,7 +364,7 @@ function EmailPreviewModal({
       });
     }
     return result;
-  }, [config, resolvedLead, previewSignature]);
+  }, [config, resolvedLead, previewSignature, campaignId, selectedLeadId]);
 
   const safeHtml = useMemo(() => {
     if (!content?.isHtmlBody || !content.bodyMerged) return '';
@@ -220,6 +378,62 @@ function EmailPreviewModal({
     [safeHtml]
   );
   const useHtmlDevicePreview = config?.editor_mode === 'html';
+
+  const renderLeadItem = useCallback(
+    ({ item: lead }: { item: Lead }) => {
+      const isSelected = lead.id === selectedLeadId;
+      const isMissing =
+        hasVariables && variableKeys
+          ? hasMissingValues(lead as LeadLike, variableKeys)
+          : false;
+      return (
+        <TouchableOpacity
+          onPress={() => {
+            setSelectedLeadId(lead.id);
+            setSelectedLead(lead);
+          }}
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            paddingVertical: 10,
+            paddingHorizontal: 12,
+            borderRadius: 8,
+            marginBottom: 4,
+            backgroundColor: isSelected ? 'rgba(243,68,13,0.15)' : 'transparent',
+            borderWidth: 1,
+            borderColor: isSelected ? 'rgba(243,68,13,0.4)' : 'transparent',
+          }}
+        >
+          {isMissing && !showMissingOnly && (
+            <View
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: 3,
+                backgroundColor: '#F59E0B',
+                marginRight: 8,
+                flexShrink: 0,
+              }}
+            />
+          )}
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text className="text-white font-instrument text-sm" numberOfLines={1}>
+              {lead.email ?? lead.name ?? lead.id}
+            </Text>
+            {(lead.first_name || lead.last_name || lead.name) && (
+              <Text className="text-gray-500 text-xs mt-0.5" numberOfLines={1}>
+                {[lead.first_name, lead.last_name].filter(Boolean).join(' ') || lead.name}
+              </Text>
+            )}
+          </View>
+        </TouchableOpacity>
+      );
+    },
+    [hasVariables, selectedLeadId, showMissingOnly, variableKeys]
+  );
+
+  const modalHeight =
+    typeof window !== 'undefined' ? Math.round(window.innerHeight * 0.85) : 800;
 
   const footer = (
     <View style={{ flexDirection: 'row', justifyContent: 'flex-end' }}>
@@ -237,13 +451,14 @@ function EmailPreviewModal({
       description="Select a lead to see the merged subject and body."
       footer={footer}
       maxWidth="6xl"
-      maxHeight={typeof window !== 'undefined' ? Math.round(window.innerHeight * 0.85) : 800}
+      height={modalHeight}
+      bodyScroll={false}
     >
       <View
         style={{
           flex: 1,
           flexDirection: isMobileLayout ? 'column' : 'row',
-          minHeight: isMobileLayout ? 400 : 0,
+          minHeight: 0,
           gap: 16,
         }}
       >
@@ -252,108 +467,102 @@ function EmailPreviewModal({
           style={{
             width: isMobileLayout ? '100%' : 280,
             minWidth: isMobileLayout ? 0 : 280,
+            flexShrink: 0,
+            flexDirection: 'column',
+            height: isMobileLayout ? 260 : undefined,
+            alignSelf: 'stretch',
+            minHeight: 0,
+            overflow: 'hidden',
             borderRightWidth: isMobileLayout ? 0 : 1,
             borderBottomWidth: isMobileLayout ? 1 : 0,
             borderColor: '#2A2A2A',
             paddingRight: isMobileLayout ? 0 : 16,
-            paddingBottom: isMobileLayout ? 16 : 0,
+            paddingBottom: isMobileLayout ? 12 : 0,
           }}
         >
-          <Text className="text-sm font-instrument-medium mb-2 text-gray-300">Leads</Text>
-          {hasVariables && showMissingOnly !== null && (
-            <View style={{ marginBottom: 8 }}>
-              <SegmentControl
-                options={[
-                  { value: 'missing', label: 'Missing values' },
-                  { value: 'all', label: 'All leads' },
-                ]}
-                value={showMissingOnly ? 'missing' : 'all'}
-                onChange={(v) => setShowMissingOnly(v === 'missing')}
+          {hasVariables && showMissingOnly !== null ? (
+            <View style={{ flexShrink: 0, width: '100%' }}>
+              <Tabs
+                tabs={LEAD_FILTER_TABS}
+                activeTab={showMissingOnly ? 'missing' : 'all'}
+                onTabChange={(tabId) => setShowMissingOnly(tabId === 'missing')}
+                layout="equal"
+                marginBottom={0}
               />
             </View>
-          )}
+          ) : null}
           {campaignId ? (
-            <>
-              <ScrollView
-                style={{
-                  flex: isMobileLayout ? undefined : 1,
-                  minHeight: 0,
-                  maxHeight: isMobileLayout ? 220 : undefined,
-                }}
-                showsVerticalScrollIndicator
-                keyboardShouldPersistTaps="handled"
-              >
-                {leadsLoading && leads.length === 0 ? (
+            <View
+              className="flex-row items-center bg-[#121212] border border-[#2A2A2A] px-3 py-2"
+              style={{
+                flexShrink: 0,
+                width: '100%',
+                borderRadius: 12,
+                marginTop: hasVariables && showMissingOnly !== null ? 8 : 0,
+                marginBottom: 8,
+              }}
+            >
+              <MagnifyingGlassIcon size={18} color="#6B7280" style={{ marginRight: 8 }} />
+              <TextInput
+                value={leadSearch}
+                onChangeText={setLeadSearch}
+                placeholder="Search leads…"
+                placeholderTextColor="#6B7280"
+                className="flex-1 text-white font-instrument text-sm py-1"
+                style={{ color: '#FFFFFF' }}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+            </View>
+          ) : null}
+          {campaignId ? (
+            <FlatList
+              data={leads}
+              keyExtractor={(lead) => lead.id}
+              renderItem={renderLeadItem}
+              style={{ flex: 1, minHeight: 0 }}
+              contentContainerStyle={
+                leads.length === 0 ? { flexGrow: 1, justifyContent: 'flex-start' } : undefined
+              }
+              showsVerticalScrollIndicator
+              keyboardShouldPersistTaps="handled"
+              onEndReached={loadMoreLeads}
+              onEndReachedThreshold={0.4}
+              ListEmptyComponent={
+                leadsLoading ? (
                   <Text className="text-gray-500 text-sm">Loading…</Text>
-                ) : leads.length === 0 ? (
-                  showMissingOnly && hasVariables ? (
-                    <Text className="text-gray-500 text-sm">
-                      All leads have values for the variables you're using.
-                    </Text>
-                  ) : (
-                    <Text className="text-gray-500 text-sm">
-                      No leads in this campaign. Using sample lead for preview.
-                    </Text>
-                  )
+                ) : showMissingOnly && hasVariables ? (
+                  <Text className="text-gray-500 text-sm">
+                    All leads have values for the variables you're using.
+                  </Text>
                 ) : (
-                  leads.map((lead) => {
-                    const isSelected = lead.id === selectedLeadId;
-                    const isMissing = hasVariables && variableKeys
-                      ? hasMissingValues(lead as LeadLike, variableKeys)
-                      : false;
-                    return (
-                      <TouchableOpacity
-                        key={lead.id}
-                        onPress={() => {
-                          setSelectedLeadId(lead.id);
-                          setSelectedLead(lead);
-                        }}
-                        style={{
-                          flexDirection: 'row',
-                          alignItems: 'center',
-                          paddingVertical: 10,
-                          paddingHorizontal: 12,
-                          borderRadius: 8,
-                          marginBottom: 4,
-                          backgroundColor: isSelected ? 'rgba(243,68,13,0.15)' : 'transparent',
-                          borderWidth: 1,
-                          borderColor: isSelected ? 'rgba(243,68,13,0.4)' : 'transparent',
-                        }}
-                      >
-                        {isMissing && !showMissingOnly && (
-                          <View style={{
-                            width: 6,
-                            height: 6,
-                            borderRadius: 3,
-                            backgroundColor: '#F59E0B',
-                            marginRight: 8,
-                            flexShrink: 0,
-                          }} />
-                        )}
-                        <View style={{ flex: 1, minWidth: 0 }}>
-                          <Text className="text-white font-instrument text-sm" numberOfLines={1}>
-                            {lead.email ?? lead.name ?? lead.id}
-                          </Text>
-                          {(lead.first_name || lead.last_name || lead.name) && (
-                            <Text className="text-gray-500 text-xs mt-0.5" numberOfLines={1}>
-                              {[lead.first_name, lead.last_name].filter(Boolean).join(' ') || lead.name}
-                            </Text>
-                          )}
-                        </View>
-                      </TouchableOpacity>
-                    );
-                  })
-                )}
-              </ScrollView>
-            </>
+                  <Text className="text-gray-500 text-sm">
+                    No leads in this campaign. Using sample lead for preview.
+                  </Text>
+                )
+              }
+              ListFooterComponent={
+                leadsLoadingMore ? (
+                  <Text className="text-gray-500 text-xs py-2">Loading more…</Text>
+                ) : null
+              }
+            />
           ) : (
-            <Text className="text-gray-500 text-sm">Connect a lead bucket to preview with real leads.</Text>
+            <Text className="text-gray-500 text-sm">
+              Connect a lead bucket to preview with real leads.
+            </Text>
           )}
         </View>
 
         {/* Right panel: merged message */}
         <View
-          style={{ flex: 1, minWidth: 0 }}
+          style={{
+            flex: 1,
+            minWidth: 0,
+            minHeight: 0,
+            flexDirection: 'column',
+            alignSelf: 'stretch',
+          }}
           onLayout={
             useHtmlDevicePreview
               ? (event) => {
@@ -365,65 +574,60 @@ function EmailPreviewModal({
               : undefined
           }
         >
-          <Text className="text-sm font-instrument-medium mb-2 text-gray-300">Message</Text>
           {content ? (
-            <View style={{ backgroundColor: '#141414', borderRadius: 12, borderWidth: 1, borderColor: '#2A2A2A', padding: 16, flex: 1 }}>
-              <Text className="text-xs font-instrument-medium text-gray-400 mb-1">Subject</Text>
-              <Text className="text-white text-sm mb-4" numberOfLines={2}>
-                {content.subject || '(empty)'}
-              </Text>
-              <View
-                style={{
-                  flexDirection: useHtmlDevicePreview && !isMobileLayout ? 'row' : 'column',
-                  alignItems: useHtmlDevicePreview && !isMobileLayout ? 'center' : 'stretch',
-                  justifyContent: useHtmlDevicePreview ? 'space-between' : 'flex-start',
-                  gap: 8,
-                  marginBottom: 4,
-                }}
-              >
-                <Text className="text-xs font-instrument-medium text-gray-400">Body</Text>
-                {useHtmlDevicePreview ? (
-                  <View style={{ width: isMobileLayout ? '100%' : 220 }}>
-                    <SegmentControl
-                      options={[
-                        { value: 'mobile', label: 'Mobile' },
-                        { value: 'desktop', label: 'Desktop' },
-                      ]}
-                      value={previewViewport}
-                      onChange={(value) =>
-                        setPreviewViewport(value as PlatformInvitePreviewViewport)
-                      }
-                      unselectedVariant="outline"
-                    />
-                  </View>
-                ) : null}
-              </View>
-              {campaignId && !previewSignature && (
+            <View
+              style={{
+                backgroundColor: '#141414',
+                borderRadius: 12,
+                borderWidth: 1,
+                borderColor: '#2A2A2A',
+                padding: 16,
+                flex: 1,
+                minHeight: 0,
+                flexDirection: 'column',
+              }}
+            >
+              <View style={{ flexShrink: 0 }}>
+                <Text className="text-xs font-instrument-medium text-gray-400 mb-1">Subject</Text>
+                <Text className="text-white text-sm mb-4" numberOfLines={2}>
+                  {content.subject || '(empty)'}
+                </Text>
                 <View
                   style={{
-                    backgroundColor: 'rgba(75, 85, 99, 0.25)',
-                    borderWidth: 1,
-                    borderColor: 'rgba(75, 85, 99, 0.5)',
-                    borderRadius: 8,
-                    paddingVertical: 10,
-                    paddingHorizontal: 12,
-                    marginBottom: 12,
-                    borderStyle: 'dashed',
+                    flexDirection: useHtmlDevicePreview && !isMobileLayout ? 'row' : 'column',
+                    alignItems: useHtmlDevicePreview && !isMobileLayout ? 'center' : 'stretch',
+                    justifyContent: useHtmlDevicePreview ? 'space-between' : 'flex-start',
+                    gap: 8,
+                    marginBottom: 8,
                   }}
                 >
-                  <Text className="text-gray-500 text-xs font-instrument" style={{ fontStyle: 'italic' }}>
-                    Signature will appear here once mailboxes are assigned to this campaign.
-                  </Text>
+                  <Text className="text-xs font-instrument-medium text-gray-400">Body</Text>
+                  {useHtmlDevicePreview ? (
+                    <View style={{ width: isMobileLayout ? '100%' : 220 }}>
+                      <Tabs
+                        tabs={VIEWPORT_TABS}
+                        activeTab={previewViewport}
+                        onTabChange={(tabId) =>
+                          setPreviewViewport(tabId as PlatformInvitePreviewViewport)
+                        }
+                        layout="equal"
+                        marginBottom={0}
+                      />
+                    </View>
+                  ) : null}
                 </View>
-              )}
+              </View>
               <ScrollView
                 style={{ flex: 1, minHeight: 0 }}
                 showsVerticalScrollIndicator
                 nestedScrollEnabled
-                contentContainerStyle={{ flexGrow: 1 }}
+                contentContainerStyle={{ flexGrow: 1, paddingBottom: 8 }}
               >
                 <View
-                  style={{ flex: 1, minHeight: 0 }}
+                  style={{
+                    minHeight: useHtmlDevicePreview ? 260 : undefined,
+                    flexGrow: useHtmlDevicePreview ? 1 : undefined,
+                  }}
                   onLayout={
                     useHtmlDevicePreview
                       ? (event) => {
@@ -491,10 +695,13 @@ function EmailPreviewModal({
                     </Text>
                   )}
                 </View>
+                {showMissingSignatureBanner ? <MissingSignatureBanner /> : null}
               </ScrollView>
             </View>
           ) : (
-            <Text className="text-gray-500 text-sm">No content to preview. Edit the email and click Preview.</Text>
+            <Text className="text-gray-500 text-sm">
+              No content to preview. Edit the email and click Preview.
+            </Text>
           )}
         </View>
       </View>

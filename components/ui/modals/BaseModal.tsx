@@ -27,6 +27,11 @@ interface BaseModalProps {
   maxHeight?: number;
   /** When set, modal has a fixed height (min and max). Use with maxHeight for consistent size. */
   height?: number;
+  /**
+   * When false, the body is a flex container instead of a ScrollView so children can
+   * own their own scroll regions (e.g. split panes). Default true.
+   */
+  bodyScroll?: boolean;
   /** When true, omits the content area. Use for modals with only title, description, and footer. */
   compact?: boolean;
   /** Stacking order for nested modals on web (e.g. picker over wizard). */
@@ -67,6 +72,7 @@ export function BaseModal({
   maxWidth = 'md',
   maxHeight,
   height,
+  bodyScroll = true,
   compact = false,
   overlayZIndex,
   fitContent = false,
@@ -98,7 +104,9 @@ export function BaseModal({
   /** Desktop: fitContent + maxHeight — shrink to content, cap at maxHeight, scroll body, pin footer. */
   const fitContentColumn =
     fitContent && maxHeight != null && !stretchContent && !compact && dialogMaxHeight != null;
-  const useFlexColumnLayout = fillMaxHeightColumn || fitContentColumn;
+  /** Fixed-height or self-scrolling body needs a column flex shell so panes can size correctly. */
+  const useFlexColumnLayout =
+    fillMaxHeightColumn || fitContentColumn || stretchContent || !bodyScroll;
   const dialogRef = useRef<View>(null);
   const webKeyboardInset = useVisualViewportKeyboardInset();
   /** Skip the header chrome entirely when there's nothing to show in it. */
@@ -156,21 +164,33 @@ export function BaseModal({
           </View>
           ) : null}
           {!compact && (
-            <ScrollView
-              style={{ flex: 1, minHeight: 0 }}
-              contentContainerStyle={{
-                paddingBottom: ((footerMobile ?? footer) ? 12 : 0) + (webKeyboardInset > 0 ? webKeyboardInset : 0),
-                flexGrow: fitContent ? 0 : 1,
-                width: '100%',
-                maxWidth: '100%',
-              }}
-              keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator
-              showsHorizontalScrollIndicator={false}
-              nestedScrollEnabled
-            >
-              {children}
-            </ScrollView>
+            bodyScroll ? (
+              <ScrollView
+                style={{ flex: 1, minHeight: 0 }}
+                contentContainerStyle={{
+                  paddingBottom: ((footerMobile ?? footer) ? 12 : 0) + (webKeyboardInset > 0 ? webKeyboardInset : 0),
+                  flexGrow: fitContent ? 0 : 1,
+                  width: '100%',
+                  maxWidth: '100%',
+                }}
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator
+                showsHorizontalScrollIndicator={false}
+                nestedScrollEnabled
+              >
+                {children}
+              </ScrollView>
+            ) : (
+              <View
+                style={{
+                  flex: 1,
+                  minHeight: 0,
+                  paddingBottom: webKeyboardInset > 0 ? webKeyboardInset : 0,
+                }}
+              >
+                {children}
+              </View>
+            )
           )}
           {(footerMobile ?? footer) ? (
             <View className="pt-4 border-t border-[#2A2A2A] mt-4 flex-shrink-0">
@@ -215,7 +235,9 @@ export function BaseModal({
                   ? {
                       flexDirection: 'column',
                       overflow: 'hidden',
-                      ...(fillMaxHeightColumn ? { height: dialogMaxHeight } : null),
+                      ...(fillMaxHeightColumn || stretchContent
+                        ? { height: dialogMaxHeight ?? height }
+                        : null),
                     }
                   : null,
               ]}
@@ -265,7 +287,7 @@ export function BaseModal({
               <View
                 className={noPadding ? '' : 'p-6'}
                 style={
-                  stretchContent && dialogMaxHeight != null
+                  stretchContent || !bodyScroll
                     ? { flexGrow: 1, flexShrink: 1, minHeight: 0 }
                     : useFlexColumnLayout
                       ? {
@@ -276,7 +298,9 @@ export function BaseModal({
                       : undefined
                 }
               >
-                {maxHeight != null && !stretchContent ? (
+                {!bodyScroll ? (
+                  <View style={{ flex: 1, minHeight: 0 }}>{children}</View>
+                ) : maxHeight != null && !stretchContent ? (
                   <ScrollView
                     style={useFlexColumnLayout ? { flex: 1 } : undefined}
                     contentContainerStyle={{

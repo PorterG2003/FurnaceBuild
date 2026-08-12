@@ -3,6 +3,7 @@ import {
   getProposalPlanPreset,
   type ProposalPlanTier,
 } from '@/lib/platform/contract/proposalPlans';
+import type { InviteCheckoutPhase } from '@/lib/billing/inviteCheckoutPhase';
 import type { SeedModule } from '../types';
 
 type PreviewVariant = {
@@ -14,6 +15,20 @@ type PreviewVariant = {
   tier: ProposalPlanTier;
   websiteTrafficSourcingEnabled?: boolean;
   replyHandlingEnabled?: boolean;
+};
+
+type RecoveryQaVariant = {
+  id: string;
+  revisionId: string;
+  attemptId: string;
+  label: string;
+  email: string;
+  companyName: string;
+  phase: InviteCheckoutPhase;
+  sessionId: string;
+  paymentIntentId: string;
+  hostedVerificationUrl?: string | null;
+  failureSummary?: string | null;
 };
 
 const previewVariants: PreviewVariant[] = [
@@ -127,6 +142,56 @@ const previewVariants: PreviewVariant[] = [
   },
 ];
 
+const recoveryQaVariants: RecoveryQaVariant[] = [
+  {
+    id: 'c1000000-0000-4000-8000-000000000101',
+    revisionId: 'c2000000-0000-4000-8000-000000000101',
+    attemptId: 'c3000000-0000-4000-8000-000000000101',
+    label: 'ACH verification required',
+    email: 'preview-ach-verify@furnace.test',
+    companyName: 'ACH Verify Preview Co',
+    phase: 'verification_required',
+    sessionId: 'cs_test_seed_ach_verify',
+    paymentIntentId: 'pi_test_seed_ach_verify',
+    hostedVerificationUrl: 'https://payments.stripe.com/microdeposit/test_seed_verify',
+  },
+  {
+    id: 'c1000000-0000-4000-8000-000000000102',
+    revisionId: 'c2000000-0000-4000-8000-000000000102',
+    attemptId: 'c3000000-0000-4000-8000-000000000102',
+    label: 'ACH processing / activating',
+    email: 'preview-ach-processing@furnace.test',
+    companyName: 'ACH Processing Preview Co',
+    phase: 'processing',
+    sessionId: 'cs_test_seed_ach_processing',
+    paymentIntentId: 'pi_test_seed_ach_processing',
+  },
+  {
+    id: 'c1000000-0000-4000-8000-000000000103',
+    revisionId: 'c2000000-0000-4000-8000-000000000103',
+    attemptId: 'c3000000-0000-4000-8000-000000000103',
+    label: 'Failed ACH before activation',
+    email: 'preview-ach-failed@furnace.test',
+    companyName: 'ACH Failed Preview Co',
+    phase: 'failed',
+    sessionId: 'cs_test_seed_ach_failed',
+    paymentIntentId: 'pi_test_seed_ach_failed',
+    failureSummary: 'Bank payment failed or was canceled.',
+  },
+  {
+    id: 'c1000000-0000-4000-8000-000000000104',
+    revisionId: 'c2000000-0000-4000-8000-000000000104',
+    attemptId: 'c3000000-0000-4000-8000-000000000104',
+    label: 'Expired checkout before activation',
+    email: 'preview-ach-expired@furnace.test',
+    companyName: 'ACH Expired Preview Co',
+    phase: 'expired',
+    sessionId: 'cs_test_seed_ach_expired',
+    paymentIntentId: 'pi_test_seed_ach_expired',
+    failureSummary: 'Checkout session expired before payment completed.',
+  },
+];
+
 function getPreviewOrigin() {
   const candidates = [
     process.env.SEED_PREVIEW_ORIGIN,
@@ -181,7 +246,7 @@ async function getSeedTerms(ctx: Parameters<SeedModule['run']>[0]) {
 
 export const platformInvitePreviewSeedModule: SeedModule = {
   id: 'platformInvitePreview_seed',
-  description: 'Create deterministic platform invite preview variants',
+  description: 'Create deterministic platform invite preview and ACH recovery QA variants',
   async run(ctx) {
     const previewOrigin = getPreviewOrigin();
     const printPreviewLinks = () => {
@@ -194,10 +259,19 @@ export const platformInvitePreviewSeedModule: SeedModule = {
         });
         ctx.log(`${variant.label}: ${previewOrigin ? `${previewOrigin}${relativeUrl}` : relativeUrl}`);
       }
+      ctx.log('recovery QA invite links');
+      for (const variant of recoveryQaVariants) {
+        const relativeUrl = `/accept-platform-invite/${variant.id}?checkout=return&session_id=${variant.sessionId}`;
+        ctx.log(
+          `${variant.label} (${variant.phase}): ${
+            previewOrigin ? `${previewOrigin}${relativeUrl}` : relativeUrl
+          }`,
+        );
+      }
     };
     if (ctx.dryRun) {
       ctx.log(
-        `scenario=${ctx.scenarioId} module=platformInvitePreview_seed [dry-run] — would seed ${previewVariants.length} preview invitations`,
+        `scenario=${ctx.scenarioId} module=platformInvitePreview_seed [dry-run] — would seed ${previewVariants.length} preview invitations and ${recoveryQaVariants.length} recovery QA invites`,
       );
       printPreviewLinks();
       return;
@@ -205,8 +279,23 @@ export const platformInvitePreviewSeedModule: SeedModule = {
 
     const invitedByUserId = await getSeedAdminUserId(ctx);
     const terms = await getSeedTerms(ctx);
-    const emails = previewVariants.map((variant) => variant.email.toLowerCase());
-    const ids = previewVariants.map((variant) => variant.id);
+    const emails = [
+      ...previewVariants.map((variant) => variant.email.toLowerCase()),
+      ...recoveryQaVariants.map((variant) => variant.email.toLowerCase()),
+    ];
+    const ids = [
+      ...previewVariants.map((variant) => variant.id),
+      ...recoveryQaVariants.map((variant) => variant.id),
+    ];
+    const attemptIds = recoveryQaVariants.map((variant) => variant.attemptId);
+
+    const { error: attemptDeleteError } = await ctx.supabase
+      .from('platform_invite_checkout_attempts')
+      .delete()
+      .in('id', attemptIds);
+    if (attemptDeleteError && !/does not exist|schema cache/i.test(attemptDeleteError.message)) {
+      throw attemptDeleteError;
+    }
 
     const { error: deleteError } = await ctx.supabase
       .from('platform_invitations')
@@ -263,6 +352,98 @@ export const platformInvitePreviewSeedModule: SeedModule = {
       if (revisionError) {
         throw revisionError;
       }
+    }
+
+    const bronzePreset = getProposalPlanPreset('bronze');
+    for (const variant of recoveryQaVariants) {
+      const proposalSnapshot = {
+        proposal_title: bronzePreset.proposalTitle,
+        client_logo_url: '',
+        plan_tier: 'bronze' as const,
+        website_traffic_sourcing_enabled: false,
+        reply_handling_enabled: false,
+      };
+      const invitationRow = {
+        id: variant.id,
+        email: variant.email.toLowerCase(),
+        invited_by_user_id: invitedByUserId,
+        status: 'pending_payment',
+        proposed_account_name: variant.companyName,
+        monthly_retainer_cents: bronzePreset.paymentDefaultCents,
+        currency: 'usd',
+        proposal_snapshot_json: proposalSnapshot,
+        agreement_type: terms.agreement_type,
+        terms_version: terms.version,
+        terms_source_markdown: terms.body_markdown,
+        terms_snapshot_markdown: terms.body_markdown,
+        auto_add_internal_admins: true,
+        current_revision_number: 1,
+        published_revision_number: 1,
+        checkout_revision_number: 1,
+        selected_payment_route: 'ach',
+        stripe_checkout_session_id: variant.sessionId,
+        terms_accepted_at: new Date().toISOString(),
+        prepared_full_name: 'QA Preview',
+        prepared_account_name: variant.companyName,
+      };
+      const { error: invitationError } = await ctx.supabase
+        .from('platform_invitations')
+        .insert(invitationRow);
+      if (invitationError) {
+        throw invitationError;
+      }
+
+      const revisionRow = {
+        id: variant.revisionId,
+        invitation_id: variant.id,
+        revision_number: 1,
+        email: variant.email.toLowerCase(),
+        proposed_account_name: variant.companyName,
+        monthly_retainer_cents: bronzePreset.paymentDefaultCents,
+        currency: 'usd',
+        proposal_snapshot_json: proposalSnapshot,
+        agreement_type: terms.agreement_type,
+        terms_version: terms.version,
+        terms_source_markdown: terms.body_markdown,
+        terms_snapshot_markdown: terms.body_markdown,
+        created_by_user_id: invitedByUserId,
+      };
+      const { error: revisionError } = await ctx.supabase
+        .from('platform_invitation_revisions')
+        .insert(revisionRow);
+      if (revisionError) {
+        throw revisionError;
+      }
+
+      const attemptRow = {
+        id: variant.attemptId,
+        invitation_id: variant.id,
+        stripe_checkout_session_id: variant.sessionId,
+        stripe_payment_intent_id: variant.paymentIntentId,
+        payment_route: 'ach',
+        phase: variant.phase,
+        hosted_verification_url: variant.hostedVerificationUrl ?? null,
+        failure_summary: variant.failureSummary ?? null,
+        last_reconciled_at: new Date().toISOString(),
+      };
+      const { error: attemptError } = await ctx.supabase
+        .from('platform_invite_checkout_attempts')
+        .insert(attemptRow);
+      if (attemptError) {
+        if (/does not exist|schema cache/i.test(attemptError.message)) {
+          ctx.log(
+            'platform_invite_checkout_attempts missing; skipped recovery attempt rows (apply migration first)',
+          );
+          continue;
+        }
+        throw attemptError;
+      }
+
+      const { error: linkError } = await ctx.supabase
+        .from('platform_invitations')
+        .update({ current_checkout_attempt_id: variant.attemptId })
+        .eq('id', variant.id);
+      if (linkError) throw linkError;
     }
 
     printPreviewLinks();

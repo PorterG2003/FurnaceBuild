@@ -26,6 +26,11 @@ export interface PlatformInvitationInfo {
   selected_payment_total_cents?: number | null;
   recurring_anchor_at?: string | null;
   first_recurring_invoice_target_cents?: number | null;
+  created_account_id?: string | null;
+  checkout_phase?: string | null;
+  checkout_session_id?: string | null;
+  checkout_failure_summary?: string | null;
+  has_hosted_verification?: boolean;
 }
 
 export interface SelfServeGuidanceInfo {

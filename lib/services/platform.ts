@@ -9,6 +9,8 @@ export {
   ensurePlatformInviteAuthUser,
   getPlatformCheckoutQuote,
   createPlatformCheckoutSession,
+  getInviteCheckoutStatus,
+  reconcileInviteCheckoutStatus,
   getAccountUpgradeQuote,
   applyAccountUpgrade,
   createAccountUpgradeCheckoutSession,
@@ -16,4 +18,5 @@ export {
   finalizeAccountPaymentMethodUpdate,
   scheduleAccountDowngrade,
   type PlatformCheckoutQuote,
+  type InviteCheckoutStatus,
 } from './platformCommerce';

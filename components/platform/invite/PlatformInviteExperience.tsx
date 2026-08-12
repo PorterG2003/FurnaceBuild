@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -53,6 +53,7 @@ export function PlatformInviteExperience({
   currentUserEmail,
   checkoutSuccess = false,
   activationError = null,
+  recoverySlot = null,
   mode = 'live',
   embedded = false,
   onContinueExpired,
@@ -69,6 +70,7 @@ export function PlatformInviteExperience({
   currentUserEmail?: string | null;
   checkoutSuccess?: boolean;
   activationError?: string | null;
+  recoverySlot?: ReactNode;
   mode?: 'live' | 'preview';
   embedded?: boolean;
   onContinueExpired: () => void;
@@ -342,6 +344,9 @@ export function PlatformInviteExperience({
     }
 
     if (step === 'activating') {
+      if (recoverySlot) {
+        return <>{recoverySlot}</>;
+      }
       const title = previewActivationMessage?.title ?? 'Activating your workspace';
       const message =
         previewActivationMessage?.message ??
@@ -361,6 +366,13 @@ export function PlatformInviteExperience({
             <Text selectable={false} className="text-center text-gray-500 font-instrument text-sm mt-4 px-4">
               {activationError}
             </Text>
+          ) : null}
+          {onRetryActivation ? (
+            <View className="mt-6">
+              <Button onPress={onRetryActivation} variant="outline">
+                Retry workspace access
+              </Button>
+            </View>
           ) : null}
         </View>
       );

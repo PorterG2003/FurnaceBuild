@@ -41,15 +41,17 @@ Before shipping a Stripe billing change:
 
 ## Platform invite completion rule
 
-Platform invite activation currently completes in the Stripe webhook path:
+Platform invite activation currently completes through the shared Stripe reconciler:
 
-1. checkout succeeds
-2. webhook creates or reuses recurring Stripe objects
-3. webhook calls `complete_platform_invitation(...)`
-4. owner membership appears
-5. success screen redirects
+1. Checkout creates/resumes a durable `platform_invite_checkout_attempts` row
+2. Customer returns from Stripe (`?checkout=return&session_id=...`, legacy `?checkout=success` still works)
+3. Webhook events and authenticated page refresh call the same reconciler
+4. Reconciler normalizes Checkout Session + PaymentIntent into a phase
+5. Provisioning happens only for card paid or ACH `processing`/`succeeded`
+6. `complete_platform_invitation(...)` creates the account/membership idempotently
+7. Success UI polls membership and enters the workspace
 
-Because this path is webhook-only, any change to Stripe object creation or metadata parsing must include handler-level test coverage.
+ACH microdeposit verification is a first-class recoverable phase (`verification_required`) with Stripe's hosted verification URL. Failed/expired attempts allow one controlled replacement checkout without changing the signed agreement.
 
 Free invites are the exception: a `$0` retainer bypasses Stripe entirely and activates through `accept_platform_invitation(...)`. These accounts do not get a Stripe subscription until they are later upgraded to a paid retainer.
 
@@ -99,17 +101,35 @@ Minimum validation for billing/webhook changes:
 
 If a customer-visible success screen depends on asynchronous provisioning:
 
+- drive UI from normalized checkout phase, never from the return query param alone
+- show verification, processing, activation, failure, and retry states explicitly
 - add a timeout or retry state
 - show a human-readable failure message
 - never leave the user on an indefinite loading screen after the polling window ends
 
 After provisioning creates or grants membership, call `useEnterWorkspace().enterWorkspace(...)` from [`lib/account/useEnterWorkspace.ts`](../../lib/account/useEnterWorkspace.ts) before navigating into `(main)`. That helper polls for DB visibility and refreshes `AccountContext` via `refetch()`. DB visibility alone is insufficient — stale client context will still hit `/no-workspace`.
 
+Support recovery for interrupted checkouts:
+
+```bash
+INVITATION_ID=<uuid> npx tsx scripts/reconcile-platform-invite-checkout.ts
+INVITATION_ID=<uuid> APPLY=true npx tsx scripts/reconcile-platform-invite-checkout.ts
+```
+
+Dry-run first. Apply only after confirming the printed Stripe phase and proposed Furnace transition.
+
 ## Current key files
 
 - `amplify/functions/platformCommerce/handler.ts`
 - `amplify/functions/stripeWebhook/handler.ts`
+- `lib/billing/inviteCheckoutPhase.ts`
+- `lib/billing/inviteCheckoutRecoveryCopy.ts`
+- `lib/billing/reconcileInviteCheckout.ts`
+- `lib/billing/stripeCoupons.ts`
 - `app/accept-platform-invite/[id].tsx`
+- `components/platform/invite/PlatformInviteRecoveryStep.tsx`
+- `scripts/reconcile-platform-invite-checkout.ts`
+- `scripts/seed/scenarios/platform-invite-preview.ts`
 - `app/accept-account-amendment/[id].tsx`
 - `components/platform/invite/PlatformInviteExperience.tsx`
 - `components/platform/amendment/PlatformAmendmentUpgradePaymentStep.tsx`
@@ -123,11 +143,14 @@ After provisioning creates or grants membership, call `useEnterWorkspace().enter
 - `lib/platform/contract/terms.ts`
 - `lib/billing/proration.test.ts`
 - `lib/billing/paymentRoutes.test.ts`
+- `lib/billing/inviteCheckoutPhase.test.ts`
+- `lib/billing/inviteCheckoutRecovery.test.ts`
 - `lib/platform/contract/terms.test.ts`
 - `lib/platform/invite/priceSections.test.ts`
 - `lib/platform/invite/prorationSummary.test.ts`
 - `lib/platform/invite/preview.test.ts`
 - `lib/test/platform/accountAmendmentOutcomes.test.ts`
 - `lib/test/platform/platformInviteOutcomes.test.ts`
+- `lib/test/platform/platformInviteCheckoutAttemptOutcomes.test.ts`
 - `lib/account/useEnterWorkspace.ts`
 - `lib/account/membershipActivation.ts`

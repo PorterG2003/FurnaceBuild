@@ -958,6 +958,7 @@ export interface Database {
           first_recurring_coupon_id: string | null;
           payment_completed_at: string | null;
           completed_at: string | null;
+          current_checkout_attempt_id: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -1011,6 +1012,7 @@ export interface Database {
           first_recurring_coupon_id?: string | null;
           payment_completed_at?: string | null;
           completed_at?: string | null;
+          current_checkout_attempt_id?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -1064,8 +1066,106 @@ export interface Database {
           first_recurring_coupon_id?: string | null;
           payment_completed_at?: string | null;
           completed_at?: string | null;
+          current_checkout_attempt_id?: string | null;
           created_at?: string;
           updated_at?: string;
+        };
+      };
+      platform_invite_checkout_attempts: {
+        Row: {
+          id: string;
+          invitation_id: string;
+          stripe_checkout_session_id: string;
+          stripe_payment_intent_id: string | null;
+          stripe_customer_id: string | null;
+          payment_route: 'card' | 'ach' | null;
+          phase:
+            | 'open'
+            | 'verification_required'
+            | 'processing'
+            | 'succeeded'
+            | 'failed'
+            | 'expired';
+          hosted_verification_url: string | null;
+          failure_summary: string | null;
+          last_stripe_event_id: string | null;
+          last_stripe_event_type: string | null;
+          last_reconciled_at: string | null;
+          provisioned_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          invitation_id: string;
+          stripe_checkout_session_id: string;
+          stripe_payment_intent_id?: string | null;
+          stripe_customer_id?: string | null;
+          payment_route?: 'card' | 'ach' | null;
+          phase?:
+            | 'open'
+            | 'verification_required'
+            | 'processing'
+            | 'succeeded'
+            | 'failed'
+            | 'expired';
+          hosted_verification_url?: string | null;
+          failure_summary?: string | null;
+          last_stripe_event_id?: string | null;
+          last_stripe_event_type?: string | null;
+          last_reconciled_at?: string | null;
+          provisioned_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          invitation_id?: string;
+          stripe_checkout_session_id?: string;
+          stripe_payment_intent_id?: string | null;
+          stripe_customer_id?: string | null;
+          payment_route?: 'card' | 'ach' | null;
+          phase?:
+            | 'open'
+            | 'verification_required'
+            | 'processing'
+            | 'succeeded'
+            | 'failed'
+            | 'expired';
+          hosted_verification_url?: string | null;
+          failure_summary?: string | null;
+          last_stripe_event_id?: string | null;
+          last_stripe_event_type?: string | null;
+          last_reconciled_at?: string | null;
+          provisioned_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      platform_invite_stripe_events: {
+        Row: {
+          stripe_event_id: string;
+          event_type: string;
+          invitation_id: string | null;
+          checkout_attempt_id: string | null;
+          handler_result: string;
+          processed_at: string;
+        };
+        Insert: {
+          stripe_event_id: string;
+          event_type: string;
+          invitation_id?: string | null;
+          checkout_attempt_id?: string | null;
+          handler_result: string;
+          processed_at?: string;
+        };
+        Update: {
+          stripe_event_id?: string;
+          event_type?: string;
+          invitation_id?: string | null;
+          checkout_attempt_id?: string | null;
+          handler_result?: string;
+          processed_at?: string;
         };
       };
       platform_invitation_revisions: {

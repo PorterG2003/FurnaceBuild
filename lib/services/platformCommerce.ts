@@ -82,6 +82,7 @@ export async function createPlatformCheckoutSession(params: {
   successUrl: string;
   cancelUrl: string;
   paymentRoute: PlatformPaymentRoute;
+  forceNewAttempt?: boolean;
 }) {
   const token = await getAccessToken();
   if (!token) throw new Error('You must be signed in to start checkout.');
@@ -93,9 +94,67 @@ export async function createPlatformCheckoutSession(params: {
       successUrl: params.successUrl,
       cancelUrl: params.cancelUrl,
       paymentRoute: params.paymentRoute,
+      forceNewAttempt: params.forceNewAttempt === true,
     },
     token,
   );
+}
+
+export type InviteCheckoutStatus = {
+  invitationId: string;
+  invitationStatus: string;
+  phase:
+    | 'awaiting_checkout'
+    | 'open'
+    | 'verification_required'
+    | 'processing'
+    | 'succeeded'
+    | 'failed'
+    | 'expired';
+  accountId: string | null;
+  checkoutSessionId: string | null;
+  paymentRoute: PlatformPaymentRoute | null;
+  hostedVerificationUrl: string | null;
+  failureSummary: string | null;
+  canReplaceCheckout: boolean;
+  alreadyProvisioned: boolean;
+  provisionedNow: boolean;
+};
+
+export async function getInviteCheckoutStatus(params: {
+  invitationId: string;
+  checkoutSessionId?: string | null;
+}): Promise<InviteCheckoutStatus> {
+  const token = await getAccessToken();
+  if (!token) throw new Error('You must be signed in to check checkout status.');
+  const result = await postJson(
+    requirePlatformCommerceUrl(),
+    {
+      action: 'getInviteCheckoutStatus',
+      invitationId: params.invitationId,
+      checkoutSessionId: params.checkoutSessionId ?? null,
+    },
+    token,
+  );
+  return result as unknown as InviteCheckoutStatus;
+}
+
+export async function reconcileInviteCheckoutStatus(params: {
+  invitationId: string;
+  checkoutSessionId?: string | null;
+}): Promise<InviteCheckoutStatus> {
+  const token = await getAccessToken();
+  if (!token) throw new Error('You must be signed in to reconcile checkout status.');
+  const result = await postJson(
+    requirePlatformCommerceUrl(),
+    {
+      action: 'reconcileInviteCheckoutStatus',
+      invitationId: params.invitationId,
+      checkoutSessionId: params.checkoutSessionId ?? null,
+    },
+    token,
+  );
+  return result as unknown as InviteCheckoutStatus;
 }
 
 export async function applyAccountUpgrade(params: {

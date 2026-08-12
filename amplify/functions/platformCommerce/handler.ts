@@ -7,6 +7,12 @@ import {
   normalizePlatformInviteProrationMode,
   type PlatformInviteProrationMode,
 } from '../../../lib/billing/proration';
+import { canReplaceInviteCheckoutAttempt } from '../../../lib/billing/inviteCheckoutPhase';
+import {
+  reconcileInviteCheckoutSession,
+  upsertInviteCheckoutAttempt,
+  type InviteCheckoutAttemptRow,
+} from '../../../lib/billing/reconcileInviteCheckout';
 import { buildAccountUpgradeIdempotencyKey } from './idempotency';
 import {
   buildPlatformPaymentQuote,
@@ -55,6 +61,9 @@ type InvitationCheckoutRow = {
   published_revision_number: number | null;
   checkout_revision_number: number | null;
   stripe_customer_id: string | null;
+  current_checkout_attempt_id: string | null;
+  stripe_checkout_session_id: string | null;
+  created_account_id: string | null;
 };
 
 type InvitationRevisionRow = {
@@ -97,7 +106,7 @@ async function loadInvitationForCheckout(invitationId: string): Promise<Resolved
   const { data: invitation, error: invitationError } = await supabase
     .from('platform_invitations')
     .select(
-      'id, email, status, currency, monthly_retainer_cents, proration_mode, terms_accepted_at, prepared_full_name, prepared_account_name, auto_add_internal_admins, current_revision_number, published_revision_number, checkout_revision_number, stripe_customer_id',
+      'id, email, status, currency, monthly_retainer_cents, proration_mode, terms_accepted_at, prepared_full_name, prepared_account_name, auto_add_internal_admins, current_revision_number, published_revision_number, checkout_revision_number, stripe_customer_id, current_checkout_attempt_id, stripe_checkout_session_id, created_account_id',
     )
     .eq('id', invitationId)
     .maybeSingle();
@@ -272,6 +281,7 @@ async function createCheckoutSession(args: {
   successUrl: string;
   cancelUrl: string;
   paymentRoute: PlatformPaymentRoute;
+  forceNewAttempt?: boolean;
 }) {
   const user = await verifyAuthToken(args.token);
   const supabase = getSupabaseAdminClient();
@@ -285,6 +295,36 @@ async function createCheckoutSession(args: {
   }
   if (!invitation.terms_accepted_at || !invitation.prepared_full_name || !invitation.prepared_account_name) {
     throw new Error('Invitation is not ready for payment yet.');
+  }
+  if (invitation.created_account_id) {
+    throw new Error('This invitation has already been activated.');
+  }
+
+  if (invitation.current_checkout_attempt_id && !args.forceNewAttempt) {
+    const { data: attempt, error: attemptError } = await supabase
+      .from('platform_invite_checkout_attempts')
+      .select('*')
+      .eq('id', invitation.current_checkout_attempt_id)
+      .maybeSingle();
+    if (attemptError) throw new Error(attemptError.message);
+    const currentAttempt = attempt as InviteCheckoutAttemptRow | null;
+    if (currentAttempt && !canReplaceInviteCheckoutAttempt(currentAttempt.phase)) {
+      const existingSession = await stripe.checkout.sessions.retrieve(
+        currentAttempt.stripe_checkout_session_id,
+      );
+      if (existingSession.status === 'open' && existingSession.url) {
+        return {
+          url: existingSession.url,
+          id: existingSession.id,
+          reused: true,
+        };
+      }
+      if (existingSession.status === 'complete') {
+        throw new Error(
+          'A checkout attempt is already in progress. Refresh the invite page to continue verification or activation.',
+        );
+      }
+    }
   }
 
   const startedAt = new Date();
@@ -353,6 +393,17 @@ async function createCheckoutSession(args: {
       checkoutRevisionNumber: String(invitation.effective_revision_number),
       autoAddInternalAdmins: invitation.auto_add_internal_admins ? 'true' : 'false',
     },
+    ...(args.paymentRoute === 'ach'
+      ? {
+          payment_method_options: {
+            us_bank_account: {
+              financial_connections: {
+                permissions: ['payment_method'],
+              },
+            },
+          },
+        }
+      : {}),
   });
 
   const { error: updateError } = await supabase
@@ -371,10 +422,47 @@ async function createCheckoutSession(args: {
     .eq('id', invitation.id);
   if (updateError) throw new Error(updateError.message);
 
+  await upsertInviteCheckoutAttempt({
+    supabase,
+    invitationId: invitation.id,
+    stripeCheckoutSessionId: session.id,
+    stripeCustomerId: customerId,
+    paymentRoute: args.paymentRoute,
+    phase: 'open',
+    makeCurrent: true,
+  });
+
   return {
     url: session.url,
     id: session.id,
+    reused: false,
   };
+}
+
+async function getOrReconcileInviteCheckoutStatus(args: {
+  token: string;
+  invitationId: string;
+  checkoutSessionId?: string | null;
+  reconcile: boolean;
+}) {
+  const user = await verifyAuthToken(args.token);
+  const invitation = await loadInvitationForCheckout(args.invitationId);
+  if ((user.email ?? '').toLowerCase() !== invitation.effective_email.toLowerCase()) {
+    throw new Error('This invite is for a different email address.');
+  }
+
+  const result = await reconcileInviteCheckoutSession({
+    supabase: getSupabaseAdminClient(),
+    stripe: getStripeClient(),
+    invitationId: args.invitationId,
+    checkoutSessionId: args.checkoutSessionId ?? null,
+  });
+
+  // Read-only callers still benefit from reconciliation because Stripe is canonical
+  // and the shared service is idempotent. Keep the flag for explicit intent in logs/API.
+  void args.reconcile;
+
+  return result;
 }
 
 async function createAccountUpgradeCheckoutSessionAction(args: {
@@ -1003,6 +1091,7 @@ export const handler = async (event: { headers?: Record<string, string>; body?: 
       accountId?: string;
       amendmentId?: string | null;
       newMonthlyRetainerCents?: number;
+      forceNewAttempt?: boolean;
     };
 
     if (parsed.action === 'ensureAuthUser') {
@@ -1040,6 +1129,26 @@ export const handler = async (event: { headers?: Record<string, string>; body?: 
         successUrl: parsed.successUrl,
         cancelUrl: parsed.cancelUrl,
         paymentRoute: normalizePlatformPaymentRoute(parsed.paymentRoute),
+        forceNewAttempt: parsed.forceNewAttempt === true,
+      });
+      return json(200, { success: true, ...result });
+    }
+
+    if (
+      parsed.action === 'getInviteCheckoutStatus' ||
+      parsed.action === 'reconcileInviteCheckoutStatus'
+    ) {
+      const auth = event.headers?.authorization || event.headers?.Authorization;
+      const token = auth?.startsWith('Bearer ') ? auth.slice(7).trim() : null;
+      if (!token) return json(401, { error: 'Missing or invalid Authorization header' });
+      if (!parsed.invitationId) {
+        return json(400, { error: 'Missing invitationId' });
+      }
+      const result = await getOrReconcileInviteCheckoutStatus({
+        token,
+        invitationId: parsed.invitationId,
+        checkoutSessionId: parsed.checkoutSessionId ?? null,
+        reconcile: parsed.action === 'reconcileInviteCheckoutStatus',
       });
       return json(200, { success: true, ...result });
     }

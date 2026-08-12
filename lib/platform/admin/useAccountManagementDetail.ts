@@ -73,6 +73,14 @@ export type InvitationDetailRecord = {
   accepted_by_user_name: string | null;
   created_at: string;
   updated_at: string;
+  current_checkout_attempt_id?: string | null;
+  checkout_phase?: string | null;
+  checkout_session_id?: string | null;
+  checkout_payment_intent_id?: string | null;
+  checkout_failure_summary?: string | null;
+  checkout_last_event_type?: string | null;
+  checkout_last_reconciled_at?: string | null;
+  checkout_provisioned_at?: string | null;
 };
 
 export type AccountDetailRecord = {

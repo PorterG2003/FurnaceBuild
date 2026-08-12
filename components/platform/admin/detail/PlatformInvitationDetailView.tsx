@@ -283,6 +283,39 @@ export function PlatformInvitationDetailView({
                 Stripe coupon for recurring overlap credit: {invitation.first_recurring_coupon_id}
               </Text>
             ) : null}
+            {invitation.checkout_phase ? (
+              <Text className="text-gray-300 font-instrument">
+                Checkout phase: {invitation.checkout_phase}
+              </Text>
+            ) : null}
+            {invitation.checkout_session_id ? (
+              <Text className="text-gray-400 font-instrument text-sm">
+                Checkout session: {invitation.checkout_session_id}
+              </Text>
+            ) : null}
+            {invitation.checkout_payment_intent_id ? (
+              <Text className="text-gray-400 font-instrument text-sm">
+                Payment intent: {invitation.checkout_payment_intent_id}
+              </Text>
+            ) : null}
+            {invitation.checkout_failure_summary ? (
+              <Text className="text-red-300 font-instrument text-sm">
+                Checkout error: {invitation.checkout_failure_summary}
+              </Text>
+            ) : null}
+            {invitation.checkout_last_event_type ? (
+              <Text className="text-gray-400 font-instrument text-sm">
+                Last Stripe event: {invitation.checkout_last_event_type}
+                {invitation.checkout_last_reconciled_at
+                  ? ` at ${formatTimestamp(invitation.checkout_last_reconciled_at)}`
+                  : ''}
+              </Text>
+            ) : null}
+            {invitation.checkout_provisioned_at ? (
+              <Text className="text-gray-400 font-instrument text-sm">
+                Provisioned at: {formatTimestamp(invitation.checkout_provisioned_at)}
+              </Text>
+            ) : null}
           </View>
         </AdminCollapsibleCard>
       ) : null}

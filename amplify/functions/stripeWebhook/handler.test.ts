@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import { test } from 'node:test';
 import {
   buildInviteRecurringCouponParams,
   buildStripeCouponName,
@@ -49,7 +49,6 @@ test('resolveInviteRecurringCouponAmountCents discounts the credited difference 
 });
 
 test('resolveInviteRecurringCouponAmountCents skips the coupon for first-month invites', () => {
-  // First-month invites bill the anchor invoice at the full retainer, so there is nothing to discount.
   const amount = resolveInviteRecurringCouponAmountCents({
     metadataCouponAmountCents: 0,
     ongoingMonthlyTotalCents: 185_250,

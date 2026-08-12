@@ -5,13 +5,10 @@ import {
   getServerPlatformPaymentFeeConfig,
   type PlatformPaymentRoute,
 } from '../../../lib/billing/paymentRoutes';
+import { reconcileInviteCheckoutSession } from '../../../lib/billing/reconcileInviteCheckout';
 import {
-  buildInviteRecurringCouponParams,
   buildUpgradeDeltaCouponParams,
-  resolveInviteRecurringCouponAmountCents,
 } from './couponParams';
-
-const INTERNAL_ADMIN_EMAILS = ['porter@getfurnace.io', 'kyle@getfurnace.io'];
 
 type CheckoutSessionLike = {
   id: string;
@@ -157,152 +154,6 @@ async function syncAccountPaymentMethodUpdate(session: ExpandedCheckoutSession) 
   if (error) throw new Error(error.message);
 
   return true;
-}
-
-async function ensureRecurringSubscription(session: ExpandedCheckoutSession) {
-  const stripe = getStripeClient();
-  const metadata = session.metadata ?? {};
-  const invitationId = metadata.invitationId;
-  const customerId = typeof session.customer === 'string' ? session.customer : null;
-  if (!invitationId || !customerId) return null;
-
-  const existingSubscriptions = await stripe.subscriptions.list({
-    customer: customerId,
-    status: 'all',
-    limit: 10,
-  });
-  const activeForInvite = existingSubscriptions.data.find(
-    (subscription) => subscription.metadata?.invitationId === invitationId
-  );
-  if (activeForInvite) {
-    return {
-      subscriptionId: activeForInvite.id,
-      firstRecurringCouponId:
-        activeForInvite.metadata?.firstRecurringCouponId &&
-        activeForInvite.metadata.firstRecurringCouponId.length > 0
-          ? activeForInvite.metadata.firstRecurringCouponId
-          : null,
-      paymentMethodId:
-        typeof activeForInvite.default_payment_method === 'string'
-          ? activeForInvite.default_payment_method
-          : activeForInvite.default_payment_method?.id ?? null,
-      upfrontInvoiceId:
-        typeof session.invoice === 'string' ? session.invoice : session.invoice?.id ?? null,
-      upfrontPaymentIntentId:
-        typeof session.payment_intent === 'string'
-          ? session.payment_intent
-          : session.payment_intent?.id ?? null,
-    };
-  }
-
-  const monthlyRetainerCents = parseMetadataInteger(metadata, 'monthlyRetainerCents');
-  const firstRecurringAmountDueCents =
-    parseMetadataInteger(metadata, 'firstRecurringInvoiceAmountCents') || monthlyRetainerCents;
-  const firstRecurringSubtotalCents =
-    parseMetadataInteger(metadata, 'firstRecurringSubtotalCents') ||
-    Math.max(
-      monthlyRetainerCents - parseMetadataInteger(metadata, 'firstRecurringDiscountCents'),
-      0,
-    );
-  const paymentRoute =
-    metadata.paymentRoute === 'card' || metadata.paymentRoute === 'ach'
-      ? (metadata.paymentRoute as PlatformPaymentRoute)
-      : 'card';
-  const overlapCreditCents = parseMetadataInteger(
-    metadata,
-    'firstRecurringDiscountCents'
-  );
-  const recurringQuote = buildPlatformRecurringInvoiceQuote({
-    monthlyRetainerCents,
-    firstRecurringSubtotalCents,
-    paymentRoute,
-    routeConfig: getServerPlatformPaymentFeeConfig()[paymentRoute],
-  });
-  const firstRecurringCouponAmountCents = resolveInviteRecurringCouponAmountCents({
-    metadataCouponAmountCents: parseMetadataInteger(metadata, 'firstRecurringCouponAmountCents'),
-    ongoingMonthlyTotalCents: recurringQuote.ongoingMonthlyTotalCents,
-    firstRecurringInvoiceTotalCents: recurringQuote.firstRecurringTotalCents,
-  });
-  const ongoingMonthlyTotalCents =
-    parseMetadataInteger(metadata, 'ongoingMonthlyTotalCents') ||
-    recurringQuote.ongoingMonthlyTotalCents;
-  const anchorDateIso = metadata.anchorDateIso;
-  const billingCycleAnchor = anchorDateIso
-    ? Math.floor(new Date(anchorDateIso).getTime() / 1000)
-    : undefined;
-  if (!billingCycleAnchor) {
-    throw new Error('Missing recurring anchor date');
-  }
-  const paymentIntent =
-    session.payment_intent && typeof session.payment_intent !== 'string'
-      ? session.payment_intent
-      : null;
-  const defaultPaymentMethodId = await resolveDefaultPaymentMethodId({
-    stripe,
-    customerId,
-    paymentIntent,
-  });
-  if (!defaultPaymentMethodId) {
-    throw new Error('Missing reusable payment method for recurring subscription');
-  }
-
-  const recurringProduct = await stripe.products.create({
-    name: 'Furnace managed outreach',
-  });
-  const firstRecurringCoupon =
-    firstRecurringCouponAmountCents > 0
-      ? await stripe.coupons.create(
-          buildInviteRecurringCouponParams({
-            amountOff: firstRecurringCouponAmountCents,
-            currency: metadata.currency ?? 'usd',
-            invitationId,
-            firstRecurringInvoiceAmountCents: firstRecurringAmountDueCents,
-            overlapCreditCents,
-            paymentRoute,
-          }),
-        )
-      : null;
-
-  const subscription = await stripe.subscriptions.create({
-    customer: customerId,
-    billing_cycle_anchor: billingCycleAnchor,
-    proration_behavior: 'none',
-    default_payment_method: defaultPaymentMethodId,
-    metadata: {
-      invitationId,
-      checkoutSessionId: session.id,
-      upfrontInvoiceId:
-        typeof session.invoice === 'string' ? session.invoice : session.invoice?.id ?? '',
-      firstRecurringCouponId: firstRecurringCoupon?.id ?? '',
-    },
-    items: [
-      {
-        price_data: {
-          currency: metadata.currency ?? 'usd',
-          recurring: { interval: 'month' },
-          unit_amount: ongoingMonthlyTotalCents,
-          product: recurringProduct.id,
-        },
-      },
-    ],
-    ...(firstRecurringCoupon
-      ? {
-          discounts: [{ coupon: firstRecurringCoupon.id }],
-        }
-      : {}),
-  });
-
-  return {
-    subscriptionId: subscription.id,
-    firstRecurringCouponId: firstRecurringCoupon?.id ?? null,
-    paymentMethodId: defaultPaymentMethodId,
-    upfrontInvoiceId:
-      typeof session.invoice === 'string' ? session.invoice : session.invoice?.id ?? null,
-    upfrontPaymentIntentId:
-      typeof session.payment_intent === 'string'
-        ? session.payment_intent
-        : session.payment_intent?.id ?? null,
-  };
 }
 
 async function ensureAccountUpgradeRecurringSubscription(session: ExpandedCheckoutSession) {
@@ -476,7 +327,10 @@ async function handleAccountUpgradeInitialCheckoutCompleted(session: ExpandedChe
   if (activateError) throw new Error(activateError.message);
 }
 
-async function handleCheckoutCompleted(event: CheckoutSessionLike) {
+async function handleCheckoutCompleted(
+  event: CheckoutSessionLike,
+  stripeEvent?: { id: string; type: string },
+) {
   const session = await getExpandedCheckoutSession(event.id);
   if (await syncAccountPaymentMethodUpdate(session)) {
     return;
@@ -486,74 +340,23 @@ async function handleCheckoutCompleted(event: CheckoutSessionLike) {
     return;
   }
 
-  const invitationId = event.metadata?.invitationId;
+  const invitationId = event.metadata?.invitationId ?? session.metadata?.invitationId;
   if (!invitationId) return;
-  const recurringResult =
-    typeof session.subscription === 'string'
-      ? {
-          subscriptionId: session.subscription,
-          firstRecurringCouponId: null,
-          paymentMethodId: null,
-          upfrontInvoiceId:
-            typeof session.invoice === 'string' ? session.invoice : session.invoice?.id ?? null,
-          upfrontPaymentIntentId:
-            typeof session.payment_intent === 'string'
-              ? session.payment_intent
-              : session.payment_intent?.id ?? null,
-        }
-      : (await ensureRecurringSubscription(session));
-  const subscriptionId = recurringResult?.subscriptionId ?? null;
 
-  const supabase = getSupabaseAdminClient();
-  const { data: completeResult, error } = await supabase.rpc('complete_platform_invitation', {
-    p_invitation_id: invitationId,
-    p_stripe_customer_id: typeof session.customer === 'string' ? session.customer : '',
-    p_stripe_subscription_id: subscriptionId ?? '',
-    p_stripe_checkout_session_id: event.id,
-    p_internal_admin_emails: INTERNAL_ADMIN_EMAILS,
+  await reconcileInviteCheckoutSession({
+    supabase: getSupabaseAdminClient(),
+    stripe: getStripeClient(),
+    invitationId,
+    checkoutSessionId: event.id,
+    stripeEventId: stripeEvent?.id ?? null,
+    stripeEventType: stripeEvent?.type ?? null,
   });
-  if (error) throw new Error(error.message);
-
-  const completedAccountId =
-    completeResult && typeof completeResult === 'object' && 'account_id' in completeResult
-      ? (completeResult.account_id as string | null)
-      : null;
-  const paymentRoute =
-    session.metadata?.paymentRoute === 'ach' || session.metadata?.paymentRoute === 'card'
-      ? session.metadata.paymentRoute
-      : null;
-  if (completedAccountId && paymentRoute) {
-    const { error: billingUpdateError } = await supabase
-      .from('account_billing')
-      .update({
-        preferred_payment_route: paymentRoute,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('account_id', completedAccountId);
-    if (billingUpdateError) throw new Error(billingUpdateError.message);
-  }
-
-  const firstRecurringInvoiceTargetCents = parseMetadataInteger(
-    session.metadata ?? {},
-    'firstRecurringInvoiceAmountCents'
-  );
-  const recurringAnchorAt = session.metadata?.anchorDateIso ?? null;
-  const { error: updateError } = await supabase
-    .from('platform_invitations')
-    .update({
-      upfront_stripe_invoice_id: recurringResult?.upfrontInvoiceId ?? null,
-      upfront_stripe_payment_intent_id: recurringResult?.upfrontPaymentIntentId ?? null,
-      recurring_anchor_at: recurringAnchorAt,
-      first_recurring_invoice_target_cents:
-        firstRecurringInvoiceTargetCents > 0 ? firstRecurringInvoiceTargetCents : null,
-      first_recurring_coupon_id: recurringResult?.firstRecurringCouponId ?? null,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', invitationId);
-  if (updateError) throw new Error(updateError.message);
 }
 
-async function handleCheckoutAsyncPaymentFailed(event: CheckoutSessionLike) {
+async function handleCheckoutAsyncPaymentFailed(
+  event: CheckoutSessionLike,
+  stripeEvent?: { id: string; type: string },
+) {
   if (
     event.metadata?.flowKind === 'account_upgrade_initial' &&
     typeof event.metadata?.accountId === 'string'
@@ -570,20 +373,43 @@ async function handleCheckoutAsyncPaymentFailed(event: CheckoutSessionLike) {
   const invitationId = event.metadata?.invitationId;
   if (!invitationId) return;
 
-  const supabase = getSupabaseAdminClient();
-  const { data: invitation, error: invitationError } = await supabase
-    .from('platform_invitations')
-    .select('created_account_id')
-    .eq('id', invitationId)
-    .maybeSingle();
-  if (invitationError) throw new Error(invitationError.message);
-  if (!invitation?.created_account_id) return;
-
-  const { error } = await supabase.rpc('set_account_billing_status', {
-    p_account_id: invitation.created_account_id,
-    p_billing_status: 'payment_required',
+  await reconcileInviteCheckoutSession({
+    supabase: getSupabaseAdminClient(),
+    stripe: getStripeClient(),
+    invitationId,
+    checkoutSessionId: event.id,
+    stripeEventId: stripeEvent?.id ?? null,
+    stripeEventType: stripeEvent?.type ?? null,
   });
-  if (error) throw new Error(error.message);
+}
+
+async function handleInvitePaymentIntentEvent(
+  paymentIntent: { id: string; metadata?: Record<string, string> | null },
+  stripeEvent: { id: string; type: string },
+) {
+  const invitationId = paymentIntent.metadata?.invitationId ?? null;
+  const supabase = getSupabaseAdminClient();
+
+  if (!invitationId) {
+    const { data: attempt, error } = await supabase
+      .from('platform_invite_checkout_attempts')
+      .select('invitation_id')
+      .eq('stripe_payment_intent_id', paymentIntent.id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!attempt?.invitation_id) return;
+  }
+
+  await reconcileInviteCheckoutSession({
+    supabase,
+    stripe: getStripeClient(),
+    invitationId,
+    paymentIntentId: paymentIntent.id,
+    stripeEventId: stripeEvent.id,
+    stripeEventType: stripeEvent.type,
+  });
 }
 
 async function handleInvoicePaymentFailed(event: InvoiceLike) {
@@ -866,13 +692,31 @@ export const handler = async (event: { headers?: Record<string, string>; body?: 
 
     switch (stripeEvent.type) {
       case 'checkout.session.completed':
-        await handleCheckoutCompleted(stripeEvent.data.object as CheckoutSessionLike);
+        await handleCheckoutCompleted(
+          stripeEvent.data.object as CheckoutSessionLike,
+          { id: stripeEvent.id, type: stripeEvent.type },
+        );
         break;
       case 'checkout.session.async_payment_succeeded':
-        await handleCheckoutCompleted(stripeEvent.data.object as CheckoutSessionLike);
+        await handleCheckoutCompleted(
+          stripeEvent.data.object as CheckoutSessionLike,
+          { id: stripeEvent.id, type: stripeEvent.type },
+        );
         break;
       case 'checkout.session.async_payment_failed':
-        await handleCheckoutAsyncPaymentFailed(stripeEvent.data.object as CheckoutSessionLike);
+        await handleCheckoutAsyncPaymentFailed(
+          stripeEvent.data.object as CheckoutSessionLike,
+          { id: stripeEvent.id, type: stripeEvent.type },
+        );
+        break;
+      case 'payment_intent.processing':
+      case 'payment_intent.succeeded':
+      case 'payment_intent.payment_failed':
+      case 'payment_intent.requires_action':
+        await handleInvitePaymentIntentEvent(
+          stripeEvent.data.object as { id: string; metadata?: Record<string, string> | null },
+          { id: stripeEvent.id, type: stripeEvent.type },
+        );
         break;
       case 'invoice.payment_failed':
         await handleInvoicePaymentFailed(stripeEvent.data.object as InvoiceLike);

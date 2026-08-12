@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Linking } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { PlatformInviteExperience } from '@/components/platform/invite/PlatformInviteExperience';
+import { PlatformInviteRecoveryStep } from '@/components/platform/invite/PlatformInviteRecoveryStep';
 import { AppBootScreen } from '@/components/ui/AppBootScreen';
 import { useSmoothLoading } from '@/components/ui/feedback/useSmoothLoading';
 import { useAuth } from '@/contexts/AuthContext';
@@ -15,12 +17,15 @@ import {
   createPlatformCheckoutSession,
   ensurePlatformInviteAuthUser,
   getPlatformCheckoutQuote,
+  reconcileInviteCheckoutStatus,
+  type InviteCheckoutStatus,
 } from '@/lib/services/platform';
 import {
   isPlatformInviteCompletedStatus,
   isPlatformInviteUnavailableStatus,
 } from '@/lib/platform/invite/accessState';
 import type { PlatformPaymentRoute } from '@/lib/billing/paymentRoutes';
+import type { InviteCheckoutPhase } from '@/lib/billing/inviteCheckoutPhase';
 import { normalizePlatformInviteProrationMode } from '@/lib/billing/proration';
 import type {
   PlatformInviteCheckoutInput,
@@ -69,12 +74,23 @@ function mapInvitationInfo(
   };
 }
 
+function shouldResumeCheckout(info: PlatformInvitationInfo | null): boolean {
+  if (!info) return false;
+  if (info.status !== 'pending_payment') return false;
+  return Boolean(info.checkout_phase || info.checkout_session_id || info.selected_payment_route);
+}
+
 export default function AcceptPlatformInvitePage() {
   const router = useRouter();
-  const { id, checkout } = useLocalSearchParams<{ id: string; checkout?: string }>();
+  const { id, checkout, session_id: sessionIdParam } = useLocalSearchParams<{
+    id: string;
+    checkout?: string;
+    session_id?: string;
+  }>();
+  const checkoutSessionId = Array.isArray(sessionIdParam) ? sessionIdParam[0] : sessionIdParam;
   const { user, loading: authLoading, signOut } = useAuth();
   const { enterWorkspace } = useEnterWorkspace();
-  const checkoutSuccess = checkout === 'success';
+  const checkoutReturn = checkout === 'success' || checkout === 'return';
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<PlatformInvitationInfo | null>(null);
@@ -82,7 +98,12 @@ export default function AcceptPlatformInvitePage() {
   const [pendingActivation, setPendingActivation] = useState<PendingWorkspaceActivation | null>(
     null,
   );
+  const [checkoutStatus, setCheckoutStatus] = useState<InviteCheckoutStatus | null>(null);
+  const [statusBusy, setStatusBusy] = useState(false);
+  const [statusError, setStatusError] = useState<string | null>(null);
   const activationRunIdRef = useRef(0);
+  const statusPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const statusRequestInFlightRef = useRef(false);
 
   useEffect(() => {
     if (!id) {
@@ -146,31 +167,111 @@ export default function AcceptPlatformInvitePage() {
     [enterWorkspace, info?.invitee_email, user?.email, user?.id],
   );
 
-  useEffect(() => {
-    if (checkout !== 'success' || !user?.id) return;
-    void runActivationCheck({
-      accountId: null,
-      userId: user.id,
-      email: user.email ?? info?.invitee_email ?? '',
-    });
-  }, [checkout, info?.invitee_email, runActivationCheck, user?.email, user?.id]);
+  const refreshCheckoutStatus = useCallback(async (options?: { silent?: boolean }) => {
+    if (!id || !user?.id) return null;
+    if (statusRequestInFlightRef.current) return null;
+
+    const silent = options?.silent === true;
+    statusRequestInFlightRef.current = true;
+    if (!silent) {
+      setStatusBusy(true);
+      setStatusError(null);
+    }
+    try {
+      const status = await reconcileInviteCheckoutStatus({
+        invitationId: id,
+        checkoutSessionId: checkoutSessionId ?? null,
+      });
+      setCheckoutStatus(status);
+      setStatusError(null);
+      if (status.alreadyProvisioned || status.phase === 'processing' || status.phase === 'succeeded') {
+        setPendingActivation((current) => {
+          const next = {
+            accountId: status.accountId,
+            userId: user.id,
+            email: user.email ?? info?.invitee_email ?? '',
+          };
+          if (
+            current?.accountId === next.accountId &&
+            current.userId === next.userId &&
+            current.email === next.email
+          ) {
+            return current;
+          }
+          return next;
+        });
+      }
+      return status;
+    } catch (err) {
+      setStatusError(err instanceof Error ? err.message : 'Failed to refresh payment status.');
+      return null;
+    } finally {
+      statusRequestInFlightRef.current = false;
+      if (!silent) {
+        setStatusBusy(false);
+      }
+    }
+  }, [checkoutSessionId, id, info?.invitee_email, user?.email, user?.id]);
 
   useEffect(() => {
     if (!pendingActivation) return;
     void runActivationCheck(pendingActivation);
   }, [pendingActivation, runActivationCheck]);
 
+  useEffect(() => {
+    const shouldTrack =
+      !!user?.id &&
+      !!id &&
+      (checkoutReturn || shouldResumeCheckout(info));
+    if (!shouldTrack) return;
+
+    void refreshCheckoutStatus({ silent: true });
+    statusPollRef.current = setInterval(() => {
+      void refreshCheckoutStatus({ silent: true });
+    }, 4000);
+
+    return () => {
+      if (statusPollRef.current) {
+        clearInterval(statusPollRef.current);
+        statusPollRef.current = null;
+      }
+    };
+  }, [checkoutReturn, id, info, refreshCheckoutStatus, user?.id]);
+
   const viewData = useMemo(
     () => (id && info ? mapInvitationInfo(id, info) : null),
     [id, info],
   );
   const isExpiredLike = isPlatformInviteUnavailableStatus(info?.status);
-  const isCompletedLike = !checkoutSuccess && isPlatformInviteCompletedStatus(info?.status);
+  const isCompletedLike =
+    !checkoutReturn &&
+    isPlatformInviteCompletedStatus(info?.status) &&
+    !shouldResumeCheckout(info);
   const hasAuthMismatch =
-    !checkoutSuccess &&
+    !checkoutReturn &&
     !!user?.email &&
     !!info?.invitee_email &&
     user.email.toLowerCase() !== info.invitee_email.toLowerCase();
+
+  const recoveryPhase: InviteCheckoutPhase | null = useMemo(() => {
+    if (checkoutStatus?.phase) return checkoutStatus.phase;
+    if (info?.checkout_phase) return info.checkout_phase as InviteCheckoutPhase;
+    if (checkoutReturn) return 'open';
+    if (shouldResumeCheckout(info)) return 'open';
+    return null;
+  }, [checkoutReturn, checkoutStatus?.phase, info]);
+
+  const showRecovery =
+    !!user &&
+    !!recoveryPhase &&
+    recoveryPhase !== 'awaiting_checkout' &&
+    (checkoutReturn ||
+      shouldResumeCheckout(info) ||
+      recoveryPhase === 'verification_required' ||
+      recoveryPhase === 'processing' ||
+      recoveryPhase === 'failed' ||
+      recoveryPhase === 'expired' ||
+      recoveryPhase === 'succeeded');
 
   const redirectHref = useMemo(() => {
     if (!id || loading || authLoading || !info) return null;
@@ -323,7 +424,7 @@ export default function AcceptPlatformInvitePage() {
           : 'https://build.getfurnace.io';
       const checkoutResult = await createPlatformCheckoutSession({
         invitationId,
-        successUrl: `${origin}/accept-platform-invite/${invitationId}?checkout=success`,
+        successUrl: `${origin}/accept-platform-invite/${invitationId}?checkout=return&session_id={CHECKOUT_SESSION_ID}`,
         cancelUrl: `${origin}/accept-platform-invite/${invitationId}`,
         paymentRoute,
       });
@@ -338,8 +439,89 @@ export default function AcceptPlatformInvitePage() {
     [info?.monthly_retainer_cents, user?.id],
   );
 
+  const handleReplaceCheckout = useCallback(async () => {
+    if (!id || !info?.selected_payment_route) return;
+    setStatusBusy(true);
+    setStatusError(null);
+    try {
+      const origin =
+        typeof window !== 'undefined'
+          ? window.location.origin
+          : 'https://build.getfurnace.io';
+      const checkoutResult = await createPlatformCheckoutSession({
+        invitationId: id,
+        successUrl: `${origin}/accept-platform-invite/${id}?checkout=return&session_id={CHECKOUT_SESSION_ID}`,
+        cancelUrl: `${origin}/accept-platform-invite/${id}`,
+        paymentRoute: info.selected_payment_route,
+        forceNewAttempt: true,
+      });
+      const checkoutUrl =
+        typeof checkoutResult.url === 'string' ? checkoutResult.url : null;
+      if (!checkoutUrl) throw new Error('Missing Stripe checkout URL.');
+      if (typeof window !== 'undefined') {
+        window.location.assign(checkoutUrl);
+      }
+    } catch (err) {
+      setStatusError(err instanceof Error ? err.message : 'Failed to start replacement checkout.');
+      setStatusBusy(false);
+    }
+  }, [id, info?.selected_payment_route]);
+
   if (bootstrapping || showBootScreen) {
     return <AppBootScreen />;
+  }
+
+  if (showRecovery && recoveryPhase) {
+    return (
+      <PlatformInviteExperience
+        loading={false}
+        authLoading={false}
+        loadError={error || statusError}
+        info={viewData}
+        currentUserEmail={user?.email}
+        checkoutSuccess
+        activationError={activationError}
+        recoverySlot={
+          <PlatformInviteRecoveryStep
+            phase={recoveryPhase}
+            failureSummary={checkoutStatus?.failureSummary ?? info?.checkout_failure_summary ?? null}
+            hostedVerificationUrl={checkoutStatus?.hostedVerificationUrl ?? null}
+            activationError={activationError}
+            statusError={statusError}
+            busy={statusBusy}
+            onRetryActivation={() => {
+              void runActivationCheck(pendingActivation);
+            }}
+            onReplaceCheckout={
+              checkoutStatus?.canReplaceCheckout ||
+              recoveryPhase === 'failed' ||
+              recoveryPhase === 'expired'
+                ? () => {
+                    void handleReplaceCheckout();
+                  }
+                : undefined
+            }
+            onVerifyBank={
+              checkoutStatus?.hostedVerificationUrl
+                ? () => {
+                    void Linking.openURL(checkoutStatus.hostedVerificationUrl!);
+                  }
+                : undefined
+            }
+          />
+        }
+        onContinueExpired={() => redirectToAccessDestination('resource_unavailable')}
+        onContinueCompleted={() => redirectToAccessDestination('resource_completed')}
+        onSignOut={() => {
+          void signOut();
+        }}
+        onRetryActivation={() => {
+          void runActivationCheck(pendingActivation);
+        }}
+        loadQuote={loadQuote}
+        onCompleteCheckout={handleCompleteCheckout}
+      />
+    );
   }
 
   return (
@@ -349,12 +531,15 @@ export default function AcceptPlatformInvitePage() {
       loadError={error}
       info={viewData}
       currentUserEmail={user?.email}
-      checkoutSuccess={checkoutSuccess}
+      checkoutSuccess={false}
       activationError={activationError}
       onContinueExpired={() => redirectToAccessDestination('resource_unavailable')}
       onContinueCompleted={() => redirectToAccessDestination('resource_completed')}
       onSignOut={() => {
         void signOut();
+      }}
+      onRetryActivation={() => {
+        void runActivationCheck(pendingActivation);
       }}
       loadQuote={loadQuote}
       onCompleteCheckout={handleCompleteCheckout}

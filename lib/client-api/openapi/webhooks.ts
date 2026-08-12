@@ -19,6 +19,12 @@ const WEBHOOK_EVENT_DESCRIPTIONS: Record<WebhookEventType, string> = {
     'A sync bulk remove-from-campaign action finished (`POST …/leads:remove` or equivalent).',
   'lead.removed_from_all_campaigns.completed':
     'A sync bulk remove-from-all-campaigns action finished (`POST …/leads:remove-from-all-campaigns`).',
+  'lead.added_to_list.completed':
+    'A scoped or ID-list add-to-lead-list job finished (`POST /v1/lead-lists/{id}/members:update` or async job).',
+  'lead.removed_from_list.completed':
+    'A scoped or ID-list remove-from-lead-list job finished (`POST /v1/lead-lists/{id}/members:update` or async job).',
+  'lead.export.completed':
+    'A people/leads export job finished (`POST /v1/people:export` or async `export_leads`).',
   'enrollment.pause_completed':
     'A sync bulk enrollment pause finished (`POST …/enrollments:pause` or equivalent).',
   'enrollment.resume_completed':
@@ -37,6 +43,7 @@ const WEBHOOK_EVENT_DESCRIPTIONS: Record<WebhookEventType, string> = {
 /** Maps webhook event group ids to documentation path segments under `/docs/webhooks/`. */
 export const WEBHOOK_GUIDE_GROUP_PATH_SEGMENTS: Record<string, string> = {
   lead_added_updated: 'lead-added-updated',
+  lead_list_and_export: 'lead-list-and-export',
   lead_removed: 'lead-removed',
   enrollment_pause_resume: 'enrollment-pause-resume',
   campaign_status: 'campaign-status',
@@ -177,10 +184,13 @@ export function buildWebhooksOverviewMarkdown(linkMode: DocLinkMode = 'openapi')
     '',
     '| Operation | Completion event |',
     '| --- | --- |',
-    '| `api_lead_import` | `lead.bulk_import.completed` |',
+    '| `api_lead_import` / `csv_lead_import_staged` | `lead.bulk_import.completed` |',
     '| `add_to_campaign` | `lead.added_to_campaign.completed` |',
     '| `remove_from_campaign` | `lead.removed_from_campaign.completed` |',
     '| `remove_from_all_campaigns` | `lead.removed_from_all_campaigns.completed` |',
+    '| `add_to_lead_list` | `lead.added_to_list.completed` |',
+    '| `remove_from_lead_list` | `lead.removed_from_list.completed` |',
+    '| `export_leads` | `lead.export.completed` |',
     '| `pause_enrollments` | `enrollment.pause_completed` |',
     '| `resume_enrollments` | `enrollment.resume_completed` |',
     '',

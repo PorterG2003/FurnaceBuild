@@ -65,6 +65,7 @@ export class ProspeoError extends Error {
 export interface EnrichProspeoPersonInput {
   email?: string | null;
   linkedinUrl?: string | null;
+  personId?: string | null;
   firstName?: string | null;
   lastName?: string | null;
   fullName?: string | null;
@@ -119,6 +120,7 @@ async function withRetry<T>(
 function hasMinimumMatchKeys(input: EnrichProspeoPersonInput): boolean {
   if (input.email?.trim()) return true;
   if (input.linkedinUrl?.trim()) return true;
+  if (input.personId?.trim()) return true;
   const hasName =
     Boolean(input.fullName?.trim()) ||
     (Boolean(input.firstName?.trim()) && Boolean(input.lastName?.trim()));
@@ -151,6 +153,7 @@ export async function enrichPerson(
   const data: Record<string, string> = {};
   if (input.email?.trim()) data.email = input.email.trim();
   if (input.linkedinUrl?.trim()) data.linkedin_url = input.linkedinUrl.trim();
+  if (input.personId?.trim()) data.person_id = input.personId.trim();
   if (input.firstName?.trim()) data.first_name = input.firstName.trim();
   if (input.lastName?.trim()) data.last_name = input.lastName.trim();
   if (input.fullName?.trim()) data.full_name = input.fullName.trim();

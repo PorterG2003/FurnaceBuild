@@ -264,6 +264,72 @@ export async function resolveHunterApiKey(options?: {
   );
 }
 
+export function resolveProspeoApiKeyParamPathForTarget(
+  targetEnv: 'prod' | 'dev',
+): string | null {
+  return resolveAmplifySecretParamPathForTarget(targetEnv, 'PROSPEO_API_KEY');
+}
+
+export function resolveSerperApiKeyParamPathForTarget(
+  targetEnv: 'prod' | 'dev',
+): string | null {
+  return resolveAmplifySecretParamPathForTarget(targetEnv, 'SERPER_API_KEY');
+}
+
+export async function resolveProspeoApiKey(options?: {
+  targetEnv?: 'prod' | 'dev';
+  awsRegion?: string;
+}): Promise<{ apiKey: string; source: string }> {
+  const targetEnv = options?.targetEnv ?? resolveSelfRecoveryTargetEnv();
+  const awsRegion =
+    options?.awsRegion?.trim() ||
+    process.env.AWS_REGION?.trim() ||
+    process.env.CDK_DEFAULT_REGION?.trim() ||
+    'us-west-2';
+
+  const fromEnv = process.env.PROSPEO_API_KEY?.trim();
+  if (fromEnv) {
+    return { apiKey: fromEnv, source: 'PROSPEO_API_KEY environment variable' };
+  }
+
+  const paramPath = resolveProspeoApiKeyParamPathForTarget(targetEnv);
+  if (paramPath) {
+    const apiKey = await fetchSecretFromParameterStore(paramPath, awsRegion);
+    return { apiKey, source: `Parameter Store ${paramPath}` };
+  }
+
+  throw new Error(
+    'Missing PROSPEO_API_KEY. Set PROSPEO_API_KEY, or DEV_SECRET_SSM_PREFIX / PROD_SECRET_SSM_PREFIX (same Amplify secrets folder as SUPABASE_SECRET_KEY).',
+  );
+}
+
+export async function resolveSerperApiKey(options?: {
+  targetEnv?: 'prod' | 'dev';
+  awsRegion?: string;
+}): Promise<{ apiKey: string; source: string }> {
+  const targetEnv = options?.targetEnv ?? resolveSelfRecoveryTargetEnv();
+  const awsRegion =
+    options?.awsRegion?.trim() ||
+    process.env.AWS_REGION?.trim() ||
+    process.env.CDK_DEFAULT_REGION?.trim() ||
+    'us-west-2';
+
+  const fromEnv = process.env.SERPER_API_KEY?.trim();
+  if (fromEnv) {
+    return { apiKey: fromEnv, source: 'SERPER_API_KEY environment variable' };
+  }
+
+  const paramPath = resolveSerperApiKeyParamPathForTarget(targetEnv);
+  if (paramPath) {
+    const apiKey = await fetchSecretFromParameterStore(paramPath, awsRegion);
+    return { apiKey, source: `Parameter Store ${paramPath}` };
+  }
+
+  throw new Error(
+    'Missing SERPER_API_KEY. Set SERPER_API_KEY, or DEV_SECRET_SSM_PREFIX / PROD_SECRET_SSM_PREFIX (same Amplify secrets folder as SUPABASE_SECRET_KEY).',
+  );
+}
+
 export async function resolveOpenRouterApiKey(options?: {
   targetEnv?: 'prod' | 'dev';
   awsRegion?: string;

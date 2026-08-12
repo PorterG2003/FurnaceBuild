@@ -5,6 +5,10 @@ export const IMPORT_JOB_OPERATIONS = [
   'remove_from_all_campaigns',
   'pause_enrollments',
   'resume_enrollments',
+  'add_to_lead_list',
+  'remove_from_lead_list',
+  'export_leads',
+  'csv_lead_import_staged',
 ] as const;
 
 export type ImportJobOperation = (typeof IMPORT_JOB_OPERATIONS)[number];
@@ -22,6 +26,8 @@ export type BatchCompletionCounts = {
   /** Rows written but missing one or more required custom (personalization) fields. */
   incomplete?: number;
   failed?: number;
+  added?: number;
+  rows_exported?: number;
 };
 
 export type BatchCompletionError = {
@@ -37,6 +43,7 @@ export function isImportJobOperation(value: unknown): value is ImportJobOperatio
 export function batchCompletionEventType(operation: ImportJobOperation): string {
   switch (operation) {
     case 'api_lead_import':
+    case 'csv_lead_import_staged':
       return 'lead.bulk_import.completed';
     case 'add_to_campaign':
       return 'lead.added_to_campaign.completed';
@@ -48,6 +55,12 @@ export function batchCompletionEventType(operation: ImportJobOperation): string 
       return 'enrollment.pause_completed';
     case 'resume_enrollments':
       return 'enrollment.resume_completed';
+    case 'add_to_lead_list':
+      return 'lead.added_to_list.completed';
+    case 'remove_from_lead_list':
+      return 'lead.removed_from_list.completed';
+    case 'export_leads':
+      return 'lead.export.completed';
     default: {
       const _exhaustive: never = operation;
       return _exhaustive;
@@ -95,6 +108,7 @@ export function chunkStatsToCounts(
 ): BatchCompletionCounts {
   switch (operation) {
     case 'api_lead_import':
+    case 'csv_lead_import_staged':
       return {
         created: stats.created ?? 0,
         updated: stats.updated ?? 0,
@@ -129,6 +143,23 @@ export function chunkStatsToCounts(
       return {
         resumed: stats.resumed ?? 0,
         skipped: stats.skipped ?? 0,
+        failed: stats.failed ?? 0,
+      };
+    case 'add_to_lead_list':
+      return {
+        added: stats.added ?? stats.created ?? 0,
+        skipped: stats.skipped ?? 0,
+        failed: stats.failed ?? 0,
+      };
+    case 'remove_from_lead_list':
+      return {
+        removed: stats.removed ?? 0,
+        skipped: stats.skipped ?? 0,
+        failed: stats.failed ?? 0,
+      };
+    case 'export_leads':
+      return {
+        rows_exported: stats.rows_exported ?? 0,
         failed: stats.failed ?? 0,
       };
     default: {

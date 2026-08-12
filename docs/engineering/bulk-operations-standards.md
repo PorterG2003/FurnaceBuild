@@ -12,7 +12,7 @@ See also: [CLIENT_API_WEBHOOKS.md](../infrastructure/CLIENT_API_WEBHOOKS.md), [t
 | ≤ `BULK_SYNC_LIMIT` (100) | Sync bulk RPC or REST `:*` shortcut; one batch webhook when applicable |
 | > sync limit, list/view scope, or UI confirm | `api_import_jobs` + `clientApiBulkImport` worker |
 
-Constants live in [`lib/client-api/openapi/constants.ts`](../../lib/client-api/openapi/constants.ts): `BULK_SYNC_LIMIT`, `BULK_ASYNC_LIMIT`, `MAX_ASYNC_JOBS_PER_ACCOUNT`.
+Constants live in [`lib/client-api/openapi/constants.ts`](../../lib/client-api/openapi/constants.ts): `BULK_SYNC_LIMIT`, `BULK_ASYNC_LIMIT`, `MAX_ASYNC_JOBS_PER_ACCOUNT`, `MAX_QUEUED_ASYNC_JOBS_PER_ACCOUNT`.
 
 ## Shared infrastructure (do not fork)
 
@@ -56,13 +56,19 @@ Integrators should **poll** `GET /v1/jobs/{id}` first; webhooks are optional com
 Required `input.operation` values:
 
 - `api_lead_import`
+- `csv_lead_import_staged`
 - `add_to_campaign`
 - `remove_from_campaign`
 - `remove_from_all_campaigns`
 - `pause_enrollments`
 - `resume_enrollments`
+- `add_to_lead_list`
+- `remove_from_lead_list`
+- `export_leads`
 
-Standard count keys in `result`: `created`, `updated`, `enrolled`, `removed`, `paused`, `resumed`, `skipped`, `incomplete`, `failed`.
+Standard count keys in `result`: `created`, `updated`, `enrolled`, `removed`, `added`, `paused`, `resumed`, `skipped`, `incomplete`, `failed`, `rows_exported`.
+
+Concurrency: workers claim at most `MAX_ASYNC_JOBS_PER_ACCOUNT` **running** jobs per account. Additional work stays `queued` up to `MAX_QUEUED_ASYNC_JOBS_PER_ACCOUNT`.
 
 `errors[]` entries should include `global_lead_id` when known.
 

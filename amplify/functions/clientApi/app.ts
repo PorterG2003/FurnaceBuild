@@ -68,6 +68,18 @@ import {
 } from '../../../lib/client-api/mailbox-tags.js';
 import { hashRequestBody } from '../../../lib/client-api/idempotency.js';
 import { startApiImportJob, type CreateJobBody } from '../../../lib/client-api/jobs.js';
+import { buildClientApiLimitsGuide } from '../../../lib/client-api/bulk/limits.js';
+import { createBulkOperationPreview } from '../../../lib/client-api/bulk/previewService.js';
+import {
+  appendStagedImportRows,
+  createPresignedBulkUpload,
+  createStagedImportJob,
+  finalizeStagedImportJob,
+} from '../../../lib/client-api/bulk/staging.js';
+import {
+  enrichFlowForApiReadback,
+  withLeadSourceBucketId,
+} from '../../../lib/client-api/campaign-flow-readback.js';
 import {
   stableGlobalLeadIdsKey,
 } from '../../../lib/client-api/webhooks/batchCompletion.js';
@@ -78,8 +90,8 @@ import {
   BULK_ASYNC_LIMIT,
   BULK_SYNC_LIMIT,
   DEFAULT_PAGE_SIZE,
-  MAX_ASYNC_JOBS_PER_ACCOUNT,
   MAX_PAGE_SIZE,
+  MAX_QUEUED_ASYNC_JOBS_PER_ACCOUNT,
   RATE_LIMIT_REQUESTS_PER_MINUTE,
 } from '../../../lib/client-api/openapi/constants.js';
 import { deliverWebhookPost, isValidHttpsWebhookUrl } from '../../../lib/client-api/webhooks/deliverWebhookPost.js';
@@ -395,7 +407,7 @@ async function replaceCampaignMailboxes(
 }
 
 function normalizeCampaignFlowPayload(flowData: unknown): CampaignFlowData {
-  return normalizeFlowData(flowData ?? { nodes: [], edges: [] });
+  return enrichFlowForApiReadback(normalizeFlowData(flowData ?? { nodes: [], edges: [] }));
 }
 
 async function saveCampaignFlow(
@@ -415,13 +427,14 @@ async function saveCampaignFlow(
     phase: options.phase ?? 'draft',
     ifMatch: options.ifMatch,
   });
+  const flowWithBucket = withLeadSourceBucketId(prepared.flow, campaign.bucket_id);
   const saveResult = await updateCampaignFlowDataWithClient(supabase, {
     campaignId: campaign.id,
     accountId,
-    flowData: prepared.flow as unknown as Json,
+    flowData: flowWithBucket as unknown as Json,
     changeSource: 'client_api',
   });
-  return { prepared, reactivated_count: saveResult.reactivated_count };
+  return { prepared: { ...prepared, flow: flowWithBucket }, reactivated_count: saveResult.reactivated_count };
 }
 
 async function applyCampaignStatusChange(
@@ -473,20 +486,24 @@ async function buildCampaignDetailResponse(
   campaign: Database['public']['Tables']['campaigns']['Row'],
   include: Set<string>,
 ) {
-  const flow = normalizeCampaignFlowPayload(campaign.flow_data);
+  const flow = withLeadSourceBucketId(
+    normalizeCampaignFlowPayload(campaign.flow_data),
+    campaign.bucket_id,
+  );
   const tagsMap = await getTagsForCampaignIds(supabase, [campaign.id]);
+  const mailboxes = await listCampaignMailboxes(supabase, campaign.id);
   const base = await attachFlowRevision(attachTagsToCampaignRow(campaign, tagsMap), flow);
-  const data: Record<string, unknown> = { ...base };
+  const data: Record<string, unknown> = {
+    ...base,
+    mailbox_ids: mailboxes.map((mailbox) => mailbox.id),
+  };
 
   if (include.has('launch_state')) {
-    const [mailboxes, leadsResult] = await Promise.all([
-      listCampaignMailboxes(supabase, campaign.id),
-      supabase
-        .from('leads')
-        .select('id')
-        .eq('campaign_id', campaign.id)
-        .is('deleted_at', null),
-    ]);
+    const leadsResult = await supabase
+      .from('leads')
+      .select('id')
+      .eq('campaign_id', campaign.id)
+      .is('deleted_at', null);
     if (leadsResult.error) {
       throw new Error(`Failed to load leads for launch_state: ${leadsResult.error.message}`);
     }
@@ -951,10 +968,11 @@ app.post('/v1/campaigns', async (c) => {
     throw new Error(`Failed to create campaign: ${error?.message}`);
   }
   if (normalizedFlow) {
+    const flowWithBucket = withLeadSourceBucketId(normalizedFlow, created.bucket_id);
     await updateCampaignFlowDataWithClient(supabase, {
       campaignId: created.id,
       accountId: auth.accountId,
-      flowData: normalizedFlow as unknown as Json,
+      flowData: flowWithBucket as unknown as Json,
       changeSource: 'client_api',
     });
   }
@@ -965,8 +983,7 @@ app.post('/v1/campaigns', async (c) => {
     await applyCampaignTagPatch(supabase, auth.accountId, created.id, { tag_ids: tagIds });
   }
   const campaign = await loadCampaignOrThrow(supabase, auth.accountId, created.id);
-  const tagsMap = await getTagsForCampaignIds(supabase, [campaign.id]);
-  const data = await attachFlowRevision(attachTagsToCampaignRow(campaign, tagsMap));
+  const data = await buildCampaignDetailResponse(supabase, campaign, new Set());
   const payload = { data };
   await saveIdempotencyResponse(
     supabase,
@@ -1784,10 +1801,13 @@ app.post('/v1/campaigns/:id/leads/bulk/async', async (c) => {
     .from('api_import_jobs')
     .select('id', { count: 'exact', head: true })
     .eq('account_id', auth.accountId)
-    .in('status', ['queued', 'running']);
+    .eq('status', 'queued');
   if (countError) throw new Error(`Failed to count async import jobs: ${countError.message}`);
-  if ((count ?? 0) >= MAX_ASYNC_JOBS_PER_ACCOUNT) {
-    rateLimited('too_many_async_jobs', `Only ${MAX_ASYNC_JOBS_PER_ACCOUNT} concurrent async import jobs are allowed`);
+  if ((count ?? 0) >= MAX_QUEUED_ASYNC_JOBS_PER_ACCOUNT) {
+    rateLimited(
+      'too_many_queued_async_jobs',
+      `Only ${MAX_QUEUED_ASYNC_JOBS_PER_ACCOUNT} queued async import jobs are allowed`,
+    );
   }
   const { data: job, error } = await supabase
     .from('api_import_jobs')
@@ -1814,7 +1834,21 @@ app.post('/v1/campaigns/:id/leads/bulk/async', async (c) => {
   return jsonResponse(c, { data: job }, 202, c.get('rateLimitHeaders'));
 });
 
-async function enqueueImportJobById(jobId: string): Promise<void> {
+async function enqueueImportJobById(jobId: string, operation?: string | null): Promise<void> {
+  if (operation === 'export_leads') {
+    const stateMachineArn = process.env.LEADS_EXPORT_STATE_MACHINE_ARN?.trim();
+    if (!stateMachineArn) {
+      // In local/test without SFN, leave the job queued for polling.
+      return;
+    }
+    await sfn.send(
+      new StartExecutionCommand({
+        stateMachineArn,
+        input: JSON.stringify({ jobId }),
+      }),
+    );
+    return;
+  }
   const queueUrl = process.env.CLIENT_API_IMPORT_QUEUE_URL?.trim();
   if (!queueUrl) return;
   await sqs.send(new SendMessageCommand({
@@ -1822,6 +1856,124 @@ async function enqueueImportJobById(jobId: string): Promise<void> {
     MessageBody: JSON.stringify({ jobId }),
   }));
 }
+
+function jobOperationFromRow(job: { input?: unknown }): string | null {
+  const input = job.input && typeof job.input === 'object' ? (job.input as Record<string, unknown>) : {};
+  return typeof input.operation === 'string' ? input.operation : null;
+}
+
+app.get('/v1/meta/limits', async (c) => {
+  return jsonResponse(c, { data: buildClientApiLimitsGuide() }, 200, c.get('rateLimitHeaders'));
+});
+
+app.post('/v1/bulk/preview', async (c) => {
+  const supabase = createServiceRoleClient();
+  const auth = c.get('apiKey');
+  const body = parseJsonBody<Record<string, unknown>>(await c.req.text());
+  const preview = await createBulkOperationPreview(supabase, auth.accountId, body);
+  return jsonResponse(c, { data: preview }, 200, c.get('rateLimitHeaders'));
+});
+
+app.post('/v1/campaigns/:id/imports/staged', async (c) => {
+  const supabase = createServiceRoleClient();
+  const auth = c.get('apiKey');
+  const campaign = await loadCampaignOrThrow(supabase, auth.accountId, c.req.param('id'));
+  assertCampaignMutable(campaign);
+  const job = await createStagedImportJob(supabase, auth.accountId, campaign.id, auth.id);
+  return jsonResponse(c, { data: job }, 201, c.get('rateLimitHeaders'));
+});
+
+app.post('/v1/jobs/:id/staging-rows', async (c) => {
+  const supabase = createServiceRoleClient();
+  const auth = c.get('apiKey');
+  const body = parseJsonBody<{ leads?: Record<string, unknown>[] }>(await c.req.text());
+  const result = await appendStagedImportRows(
+    supabase,
+    auth.accountId,
+    c.req.param('id'),
+    Array.isArray(body.leads) ? body.leads : [],
+  );
+  return jsonResponse(c, result, 200, c.get('rateLimitHeaders'));
+});
+
+app.post('/v1/jobs/:id/finalize', async (c) => {
+  const supabase = createServiceRoleClient();
+  const auth = c.get('apiKey');
+  const job = await finalizeStagedImportJob(supabase, auth.accountId, c.req.param('id'));
+  await enqueueImportJobById(job.id, jobOperationFromRow(job));
+  return jsonResponse(c, { data: job }, 202, c.get('rateLimitHeaders'));
+});
+
+app.post('/v1/uploads/presign', async (c) => {
+  const supabase = createServiceRoleClient();
+  const auth = c.get('apiKey');
+  const body = parseJsonBody<{
+    campaign_id?: string;
+    filename?: string;
+    content_type?: string;
+  }>(await c.req.text());
+  if (!body.campaign_id) invalidRequest('missing_campaign_id', 'campaign_id is required', 'campaign_id');
+  const campaign = await loadCampaignOrThrow(supabase, auth.accountId, body.campaign_id);
+  assertCampaignMutable(campaign);
+  const upload = await createPresignedBulkUpload(supabase, auth.accountId, auth.id, {
+    campaign_id: campaign.id,
+    filename: body.filename,
+    content_type: body.content_type,
+  });
+  return jsonResponse(c, { data: upload }, 201, c.get('rateLimitHeaders'));
+});
+
+app.post('/v1/people/export', async (c) => {
+  const supabase = createServiceRoleClient();
+  const auth = c.get('apiKey');
+  const body = pickKnownKeys<CreateJobBody>(
+    parseJsonBody<Record<string, unknown>>(await c.req.text()),
+    IMPORT_JOB_CREATE_KEYS,
+  );
+  const job = await startApiImportJob(supabase, auth.accountId, auth.id, {
+    ...body,
+    operation: 'export_leads',
+  });
+  await enqueueImportJobById(job.id, 'export_leads');
+  return jsonResponse(c, { data: job }, 202, c.get('rateLimitHeaders'));
+});
+
+app.post('/v1/campaigns/:id/enroll', async (c) => {
+  const supabase = createServiceRoleClient();
+  const auth = c.get('apiKey');
+  const campaign = await loadCampaignOrThrow(supabase, auth.accountId, c.req.param('id'));
+  assertCampaignMutable(campaign);
+  const body = pickKnownKeys<CreateJobBody>(
+    parseJsonBody<Record<string, unknown>>(await c.req.text()),
+    IMPORT_JOB_CREATE_KEYS,
+  );
+  const job = await startApiImportJob(supabase, auth.accountId, auth.id, {
+    ...body,
+    operation: 'add_to_campaign',
+    campaign_id: campaign.id,
+  });
+  await enqueueImportJobById(job.id, 'add_to_campaign');
+  return jsonResponse(c, { data: job }, 202, c.get('rateLimitHeaders'));
+});
+
+app.post('/v1/lead-lists/:id/members:bulk', async (c) => {
+  const supabase = createServiceRoleClient();
+  const auth = c.get('apiKey');
+  const listId = c.req.param('id');
+  assertUuid(listId, 'id');
+  const body = pickKnownKeys<CreateJobBody>(
+    parseJsonBody<Record<string, unknown>>(await c.req.text()),
+    IMPORT_JOB_CREATE_KEYS,
+  );
+  const operation = body.operation === 'remove_from_lead_list' ? 'remove_from_lead_list' : 'add_to_lead_list';
+  const job = await startApiImportJob(supabase, auth.accountId, auth.id, {
+    ...body,
+    operation,
+    target_list_id: listId,
+  });
+  await enqueueImportJobById(job.id, operation);
+  return jsonResponse(c, { data: job }, 202, c.get('rateLimitHeaders'));
+});
 
 app.post('/v1/jobs', async (c) => {
   const supabase = createServiceRoleClient();
@@ -1831,8 +1983,73 @@ app.post('/v1/jobs', async (c) => {
     IMPORT_JOB_CREATE_KEYS,
   );
   const job = await startApiImportJob(supabase, auth.accountId, auth.id, body);
-  await enqueueImportJobById(job.id);
+  await enqueueImportJobById(job.id, jobOperationFromRow(job));
   return jsonResponse(c, { data: job }, 202, c.get('rateLimitHeaders'));
+});
+
+app.post('/v1/jobs/:id/cancel', async (c) => {
+  const supabase = createServiceRoleClient();
+  const auth = c.get('apiKey');
+  const jobId = c.req.param('id');
+  assertUuid(jobId, 'id');
+  const { data, error } = await supabase.rpc('request_cancel_api_import_job' as never, {
+    p_account_id: auth.accountId,
+    p_job_id: jobId,
+  } as never);
+  if (error) {
+    // Fallback before/without migration: mark cancel directly.
+    const now = new Date().toISOString();
+    const { data: existing, error: loadError } = await supabase
+      .from('api_import_jobs')
+      .select('*')
+      .eq('id', jobId)
+      .eq('account_id', auth.accountId)
+      .maybeSingle();
+    if (loadError) throw new Error(loadError.message);
+    if (!existing) notFound('job_not_found', 'Async import job not found');
+    const nextStatus =
+      existing.status === 'queued' || existing.status === 'uploading' ? 'cancelled' : existing.status;
+    const { data: updated, error: updateError } = await supabase
+      .from('api_import_jobs')
+      .update({
+        cancel_requested_at: now,
+        status: nextStatus as never,
+        completed_at: nextStatus === 'cancelled' ? now : existing.completed_at,
+        updated_at: now,
+      } as never)
+      .eq('id', jobId)
+      .eq('account_id', auth.accountId)
+      .select('*')
+      .single();
+    if (updateError) {
+      // Column/status may not exist yet — mark failed with cancelled result.
+      const { data: forced, error: forceError } = await supabase
+        .from('api_import_jobs')
+        .update({
+          status: 'failed' as never,
+          result: { cancelled: true, ...(existing.result && typeof existing.result === 'object' ? existing.result as object : {}) } as never,
+          completed_at: now,
+          updated_at: now,
+        } as never)
+        .eq('id', jobId)
+        .eq('account_id', auth.accountId)
+        .select('*')
+        .single();
+      if (forceError) throw new Error(forceError.message);
+      return jsonResponse(c, { data: forced }, 200, c.get('rateLimitHeaders'));
+    }
+    return jsonResponse(c, { data: updated }, 200, c.get('rateLimitHeaders'));
+  }
+  void data;
+  const { data: job, error: loadError } = await supabase
+    .from('api_import_jobs')
+    .select('*')
+    .eq('id', jobId)
+    .eq('account_id', auth.accountId)
+    .maybeSingle();
+  if (loadError) throw new Error(loadError.message);
+  if (!job) notFound('job_not_found', 'Async import job not found');
+  return jsonResponse(c, { data: job }, 200, c.get('rateLimitHeaders'));
 });
 
 app.post('/v1/campaigns/:id/leads:add', async (c) => {
@@ -2276,6 +2493,9 @@ app.post('/v1/lead-lists/:id/members', async (c) => {
   if (globalLeadIds.length === 0) {
     invalidRequest('missing_global_lead_ids', 'global_lead_ids must be a non-empty array', 'global_lead_ids');
   }
+  if (globalLeadIds.length > BULK_SYNC_LIMIT) {
+    invalidRequest('too_many_leads', `Sync list membership is limited to ${BULK_SYNC_LIMIT} leads`, 'global_lead_ids');
+  }
   const { data: list, error: listError } = await supabase
     .from('lead_saved_lists')
     .select('id')
@@ -2332,6 +2552,9 @@ app.delete('/v1/lead-lists/:id/members', async (c) => {
   )];
   if (globalLeadIds.length === 0) {
     invalidRequest('missing_global_lead_ids', 'global_lead_ids must be a non-empty array', 'global_lead_ids');
+  }
+  if (globalLeadIds.length > BULK_SYNC_LIMIT) {
+    invalidRequest('too_many_leads', `Sync list membership is limited to ${BULK_SYNC_LIMIT} leads`, 'global_lead_ids');
   }
   const { data: removedRows, error } = await supabase
     .from('lead_saved_list_members')

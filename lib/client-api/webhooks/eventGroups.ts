@@ -25,6 +25,9 @@ export const WEBHOOK_EVENT_LABELS: Record<WebhookEventType, string> = {
   'lead.added_to_campaign.completed': 'Add to campaign completed',
   'lead.removed_from_campaign.completed': 'Remove from campaign completed',
   'lead.removed_from_all_campaigns.completed': 'Remove from all campaigns completed',
+  'lead.added_to_list.completed': 'Add to lead list completed',
+  'lead.removed_from_list.completed': 'Remove from lead list completed',
+  'lead.export.completed': 'Lead export completed',
   'enrollment.pause_completed': 'Enrollment pause completed',
   'enrollment.resume_completed': 'Enrollment resume completed',
   'campaign.paused': 'Campaign paused',
@@ -46,6 +49,16 @@ export const WEBHOOK_EVENT_GROUPS: readonly WebhookEventGroup[] = [
       'lead.updated',
       'lead.bulk_import.completed',
       'lead.added_to_campaign.completed',
+    ],
+  },
+  {
+    id: 'lead_list_and_export',
+    label: 'Lead lists / export',
+    description: 'Saved-list membership and people export job completions.',
+    events: [
+      'lead.added_to_list.completed',
+      'lead.removed_from_list.completed',
+      'lead.export.completed',
     ],
   },
   {

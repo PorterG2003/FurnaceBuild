@@ -283,7 +283,17 @@ export function canonicalizeEmailContentForSave(
 
   const richHtml = String(input.bodyHtml ?? '').trim();
   const richText = String(input.bodyText ?? input.template ?? '').trim();
-  const canonical = canonicalizeEmailHtml(richHtml, { preserveFullDocument: false });
+  const htmlSource =
+    richHtml ||
+    (richText
+      ? richText.includes('<')
+        ? richText
+        : richText
+            .split(/\n/)
+            .map((line) => `<p>${escapeHtml(line) || '<br>'}</p>`)
+            .join('')
+      : '');
+  const canonical = canonicalizeEmailHtml(htmlSource, { preserveFullDocument: false });
   const template = richText || canonical.bodyText;
   return {
     editorMode,
@@ -291,7 +301,7 @@ export function canonicalizeEmailContentForSave(
     bodyText: template,
     template,
     documentKind: canonical.documentKind,
-    wasModified: canonical.wasModified,
+    wasModified: canonical.wasModified || htmlSource !== richHtml,
   };
 }
 

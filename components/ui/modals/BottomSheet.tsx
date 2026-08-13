@@ -405,15 +405,17 @@ export function BottomSheet({
     }
   }, [visible, screenHeight, backdropOpacity, sheetTranslateY, useNative, isWeb]);
 
+  /** iOS Safari: 100vh is the large viewport; 100svh keeps fixed overlays inside the visible area. */
+  const webFullHeightStyle = { height: '100svh' as unknown as number };
   const containerClassName = isWeb
-    ? 'fixed inset-0 w-screen h-screen flex justify-end overflow-hidden'
+    ? 'fixed inset-0 w-screen flex justify-end overflow-hidden'
     : 'flex-1 justify-end overflow-hidden';
   /** Web: omit flex justify-end here — with RN Web it can collapse an absolutely positioned backdrop to height 0. */
-  const webBackdropModalContainerClassName = 'fixed inset-0 w-screen h-screen overflow-hidden';
+  const webBackdropModalContainerClassName = 'fixed inset-0 w-screen overflow-hidden';
   const containerStyle = isWeb
     ? overlayZIndex != null
-      ? { zIndex: overlayZIndex }
-      : undefined
+      ? { ...webFullHeightStyle, zIndex: overlayZIndex }
+      : webFullHeightStyle
     : overlayZIndex != null
       ? { width: screenWidth, height: screenHeight, zIndex: overlayZIndex }
       : { width: screenWidth, height: screenHeight };
@@ -552,7 +554,7 @@ export function BottomSheet({
           {...(overlayZIndex != null ? { style: { zIndex: overlayZIndex } } : {})}
         >
           <View
-            className="fixed inset-0 w-screen h-screen flex flex-col overflow-hidden"
+            className="fixed inset-0 w-screen flex flex-col overflow-hidden"
             style={containerStyle}
           >
             <Pressable

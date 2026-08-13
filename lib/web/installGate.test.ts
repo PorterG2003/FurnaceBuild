@@ -1,6 +1,17 @@
 import assert from 'node:assert';
-import { describe, it } from 'node:test';
-import { getCurrentWebPathname, isFluxPublicLandingRoute, isInstallGateExemptRoute } from './installGate';
+import { afterEach, describe, it } from 'node:test';
+import {
+  getCurrentWebPathname,
+  isFluxPublicLandingRoute,
+  isInstallGateExemptRoute,
+  shouldBypassWebInstallGate,
+} from './installGate';
+import {
+  INSTALL_GATE_ALWAYS_DISMISS_KEY,
+  INSTALL_GATE_SESSION_CONTINUE_KEY,
+  setInstallGateAlwaysDismissLocal,
+  setInstallGateSessionContinue,
+} from './installGateSkip';
 
 describe('isInstallGateExemptRoute', () => {
   it('exempts /install', () => {
@@ -35,6 +46,10 @@ describe('isInstallGateExemptRoute', () => {
     );
     assert.strictEqual(
       isInstallGateExemptRoute('/auth', `?return_to=${encodeURIComponent('/account')}`),
+      true,
+    );
+    assert.strictEqual(
+      isInstallGateExemptRoute('/auth', `?return_to=${encodeURIComponent('https://evil.example')}`),
       false,
     );
   });
@@ -121,5 +136,68 @@ describe('getCurrentWebPathname', () => {
         });
       }
     }
+  });
+});
+
+describe('shouldBypassWebInstallGate skip storage', () => {
+  const previousDev = (globalThis as { __DEV__?: boolean }).__DEV__;
+
+  afterEach(() => {
+    (globalThis as { __DEV__?: boolean }).__DEV__ = previousDev;
+    // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
+    delete (globalThis as { window?: unknown }).window;
+  });
+
+  function withNarrowBrowserWindow(run: () => void) {
+    const sessionStore = new Map<string, string>();
+    const localStore = new Map<string, string>();
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: {
+        matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }),
+        sessionStorage: {
+          getItem: (k: string) => (sessionStore.has(k) ? sessionStore.get(k)! : null),
+          setItem: (k: string, v: string) => {
+            sessionStore.set(k, v);
+          },
+          removeItem: (k: string) => {
+            sessionStore.delete(k);
+          },
+        },
+        localStorage: {
+          getItem: (k: string) => (localStore.has(k) ? localStore.get(k)! : null),
+          setItem: (k: string, v: string) => {
+            localStore.set(k, v);
+          },
+          removeItem: (k: string) => {
+            localStore.delete(k);
+          },
+        },
+        dispatchEvent: () => true,
+        navigator: {},
+      },
+    });
+    run();
+  }
+
+  it('bypasses for this-tab Continue and Always dismiss outside __DEV__', () => {
+    withNarrowBrowserWindow(() => {
+      (globalThis as { __DEV__?: boolean }).__DEV__ = false;
+      assert.strictEqual(shouldBypassWebInstallGate(390), false);
+
+      setInstallGateSessionContinue();
+      assert.strictEqual(shouldBypassWebInstallGate(390), true);
+      assert.strictEqual(window.sessionStorage.getItem(INSTALL_GATE_SESSION_CONTINUE_KEY), '1');
+
+      window.sessionStorage.removeItem(INSTALL_GATE_SESSION_CONTINUE_KEY);
+      assert.strictEqual(shouldBypassWebInstallGate(390), false);
+
+      setInstallGateAlwaysDismissLocal('2026-08-13T00:00:00.000Z');
+      assert.strictEqual(shouldBypassWebInstallGate(390), true);
+      assert.strictEqual(
+        window.localStorage.getItem(INSTALL_GATE_ALWAYS_DISMISS_KEY),
+        '2026-08-13T00:00:00.000Z',
+      );
+    });
   });
 });

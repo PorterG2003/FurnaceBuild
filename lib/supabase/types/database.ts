@@ -815,6 +815,7 @@ export interface Database {
           external_id: string | null;
           email: string;
           name: string | null;
+          web_install_gate_dismissed_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -823,6 +824,7 @@ export interface Database {
           external_id?: string | null;
           email: string;
           name?: string | null;
+          web_install_gate_dismissed_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -831,6 +833,7 @@ export interface Database {
           external_id?: string | null;
           email?: string;
           name?: string | null;
+          web_install_gate_dismissed_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };

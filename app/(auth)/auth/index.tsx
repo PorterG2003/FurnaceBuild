@@ -21,6 +21,7 @@ import { HELP_SCHEDULE_URL } from '@/components/ui/help/HelpModal';
 import { LAYOUT_BREAKPOINT } from '@/components/ui/layout';
 import { usePublicAccessDialog } from '@/hooks/usePublicAccessDialog';
 import { parseMcpConsentReturnTo } from '@/lib/mcp/consentReturn';
+import { parseSafeAppReturnTo } from '@/lib/web/installGateSkip';
 
 type AuthState = 'signIn' | 'signUp' | 'confirmSignUp' | 'forgotPassword' | 'confirmResetPassword';
 
@@ -48,6 +49,7 @@ export default function AuthIndex() {
   }>();
   const allowInvitationSignUp = Boolean(invitation_id);
   const mcpConsentReturn = parseMcpConsentReturnTo(return_to);
+  const appReturn = parseSafeAppReturnTo(return_to);
   const { user, isRecoverySession, clearRecoverySession } = useAuth();
   const [authState, setAuthState] = useState<AuthState>(
     isRecoverySession ? 'confirmResetPassword' : (allowInvitationSignUp && mode === 'signUp' ? 'signUp' : 'signIn'),
@@ -77,6 +79,8 @@ export default function AuthIndex() {
       router.replace(`/accept-invitation/${invitation_id}`);
     } else if (amendment_id) {
       router.replace(`/accept-account-amendment/${amendment_id}`);
+    } else if (appReturn) {
+      router.replace(appReturn as never);
     } else {
       router.replace('/');
     }

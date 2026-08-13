@@ -4,6 +4,7 @@ import { Platform } from 'react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { AppBootScreen } from '@/components/ui/AppBootScreen';
 import { parseMcpConsentReturnTo } from '@/lib/mcp/consentReturn';
+import { parseSafeAppReturnTo } from '@/lib/web/installGateSkip';
 
 export default function AuthLayout() {
   const { user, loading, isRecoverySession } = useAuth();
@@ -29,12 +30,15 @@ export default function AuthLayout() {
     if (loading) return;
     if (user && !isRecoverySession) {
       const mcpReturn = parseMcpConsentReturnTo(return_to);
+      const appReturn = parseSafeAppReturnTo(return_to);
       if (mcpReturn) {
         router.replace(mcpReturn as never);
       } else if (invitation_id) {
         router.replace(`/accept-invitation/${invitation_id}`);
       } else if (amendment_id) {
         router.replace(`/accept-account-amendment/${amendment_id}`);
+      } else if (appReturn) {
+        router.replace(appReturn as never);
       } else {
         router.replace('/');
       }

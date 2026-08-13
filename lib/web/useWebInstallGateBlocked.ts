@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Platform, useWindowDimensions } from 'react-native';
 import { shouldBypassWebInstallGate } from '@/lib/web/installGate';
+import { INSTALL_GATE_SKIP_CHANGED_EVENT } from '@/lib/web/installGateSkip';
 
 /**
  * On web: true when the user is in a normal mobile browser tab (narrow viewport,
- * not standalone). Native platforms are never blocked.
+ * not standalone) and has not Continue'd / Always-dismissed the install gate.
+ * Native platforms are never blocked.
  */
 export function useWebInstallGateBlocked(): boolean {
   const { width } = useWindowDimensions();
@@ -27,8 +29,10 @@ export function useWebInstallGateBlocked(): boolean {
     }
 
     window.addEventListener('resize', bump);
+    window.addEventListener(INSTALL_GATE_SKIP_CHANGED_EVENT, bump);
     return () => {
       window.removeEventListener('resize', bump);
+      window.removeEventListener(INSTALL_GATE_SKIP_CHANGED_EVENT, bump);
       try {
         mqStandalone?.removeEventListener('change', bump);
         mqFullscreen?.removeEventListener('change', bump);
@@ -45,7 +49,7 @@ export function useWebInstallGateBlocked(): boolean {
     const viewportWidth =
       typeof window !== 'undefined' && window.innerWidth > 0 ? window.innerWidth : width;
 
-    // Re-run when display-mode listeners bump this (standalone detection).
+    // Re-run when display-mode / skip-storage listeners bump this.
     void displayModeTick;
 
     return !shouldBypassWebInstallGate(viewportWidth);

@@ -1,6 +1,11 @@
 import { LAYOUT_BREAKPOINT } from '@/components/ui/layout/constants';
 import { isMcpConsentPath, parseMcpConsentReturnTo } from '@/lib/mcp/consentReturn';
 import { hasPublicAccessParams } from '@/lib/publicAccessState';
+import {
+  hasInstallGateAlwaysDismissLocal,
+  hasInstallGateSessionContinue,
+  parseSafeAppReturnTo,
+} from '@/lib/web/installGateSkip';
 
 /**
  * True when the web app is running as an installed PWA / standalone window
@@ -26,7 +31,10 @@ export function isDesktopViewportWidth(viewportWidth: number): boolean {
 /** When true, the install gate should not redirect away from the main app. */
 export function shouldBypassWebInstallGate(viewportWidth: number): boolean {
   if (__DEV__) return true;
-  return getIsWebStandalone() || isDesktopViewportWidth(viewportWidth);
+  if (getIsWebStandalone() || isDesktopViewportWidth(viewportWidth)) return true;
+  if (hasInstallGateSessionContinue()) return true;
+  if (hasInstallGateAlwaysDismissLocal()) return true;
+  return false;
 }
 
 export function normalizeInstallGatePathname(pathname: string): string {
@@ -63,13 +71,15 @@ export function isPublicAcceptRoute(pathname: string): boolean {
   );
 }
 
-/** Invite-scoped (or MCP consent return) auth routes should stay reachable until onboarding completes. */
+/** Invite-scoped, MCP consent, or safe app return_to auth routes stay reachable until onboarding completes. */
 export function isAuthInviteFlowRoute(pathname: string, search = ''): boolean {
   const path = normalizeInstallGatePathname(pathname);
   if (path !== '/auth') return false;
   const params = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search);
   if (params.has('invitation_id') || params.has('amendment_id')) return true;
-  return parseMcpConsentReturnTo(params.get('return_to')) != null;
+  const returnTo = params.get('return_to');
+  if (parseMcpConsentReturnTo(returnTo) != null) return true;
+  return parseSafeAppReturnTo(returnTo) != null;
 }
 
 export function isPublicAccessDialogRoute(search = ''): boolean {

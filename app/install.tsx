@@ -1,8 +1,8 @@
-import { useRouter } from 'expo-router';
-import { useCallback, useMemo } from 'react';
+import { useRouter, type Href } from 'expo-router';
+import { useCallback, useMemo, useState } from 'react';
 import type { ComponentType } from 'react';
 import { cn } from '@/lib/cn';
-import { Alert, Image, Platform, ScrollView, Text, View } from 'react-native';
+import { Alert, Image, Platform, Text, View } from 'react-native';
 import {
   ArrowDownTrayIcon,
   ArrowUpOnSquareIcon,
@@ -14,14 +14,20 @@ import {
   HomeIcon,
   Squares2X2Icon,
 } from 'react-native-heroicons/outline';
-import { HeroHeatShimmer, EmberParticlesLite } from '@/components/ui/effects';
 import { Button } from '@/components/ui/button';
+import { BrandedStandalonePageShell } from '@/components/ui/layout';
+import { useAccount } from '@/contexts/AccountContext';
 import {
   browserSupportsAndroidWebInstallPrompt,
   type ClientEnvironment,
   parseClientEnvironment,
 } from '@/lib/web/clientEnvironment';
-import { getIsWebStandalone, shouldBypassWebInstallGate } from '@/lib/web/installGate';
+import {
+  consumeInstallGatePendingReturn,
+  markWebInstallGateAlwaysDismissed,
+  setInstallGateSessionContinue,
+  shouldShowIosSafariInstallSkipActions,
+} from '@/lib/web/installGateSkip';
 import { usePwaInstallPrompt } from '@/lib/web/usePwaInstallPrompt';
 
 type HeroIcon = ComponentType<{ size?: number; color?: string }>;
@@ -216,6 +222,8 @@ const LOGO_SOURCE =
 
 export default function InstallGuideScreen() {
   const router = useRouter();
+  const { user } = useAccount();
+  const [alwaysDismissBusy, setAlwaysDismissBusy] = useState(false);
   const clientEnv = useMemo(
     () => (Platform.OS === 'web' ? parseClientEnvironment() : null),
     [],
@@ -225,12 +233,18 @@ export default function InstallGuideScreen() {
     () => (clientEnv ? getInstallStepsForEnvironment(clientEnv) : OTHER_INSTALL_STEPS),
     [clientEnv],
   );
+  const showIosSafariSkip = shouldShowIosSafariInstallSkipActions(clientEnv);
 
   const showAndroidChromiumMenuHint =
     Platform.OS === 'web' &&
     clientEnv?.device === 'android' &&
     browserSupportsAndroidWebInstallPrompt(clientEnv.browser) &&
     !canPromptInstall;
+
+  const navigateToPendingReturn = useCallback(() => {
+    const href = consumeInstallGatePendingReturn('/');
+    router.replace(href as Href);
+  }, [router]);
 
   const onNativeInstall = useCallback(async () => {
     const outcome = await promptInstall();
@@ -242,84 +256,83 @@ export default function InstallGuideScreen() {
     }
   }, [promptInstall]);
 
-  const tryContinue = useCallback(() => {
-    if (Platform.OS !== 'web' || typeof window === 'undefined') {
-      router.replace('/');
-      return;
+  const onContinueInBrowser = useCallback(() => {
+    setInstallGateSessionContinue();
+    navigateToPendingReturn();
+  }, [navigateToPendingReturn]);
+
+  const onAlwaysDismiss = useCallback(async () => {
+    if (alwaysDismissBusy) return;
+    setAlwaysDismissBusy(true);
+    try {
+      await markWebInstallGateAlwaysDismissed(user?.id ?? null);
+      navigateToPendingReturn();
+    } finally {
+      setAlwaysDismissBusy(false);
     }
-    const w = window.innerWidth > 0 ? window.innerWidth : 0;
-    if (shouldBypassWebInstallGate(w)) {
-      router.replace('/');
-    } else {
-      window.location.reload();
-    }
-  }, [router]);
+  }, [alwaysDismissBusy, navigateToPendingReturn, user?.id]);
 
   return (
-    <>
-      <HeroHeatShimmer
-        intensity="low"
-        speed="slow"
-        tint="ember"
-        className="flex-1"
-        midground={<EmberParticlesLite density="low" maxOpacity={0.06} />}
-      >
-        <ScrollView
-          className="flex-1"
-          contentContainerClassName="grow px-5 py-10 pb-16"
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
-          <View className="max-w-md self-center w-full items-center">
-            <Image source={LOGO_SOURCE} style={{ width: 88, height: 88 }} resizeMode="contain" />
-            <Text className="text-white font-instrument-semibold text-2xl text-center mt-6">
-              Install Furnace
-            </Text>
-            <Text className="text-white/70 font-instrument text-base text-center mt-3 leading-6">
-              Furnace works best as an app on your phone. Add it to your home screen, then open it from
-              there.
-            </Text>
+    <BrandedStandalonePageShell showLogo={false} centerContent={false}>
+      <Image source={LOGO_SOURCE} style={{ width: 88, height: 88 }} resizeMode="contain" />
+      <Text className="text-white font-instrument-semibold text-2xl text-center mt-6">
+        Install Furnace
+      </Text>
+      <Text className="text-white/70 font-instrument text-base text-center mt-3 leading-6">
+        Furnace works best as an app on your phone. Add it to your home screen, then open it from
+        there.
+      </Text>
 
-            {canPromptInstall ? (
-              <View className="mt-6 w-full">
-                <Button variant="default" className="w-full" fullWidth onPress={onNativeInstall}>
-                  Install Furnace
-                </Button>
-                <Text className="text-white/50 font-instrument text-xs text-center mt-2 leading-4">
-                  This installs the real app (standalone). If you cancel, use the steps below — avoid shortcut-only
-                  “Add to Home screen” if you want full-screen without Chrome’s bar.
-                </Text>
-              </View>
-            ) : null}
+      {canPromptInstall ? (
+        <View className="mt-6 w-full">
+          <Button variant="default" className="w-full" fullWidth onPress={onNativeInstall}>
+            Install Furnace
+          </Button>
+          <Text className="text-white/50 font-instrument text-xs text-center mt-2 leading-4">
+            This installs the real app (standalone). If you cancel, use the steps below — avoid shortcut-only
+            “Add to Home screen” if you want full-screen without Chrome’s bar.
+          </Text>
+        </View>
+      ) : null}
 
-            {showAndroidChromiumMenuHint ? (
-              <Text className="text-white/55 font-instrument text-sm text-center mt-5 leading-5 px-1">
-                No button yet? Open ⋮ and choose{' '}
-                <Text className="text-white/80 font-instrument-semibold">Install app</Text> (not only “Add to Home
-                screen”, which can keep opening inside Chrome). Pull to refresh if the site just updated. If you opened
-                this link inside another app, switch to Chrome first — those in-app browsers usually can’t install.
-              </Text>
-            ) : null}
+      {showAndroidChromiumMenuHint ? (
+        <Text className="text-white/55 font-instrument text-sm text-center mt-5 leading-5 px-1">
+          No button yet? Open ⋮ and choose{' '}
+          <Text className="text-white/80 font-instrument-semibold">Install app</Text> (not only “Add to Home
+          screen”, which can keep opening inside Chrome). Pull to refresh if the site just updated. If you opened
+          this link inside another app, switch to Chrome first — those in-app browsers usually can’t install.
+        </Text>
+      ) : null}
 
-            <InstallStepsCard
-              platformLabel={clientEnv?.environmentTitle ?? 'This device · Browser'}
-              PlatformIcon={clientEnv ? cardPlatformIcon(clientEnv) : GlobeAltIcon}
-              steps={installSteps}
-            />
+      <InstallStepsCard
+        platformLabel={clientEnv?.environmentTitle ?? 'This device · Browser'}
+        PlatformIcon={clientEnv ? cardPlatformIcon(clientEnv) : GlobeAltIcon}
+        steps={installSteps}
+      />
 
-            <Text className="text-white/50 font-instrument text-sm text-center mt-6 leading-5">
-              On a wide screen (desktop mode), you can keep using Furnace in the browser without
-              installing.
-            </Text>
+      <Text className="text-white/50 font-instrument text-sm text-center mt-6 leading-5">
+        On a wide screen (desktop mode), you can keep using Furnace in the browser without
+        installing.
+      </Text>
 
-            <Button variant="default" className="mt-8 w-full" fullWidth onPress={tryContinue}>
-              {Platform.OS === 'web' && getIsWebStandalone()
-                ? 'Continue to Furnace'
-                : "I've installed — check again"}
-            </Button>
-          </View>
-        </ScrollView>
-      </HeroHeatShimmer>
-    </>
+      {showIosSafariSkip ? (
+        <View className="mt-8 w-full gap-3">
+          <Button variant="secondary" className="w-full" fullWidth onPress={onContinueInBrowser}>
+            Continue to app
+          </Button>
+          <Button
+            variant="link"
+            className="w-full"
+            fullWidth
+            disabled={alwaysDismissBusy}
+            onPress={() => {
+              void onAlwaysDismiss();
+            }}
+          >
+            Don't show this again
+          </Button>
+        </View>
+      ) : null}
+    </BrandedStandalonePageShell>
   );
 }

@@ -16,6 +16,10 @@ import {
   buildInboxThreadHref,
   parseInboxNotificationUrl,
 } from '@/lib/inbox/inboxRoutes';
+import {
+  buildAuthHrefWithReturnTo,
+  parseSafeAppReturnTo,
+} from '@/lib/web/installGateSkip';
 
 /** Same `type` string as public/sw.js postMessage fallback when WindowClient.navigate is missing. */
 const SW_NAVIGATE_MESSAGE_TYPE = 'furnace-notification-navigate';
@@ -222,9 +226,13 @@ export default function MainLayout() {
   useEffect(() => {
     if (loading) return;
     if (!user || isRecoverySession) {
-      router.replace('/auth');
+      const safeReturn =
+        Platform.OS === 'web' && typeof window !== 'undefined'
+          ? parseSafeAppReturnTo(`${window.location.pathname}${window.location.search}${window.location.hash}`)
+          : parseSafeAppReturnTo(pathname);
+      router.replace(buildAuthHrefWithReturnTo(safeReturn) as Href);
     }
-  }, [user, loading, isRecoverySession, router]);
+  }, [user, loading, isRecoverySession, router, pathname]);
 
   useEffect(() => {
     if (typeof document !== 'undefined') (document.activeElement as HTMLElement)?.blur();

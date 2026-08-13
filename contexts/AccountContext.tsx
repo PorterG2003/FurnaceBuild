@@ -29,6 +29,7 @@ import {
 } from '@/lib/supabase/services/platform';
 import { getUserHasPlatformAdminAccess } from '@/lib/supabase/services/user-access-flags';
 import type { AccountSyncSnapshot } from '@/lib/account/membershipActivation';
+import { syncWebInstallGateDismissedPreference } from '@/lib/web/installGateSkip';
 
 export type { AccountSyncSnapshot };
 
@@ -181,6 +182,10 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
     setPendingAmendment(null);
     setPlatformAdminAccess(cached.platformAdminAccess);
     accountDataLoadedForRef.current = canReuseScopedCache ? resolvedAccountId : null;
+    void syncWebInstallGateDismissedPreference(
+      cached.user.id,
+      cached.user.web_install_gate_dismissed_at,
+    );
   }, []);
 
   const resetState = useCallback(() => {
@@ -286,6 +291,11 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
         setPendingAmendment(result.pendingAmendment);
         setPlatformAdminAccess(result.platformAdminAccess);
         accountDataLoadedForRef.current = result.currentAccountId;
+
+        void syncWebInstallGateDismissedPreference(
+          result.user.id,
+          result.user.web_install_gate_dismissed_at,
+        );
 
         if (result.currentAccountId) {
           await savePreferredAccountId(authUserId, result.currentAccountId);

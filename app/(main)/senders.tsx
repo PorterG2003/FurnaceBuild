@@ -667,12 +667,14 @@ export default function SendersPage() {
       <UploadMailboxesCSVModal
         visible={showUploadCSVModal}
         onClose={() => setShowUploadCSVModal(false)}
-        onSuccess={async (created, failed) => {
+        onSuccess={async (created, updated, failed) => {
           await loadMailboxes();
-          if (created > 0) {
-            if (failed > 0) toast.success(`${created} mailboxes created; ${failed} failed`);
-            else toast.success(`${created} mailbox${created !== 1 ? 'es' : ''} created`);
-          } else if (failed > 0) toast.error('Failed to create mailboxes');
+          const parts: string[] = [];
+          if (created > 0) parts.push(`${created} created`);
+          if (updated > 0) parts.push(`${updated} updated`);
+          if (failed > 0) parts.push(`${failed} failed`);
+          if (created > 0 || updated > 0) toast.success(parts.join(', '));
+          else if (failed > 0) toast.error('Failed to import mailboxes');
         }}
         accountId={accountId ?? ''}
         userId={profile?.id ?? ''}

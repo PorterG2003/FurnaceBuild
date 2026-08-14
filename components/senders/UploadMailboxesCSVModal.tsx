@@ -5,9 +5,17 @@ import { BaseModal, ModalFooter } from '@/components/ui/modals';
 import { Button } from '@/components/ui/button';
 import { DataTable } from '@/components/ui/DataTable';
 import { MultiSegmentDial } from '@/components/ui/multi-segment-dial';
-import { createMailbox } from '@/lib/supabase/services';
+import { createMailbox, getMailboxesByAccount, updateMailbox } from '@/lib/supabase/services';
 import { testMailboxConnection } from '@/lib/services/email';
-import type { MailboxInsert } from '@/lib/supabase/types';
+import {
+  buildExistingMailboxEmailIndex,
+  getCsvCell,
+  normalizeMailboxEmail,
+  partitionMailboxCsvRows,
+  rowToMailboxInsert,
+  rowToMailboxUpdate,
+  type ExistingMailboxForUpsert,
+} from '@/lib/senders/csv-mailbox-upsert';
 
 type ConnectionTestResult =
   | { success: boolean; smtp: { success: boolean; error?: string }; imap: { success: boolean; error?: string }; message: string }
@@ -60,12 +68,6 @@ function parseCSV(csvText: string): Record<string, string>[] {
   });
 }
 
-function getCell(row: Record<string, string>, key: string): string {
-  const lower = key.toLowerCase();
-  const found = Object.keys(row).find((k) => k.toLowerCase() === lower);
-  return found != null ? (row[found] ?? '').trim() : '';
-}
-
 export interface ValidationError {
   rowIndex: number;
   message: string;
@@ -73,73 +75,38 @@ export interface ValidationError {
 
 function validateRow(row: Record<string, string>, rowIndex1Based: number): ValidationError | null {
   for (const col of REQUIRED_COLUMNS) {
-    const val = getCell(row, col);
+    const val = getCsvCell(row, col);
     if (!val) return { rowIndex: rowIndex1Based, message: `missing ${col}` };
   }
-  const smtpPort = getCell(row, 'smtp_port');
-  const imapPort = getCell(row, 'imap_port');
+  const smtpPort = getCsvCell(row, 'smtp_port');
+  const imapPort = getCsvCell(row, 'imap_port');
   if (smtpPort && (Number.isNaN(Number(smtpPort)) || Number(smtpPort) < 1 || Number(smtpPort) > 65535))
     return { rowIndex: rowIndex1Based, message: 'invalid smtp_port' };
   if (imapPort && (Number.isNaN(Number(imapPort)) || Number(imapPort) < 1 || Number(imapPort) > 65535))
     return { rowIndex: rowIndex1Based, message: 'invalid imap_port' };
-  const email = getCell(row, 'from_email');
+  const email = getCsvCell(row, 'from_email');
   if (email && !EMAIL_REGEX.test(email))
     return { rowIndex: rowIndex1Based, message: 'invalid from_email format' };
   return null;
 }
 
 function rowToTestParams(row: Record<string, string>) {
-  const password = getCell(row, 'password');
-  const imapPassword = getCell(row, 'imap_password');
-  const userName = getCell(row, 'user_name');
-  const imapUserName = getCell(row, 'imap_user_name');
+  const password = getCsvCell(row, 'password');
+  const imapPassword = getCsvCell(row, 'imap_password');
+  const userName = getCsvCell(row, 'user_name');
+  const imapUserName = getCsvCell(row, 'imap_user_name');
   return {
-    smtp_host: getCell(row, 'smtp_host'),
-    smtp_port: parseInt(getCell(row, 'smtp_port'), 10) || 587,
+    smtp_host: getCsvCell(row, 'smtp_host'),
+    smtp_port: parseInt(getCsvCell(row, 'smtp_port'), 10) || 587,
     smtp_username: userName,
     smtp_password: password,
     smtp_use_tls: true,
     smtp_use_ssl: false,
-    imap_host: getCell(row, 'imap_host'),
-    imap_port: parseInt(getCell(row, 'imap_port'), 10) || 993,
+    imap_host: getCsvCell(row, 'imap_host'),
+    imap_port: parseInt(getCsvCell(row, 'imap_port'), 10) || 993,
     imap_username: imapUserName || userName,
     imap_password: imapPassword || password,
     imap_use_ssl: true,
-  };
-}
-
-function rowToMailboxInsert(
-  row: Record<string, string>,
-  accountId: string,
-  userId: string
-): MailboxInsert {
-  const password = getCell(row, 'password');
-  const imapPassword = getCell(row, 'imap_password');
-  const userName = getCell(row, 'user_name');
-  const imapUserName = getCell(row, 'imap_user_name');
-  const maxPerDay = getCell(row, 'max_email_per_day');
-  return {
-    account_id: accountId,
-    user_id: userId,
-    email_address: getCell(row, 'from_email'),
-    display_name: getCell(row, 'from_name') || null,
-    signature: getCell(row, 'signature') || null,
-    provider: 'custom',
-    smtp_host: getCell(row, 'smtp_host'),
-    smtp_port: parseInt(getCell(row, 'smtp_port'), 10) || 587,
-    smtp_username: userName,
-    smtp_password: password,
-    smtp_use_tls: true,
-    smtp_use_ssl: false,
-    imap_host: getCell(row, 'imap_host'),
-    imap_port: parseInt(getCell(row, 'imap_port'), 10) || 993,
-    imap_username: imapUserName || userName,
-    imap_password: imapPassword || password,
-    imap_use_ssl: true,
-    status: 'connected',
-    min_gap_seconds: null,
-    daily_limit: maxPerDay ? parseInt(maxPerDay, 10) : null,
-    hourly_limit: null,
   };
 }
 
@@ -157,7 +124,7 @@ function downloadTemplate() {
 export interface UploadMailboxesCSVModalProps {
   visible: boolean;
   onClose: () => void;
-  onSuccess: (created: number, failed: number) => void;
+  onSuccess: (created: number, updated: number, failed: number) => void;
   accountId: string;
   userId: string;
 }
@@ -175,12 +142,24 @@ export function UploadMailboxesCSVModal({
   const [errors, setErrors] = useState<ValidationError[]>([]);
   const [creating, setCreating] = useState(false);
   const [createdCount, setCreatedCount] = useState(0);
+  const [updatedCount, setUpdatedCount] = useState(0);
   const [failedCount, setFailedCount] = useState(0);
   const [connectionResults, setConnectionResults] = useState<Record<number, ConnectionTestResult>>({});
   const [testingConnections, setTestingConnections] = useState(false);
+  const [existingMailboxes, setExistingMailboxes] = useState<ExistingMailboxForUpsert[] | null>(null);
+  const [existingLoadError, setExistingLoadError] = useState<string | null>(null);
 
   const validRows = rows.filter((_, i) => !errors.some((e) => e.rowIndex === i + 1));
   const validCount = validRows.length;
+  const existingIndex = existingMailboxes
+    ? buildExistingMailboxEmailIndex(existingMailboxes)
+    : new Map<string, string>();
+  const partitioned = existingMailboxes
+    ? partitionMailboxCsvRows(validRows, existingMailboxes)
+    : { toCreate: [] as typeof validRows, toUpdate: [] };
+  const createCount = partitioned.toCreate.length;
+  const updateCount = partitioned.toUpdate.length;
+  const existingReady = existingMailboxes != null && !existingLoadError;
 
   /** Table items: valid rows with their 1-based row index and connection result. */
   const previewTableItems = rows
@@ -189,6 +168,9 @@ export function UploadMailboxesCSVModal({
     .map((item) => ({
       ...item,
       connectionResult: connectionResults[item.rowIndex1Based],
+      action: existingIndex.has(normalizeMailboxEmail(getCsvCell(item.row, 'from_email')))
+        ? ('Update' as const)
+        : ('Create' as const),
     }));
 
   /** Connection pass counts for the multi-segment dial: both, SMTP only, IMAP only, both fail, testing. */
@@ -275,6 +257,36 @@ export function UploadMailboxesCSVModal({
     if (step === 0) hasAutoTestedRef.current = false;
   }, [step, validCount]);
 
+  useEffect(() => {
+    if (!visible || !accountId) {
+      setExistingMailboxes(null);
+      setExistingLoadError(null);
+      return;
+    }
+    let cancelled = false;
+    setExistingLoadError(null);
+    getMailboxesByAccount(accountId)
+      .then((mailboxes) => {
+        if (cancelled) return;
+        setExistingMailboxes(
+          mailboxes.map((mailbox) => ({
+            id: mailbox.id,
+            email_address: mailbox.email_address,
+            created_at: mailbox.created_at,
+            deleted_at: mailbox.deleted_at,
+          }))
+        );
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setExistingMailboxes(null);
+        setExistingLoadError(err instanceof Error ? err.message : 'Failed to load existing mailboxes');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [visible, accountId]);
+
   const handleFileSelect = () => {
     if (Platform.OS !== 'web') {
       return;
@@ -304,7 +316,7 @@ export function UploadMailboxesCSVModal({
         });
         const emailToRows = new Map<string, number[]>();
         data.forEach((row, i) => {
-          const email = getCell(row, 'from_email').toLowerCase();
+          const email = getCsvCell(row, 'from_email').toLowerCase();
           if (!email) return;
           const existing = emailToRows.get(email);
           if (existing) existing.push(i + 1);
@@ -330,13 +342,16 @@ export function UploadMailboxesCSVModal({
   };
 
   const handleCreate = async () => {
-    if (!accountId || !userId || validCount === 0) return;
+    if (!accountId || !userId || validCount === 0 || !existingMailboxes) return;
     setCreating(true);
     setCreatedCount(0);
+    setUpdatedCount(0);
     setFailedCount(0);
     let created = 0;
+    let updated = 0;
     let failed = 0;
-    for (const row of validRows) {
+    const { toCreate, toUpdate } = partitionMailboxCsvRows(validRows, existingMailboxes);
+    for (const row of toCreate) {
       try {
         await createMailbox(rowToMailboxInsert(row, accountId, userId));
         created++;
@@ -346,9 +361,19 @@ export function UploadMailboxesCSVModal({
         setFailedCount(failed);
       }
     }
+    for (const { row, mailboxId } of toUpdate) {
+      try {
+        await updateMailbox(mailboxId, rowToMailboxUpdate(row));
+        updated++;
+        setUpdatedCount(updated);
+      } catch {
+        failed++;
+        setFailedCount(failed);
+      }
+    }
     setCreating(false);
-    onSuccess(created, failed);
-    if (created > 0) onClose();
+    onSuccess(created, updated, failed);
+    if (created > 0 || updated > 0) handleClose();
   };
 
   const handleClose = () => {
@@ -358,6 +383,7 @@ export function UploadMailboxesCSVModal({
     setRows([]);
     setErrors([]);
     setCreatedCount(0);
+    setUpdatedCount(0);
     setFailedCount(0);
     setConnectionResults({});
     onClose();
@@ -389,6 +415,17 @@ export function UploadMailboxesCSVModal({
       ? 'Add multiple mailboxes from a CSV file'
       : 'Preview and validate';
 
+  const importDisabled = creating || validCount === 0 || testingConnections || !existingReady;
+  const importLabel = creating
+    ? `Importing... ${createdCount + updatedCount}/${validCount}`
+    : !existingReady
+      ? 'Import'
+      : createCount > 0 && updateCount > 0
+        ? `Create ${createCount}, update ${updateCount}`
+        : updateCount > 0
+          ? `Update ${updateCount} mailbox${updateCount !== 1 ? 'es' : ''}`
+          : `Create ${createCount} mailbox${createCount !== 1 ? 'es' : ''}`;
+
   const footer =
     step === 0 ? (
       <ModalFooter>
@@ -414,9 +451,9 @@ export function UploadMailboxesCSVModal({
         </Button>
         <Button
           onPress={handleCreate}
-          disabled={creating || validCount === 0 || testingConnections}
+          disabled={importDisabled}
         >
-          {creating ? `Creating... ${createdCount}/${validCount}` : `Create ${validCount} mailbox${validCount !== 1 ? 'es' : ''}`}
+          {importLabel}
         </Button>
       </ModalFooter>
     );
@@ -432,9 +469,9 @@ export function UploadMailboxesCSVModal({
       <ModalFooter>
         <Button
           onPress={handleCreate}
-          disabled={creating || validCount === 0 || testingConnections}
+          disabled={importDisabled}
         >
-          {creating ? `Creating... ${createdCount}/${validCount}` : `Create ${validCount} mailbox${validCount !== 1 ? 'es' : ''}`}
+          {importLabel}
         </Button>
       </ModalFooter>
     );
@@ -478,7 +515,11 @@ export function UploadMailboxesCSVModal({
         <View className="gap-4">
           <View className="flex-row flex-wrap items-center gap-2">
             <Text className="text-white font-instrument-medium">
-              {validCount} valid row{validCount !== 1 ? 's' : ''}
+              {existingReady
+                ? `${createCount} to create · ${updateCount} to update`
+                : existingLoadError
+                  ? 'Could not load existing mailboxes'
+                  : 'Loading existing mailboxes…'}
               {errors.length > 0 && ` · ${errors.length} error${errors.length !== 1 ? 's' : ''}`}
             </Text>
           </View>
@@ -525,6 +566,11 @@ export function UploadMailboxesCSVModal({
               </View>
             </View>
           )}
+          {existingLoadError && (
+            <View className="bg-red-500/10 border border-red-500/30 rounded-lg p-3">
+              <Text className="text-red-400 text-sm">{existingLoadError}</Text>
+            </View>
+          )}
           {errors.length > 0 && (
             <View className="bg-red-500/10 border border-red-500/30 rounded-lg p-3">
               {errors.slice(0, 10).map((e, i) => (
@@ -547,7 +593,17 @@ export function UploadMailboxesCSVModal({
                   flex: 1,
                   render: (item) => (
                     <Text className="text-white text-sm" numberOfLines={1}>
-                      {getCell(item.row, 'from_email') || '—'}
+                      {getCsvCell(item.row, 'from_email') || '—'}
+                    </Text>
+                  ),
+                },
+                {
+                  key: 'action',
+                  label: 'Action',
+                  flex: 0.5,
+                  render: (item) => (
+                    <Text className="text-gray-300 text-sm">
+                      {existingReady ? item.action : '—'}
                     </Text>
                   ),
                 },

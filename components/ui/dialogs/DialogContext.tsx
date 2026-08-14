@@ -54,13 +54,22 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
     setState({ kind: 'access', options });
   }, []);
 
-  const closeDialog = useCallback(() => {
+  /** Dismiss only (X / backdrop / hardware back). Does not run confirm onCancel. */
+  const dismissDialog = useCallback(() => {
     setState((current) => {
-      current?.kind === 'confirm'
-        ? current.options.onCancel?.()
-        : current?.kind === 'access'
-          ? current.options.onClose?.()
-          : undefined;
+      if (current?.kind === 'access') {
+        current.options.onClose?.();
+      }
+      return null;
+    });
+  }, []);
+
+  /** Cancel/Discard button: run onCancel then clear. */
+  const handleConfirmCancel = useCallback(() => {
+    setState((current) => {
+      if (current?.kind === 'confirm') {
+        current.options.onCancel?.();
+      }
       return null;
     });
   }, []);
@@ -96,9 +105,9 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
     () => ({
       showConfirm,
       showAccessDialog,
-      closeDialog,
+      closeDialog: dismissDialog,
     }),
-    [closeDialog, showAccessDialog, showConfirm],
+    [dismissDialog, showAccessDialog, showConfirm],
   );
 
   return (
@@ -107,7 +116,8 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
       {state?.kind === 'confirm' ? (
         <ConfirmModal
           visible={true}
-          onClose={closeDialog}
+          onClose={dismissDialog}
+          onCancel={handleConfirmCancel}
           onConfirm={handleConfirm}
           title={state.options.title}
           message={state.options.message}
@@ -119,7 +129,7 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
       {state?.kind === 'access' ? (
         <AccessIssueDialog
           visible={true}
-          onClose={closeDialog}
+          onClose={dismissDialog}
           title={state.options.title}
           message={state.options.message}
           wide={state.options.wide}

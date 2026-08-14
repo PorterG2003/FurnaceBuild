@@ -7,6 +7,11 @@ export interface ConfirmModalProps {
   visible: boolean;
   onClose: () => void;
   onConfirm: () => void;
+  /**
+   * Cancel/Discard button handler. When omitted, the cancel button uses `onClose`
+   * (same as X / backdrop). Pass separately when dismiss should not discard.
+   */
+  onCancel?: () => void;
   title: string;
   message: string;
   confirmLabel?: string;
@@ -22,6 +27,7 @@ export function ConfirmModal({
   visible,
   onClose,
   onConfirm,
+  onCancel,
   title,
   message,
   confirmLabel = 'Confirm',
@@ -30,6 +36,8 @@ export function ConfirmModal({
   maxWidth = 'sm',
   descriptionNumberOfLines,
 }: ConfirmModalProps) {
+  const handleCancel = onCancel ?? onClose;
+
   const confirmButton =
     confirmVariant === 'destructive' ? (
       <Pressable
@@ -59,7 +67,7 @@ export function ConfirmModal({
 
   const footer = (
     <ModalFooter layout="inline">
-      <Button fullWidth onPress={onClose} variant="secondary">
+      <Button fullWidth onPress={handleCancel} variant="secondary">
         {cancelLabel}
       </Button>
       {confirmButton}

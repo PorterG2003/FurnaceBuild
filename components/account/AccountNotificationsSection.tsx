@@ -22,6 +22,8 @@ import {
 import {
   subscribeWebPush,
   getWebPushVapidPublicKey,
+  resolveWebPushDeviceStatus,
+  type WebPushDeviceStatus,
 } from '@/lib/notifications/webPushClient';
 import { useOnboardingOptional } from '@/components/onboarding/context';
 import { useOnboardingTarget } from '@/components/onboarding/useOnboardingTarget';
@@ -90,6 +92,8 @@ export function AccountNotificationsSection({
   const [prefs, setPrefs] = useState<PrefRow[]>(initialPrefs ?? []);
   const [pushBusy, setPushBusy] = useState(false);
   const [subCount, setSubCount] = useState(initialSubCount ?? 0);
+  const [activeEndpoints, setActiveEndpoints] = useState<string[]>([]);
+  const [deviceStatus, setDeviceStatus] = useState<WebPushDeviceStatus | null>(null);
   const [optimisticByEvent, setOptimisticByEvent] = useState<
     Record<string, Partial<Record<PrefChannel, boolean>>>
   >({});
@@ -100,6 +104,19 @@ export function AccountNotificationsSection({
     []
   );
 
+  const refreshDeviceStatus = useCallback(async (endpoints: string[]) => {
+    if (Platform.OS !== 'web') {
+      setDeviceStatus(null);
+      return;
+    }
+    try {
+      const status = await resolveWebPushDeviceStatus(endpoints);
+      setDeviceStatus(status);
+    } catch (e) {
+      console.error(e);
+    }
+  }, []);
+
   const load = useCallback(async (options?: { silent?: boolean }) => {
     const silent = options?.silent ?? false;
     if (!silent) setLoading(true);
@@ -108,14 +125,17 @@ export function AccountNotificationsSection({
         getNotificationPreferences(accountId),
         listActivePushSubscriptions(),
       ]);
+      const endpoints = subs.map((s) => s.endpoint);
       setPrefs(prefRows);
       setSubCount(subs.length);
+      setActiveEndpoints(endpoints);
+      await refreshDeviceStatus(endpoints);
     } catch (e) {
       console.error(e);
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [accountId]);
+  }, [accountId, refreshDeviceStatus]);
 
   useEffect(() => {
     if (hasInitialData) return;
@@ -129,6 +149,33 @@ export function AccountNotificationsSection({
       setLoading(false);
     }
   }, [initialPrefs, initialSubCount]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    // When parent supplied prefs/subCount, still resolve this-browser status once we have endpoints.
+    void (async () => {
+      try {
+        const subs = await listActivePushSubscriptions();
+        const endpoints = subs.map((s) => s.endpoint);
+        setActiveEndpoints(endpoints);
+        setSubCount(subs.length);
+        await refreshDeviceStatus(endpoints);
+      } catch (e) {
+        console.error(e);
+      }
+    })();
+  }, [accountId, refreshDeviceStatus]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof document === 'undefined') return;
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        void refreshDeviceStatus(activeEndpoints);
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, [activeEndpoints, refreshDeviceStatus]);
 
   useEffect(() => {
     setOptimisticByEvent({});
@@ -214,6 +261,7 @@ export function AccountNotificationsSection({
     try {
       const sub = await subscribeWebPush();
       if (!sub) {
+        await refreshDeviceStatus(activeEndpoints);
         toast.warning('We need permission to show alerts when Furnace is in the background.');
         return;
       }
@@ -228,6 +276,7 @@ export function AccountNotificationsSection({
       await load({ silent: true });
       toast.success('This device can now show Furnace alerts.');
     } catch (e) {
+      await refreshDeviceStatus(activeEndpoints);
       toast.error(e instanceof Error ? e.message : 'Something went wrong');
     } finally {
       setPushBusy(false);
@@ -235,6 +284,18 @@ export function AccountNotificationsSection({
   };
 
   const headerRowMb = isMobile ? 'mb-3' : 'mb-4';
+  const thisDeviceEnabled = deviceStatus?.kind === 'enabled';
+  const deviceSetupDetail =
+    deviceStatus?.detail ??
+    'Allow Furnace to send alerts on this browser so you can use Device Push Notification below.';
+  const deviceSetupLabel = deviceStatus?.label ?? 'Checking…';
+  const deviceCtaLabel = pushBusy
+    ? 'Working…'
+    : thisDeviceEnabled
+      ? 'Update device permission'
+      : deviceStatus?.kind === 'local_only' || deviceStatus?.kind === 'permission_granted_unregistered'
+        ? 'Register this device'
+        : 'Allow alerts on this device';
 
   return (
     <Card ref={accountNotificationsRef} variant={cardVariant} className={cardClassName ?? ''}>
@@ -257,13 +318,29 @@ export function AccountNotificationsSection({
       {Platform.OS === 'web' ? (
         <View className={`border-b border-[#2A2A2A] pb-4 ${headerRowMb}`}>
           <Text className="text-white text-sm font-instrument-medium mb-1">Device setup</Text>
-          <Text className="text-gray-500 text-xs mb-3 leading-5">
-            {subCount > 0
-              ? 'This browser is registered for your user. Enable Device Push Notification per category below.'
-              : 'Allow Furnace to send alerts on this browser so you can use Device Push Notification below.'}
-          </Text>
-          <Button size="sm" onPress={() => void enableDeviceAlerts()} disabled={pushBusy}>
-            {pushBusy ? 'Working…' : subCount > 0 ? 'Update device permission' : 'Allow alerts on this device'}
+          <View className="flex-row items-center gap-2 mb-1">
+            <View
+              className={`h-2 w-2 rounded-full ${
+                thisDeviceEnabled
+                  ? 'bg-emerald-400'
+                  : deviceStatus?.kind === 'permission_denied' || deviceStatus?.kind === 'unsupported'
+                    ? 'bg-red-400'
+                    : 'bg-amber-400'
+              }`}
+            />
+            <Text className="text-gray-300 text-xs font-instrument-medium">{deviceSetupLabel}</Text>
+          </View>
+          <Text className="text-gray-500 text-xs mb-3 leading-5">{deviceSetupDetail}</Text>
+          <Button
+            size="sm"
+            onPress={() => void enableDeviceAlerts()}
+            disabled={
+              pushBusy ||
+              deviceStatus?.kind === 'unsupported' ||
+              deviceStatus?.kind === 'permission_denied'
+            }
+          >
+            {deviceCtaLabel}
           </Button>
         </View>
       ) : (

@@ -78,6 +78,41 @@ export function buildInboxNotificationActionUrl(threadId: string): string {
   return `/inbox/${encodeURIComponent(threadId)}`;
 }
 
+/** Resolve display name for the account; mirrors UI fallback to "Unnamed". */
+export async function resolveAccountDisplayName(
+  supabase: SupabaseClient,
+  accountId: string
+): Promise<string> {
+  const { data, error } = await supabase
+    .from('accounts')
+    .select('name')
+    .eq('id', accountId)
+    .maybeSingle();
+
+  if (error) {
+    console.error('[processNotificationEvent] accounts lookup failed', accountId, error);
+  }
+  const name = typeof data?.name === 'string' ? data.name.trim() : '';
+  return name.length > 0 ? name : 'Unnamed';
+}
+
+/**
+ * Web push title/body: account as title; sender (+ optional preview) as body.
+ * In-app keeps sender as title and preview as body.
+ */
+export function buildWebPushContent(params: {
+  accountName: string;
+  fromDisplay: string;
+  previewBody: string;
+}): { title: string; bodyText: string } {
+  const { accountName, fromDisplay, previewBody } = params;
+  const title = accountName.trim().length > 0 ? accountName.trim() : 'Unnamed';
+  const bodyText = previewBody
+    ? truncateText(`${fromDisplay}: ${previewBody}`, MAX_NOTIFICATION_BODY_CHARS)
+    : fromDisplay;
+  return { title, bodyText };
+}
+
 export async function listActivePushSubscriptionsForUser(
   supabase: SupabaseClient,
   userId: string
@@ -260,6 +295,8 @@ export async function processNotificationRecord(params: {
       return {};
     }
 
+    const accountName = await resolveAccountDisplayName(supabase, accountId);
+
     const { data: emailMessage } = await supabase
       .from('email_messages')
       .select('body_text, body_html')
@@ -269,14 +306,21 @@ export async function processNotificationRecord(params: {
     const fromDisplay = payload.from_name?.trim()
       ? payload.from_name.trim()
       : payload.from_email;
-    const title = fromDisplay;
+    // In-app: sender as title, message preview as body.
+    const inAppTitle = fromDisplay;
     const previewRaw = previewNewMessagePlainText(
       emailMessage?.body_text ?? null,
       emailMessage?.body_html ?? null
     );
-    const bodyText = previewRaw
+    const inAppBody = previewRaw
       ? truncateText(previewRaw, MAX_NOTIFICATION_BODY_CHARS)
       : '';
+    // Web push: account name as title; sender (+ preview) as body.
+    const webPush = buildWebPushContent({
+      accountName,
+      fromDisplay,
+      previewBody: inAppBody,
+    });
     const actionUrl = buildInboxNotificationActionUrl(payload.thread_id);
 
     let hardFailure = false;
@@ -323,8 +367,8 @@ export async function processNotificationRecord(params: {
           user_id: userId,
           account_id: accountId,
           event_id: eventId,
-          title,
-          body: bodyText,
+          title: inAppTitle,
+          body: inAppBody,
           status: 'unread',
           action_url: actionUrl,
         })
@@ -347,8 +391,8 @@ export async function processNotificationRecord(params: {
           accountId,
           notificationId: notif.id,
           eventId,
-          title,
-          bodyText,
+          title: webPush.title,
+          bodyText: webPush.bodyText,
           actionUrl,
           webOrigin,
           sendNotification,

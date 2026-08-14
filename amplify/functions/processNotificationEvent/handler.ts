@@ -97,15 +97,20 @@ export async function resolveAccountDisplayName(
 }
 
 /**
- * Web push title/body: account as title; sender (+ optional preview) as body.
- * In-app keeps sender as title and preview as body.
+ * Web push title/body.
+ * Multi-account users: account as title; sender (+ optional preview) as body.
+ * Single-account users: sender as title; preview as body (same as in-app).
  */
 export function buildWebPushContent(params: {
   accountName: string;
   fromDisplay: string;
   previewBody: string;
+  multiAccount: boolean;
 }): { title: string; bodyText: string } {
-  const { accountName, fromDisplay, previewBody } = params;
+  const { accountName, fromDisplay, previewBody, multiAccount } = params;
+  if (!multiAccount) {
+    return { title: fromDisplay, bodyText: previewBody };
+  }
   const title = accountName.trim().length > 0 ? accountName.trim() : 'Unnamed';
   const bodyText = previewBody
     ? truncateText(`${fromDisplay}: ${previewBody}`, MAX_NOTIFICATION_BODY_CHARS)
@@ -144,6 +149,23 @@ export async function listAccountMemberUserIds(
     .map((row) => (row as { user_id: string | null }).user_id)
     .filter((id): id is string => typeof id === 'string' && id.length > 0);
   return [...new Set(ids)];
+}
+
+/** How many workspaces this user belongs to (for push title formatting). */
+export async function countUserAccountMemberships(
+  supabase: SupabaseClient,
+  userId: string
+): Promise<number> {
+  const { count, error } = await supabase
+    .from('account_users')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', userId);
+
+  if (error) {
+    console.error('[processNotificationEvent] account membership count failed', userId, error);
+    return 1;
+  }
+  return typeof count === 'number' && count > 0 ? count : 1;
 }
 
 export async function sendWebPushDeliveries(params: {
@@ -315,13 +337,8 @@ export async function processNotificationRecord(params: {
     const inAppBody = previewRaw
       ? truncateText(previewRaw, MAX_NOTIFICATION_BODY_CHARS)
       : '';
-    // Web push: account name as title; sender (+ preview) as body.
-    const webPush = buildWebPushContent({
-      accountName,
-      fromDisplay,
-      previewBody: inAppBody,
-    });
     const actionUrl = buildInboxNotificationActionUrl(payload.thread_id);
+    const membershipCountByUser = new Map<string, number>();
 
     let hardFailure = false;
 
@@ -385,6 +402,17 @@ export async function processNotificationRecord(params: {
       }
 
       if (webPushReady && wantPush && notif?.id) {
+        let membershipCount = membershipCountByUser.get(userId);
+        if (membershipCount === undefined) {
+          membershipCount = await countUserAccountMemberships(supabase, userId);
+          membershipCountByUser.set(userId, membershipCount);
+        }
+        const webPush = buildWebPushContent({
+          accountName,
+          fromDisplay,
+          previewBody: inAppBody,
+          multiAccount: membershipCount > 1,
+        });
         await sendWebPushDeliveries({
           supabase,
           userId,

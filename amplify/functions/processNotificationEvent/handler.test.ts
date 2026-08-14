@@ -28,6 +28,8 @@ function createFakeSupabase(params?: {
   /** When set, overrides global prefs per user_id. */
   prefsByUser?: Record<string, MemberPrefs>;
   memberUserIds?: string[];
+  /** Membership account counts keyed by user_id (default 1 = single-account). */
+  membershipCountByUser?: Record<string, number>;
   /** Existing notification rows keyed by `${eventId}:${userId}`. */
   existingByUser?: Record<string, { id: string }>;
   notificationEvent?: Record<string, unknown> | null;
@@ -41,6 +43,7 @@ function createFakeSupabase(params?: {
   const pushSubscriptionEqCalls: Array<[string, unknown]> = [];
   const pushSubscriptionIsCalls: Array<[string, unknown]> = [];
   const memberUserIds = params?.memberUserIds ?? ['user-1'];
+  const membershipCountByUser = params?.membershipCountByUser ?? {};
   const prefsByUser = params?.prefsByUser ?? {};
   const existingByUser: Record<string, { id: string }> = { ...(params?.existingByUser ?? {}) };
   let notifSeq = 0;
@@ -80,6 +83,7 @@ function createFakeSupabase(params?: {
     pushSubscriptionEqCalls,
     pushSubscriptionIsCalls,
     memberUserIds,
+    membershipCountByUser,
     existingByUser,
   };
 
@@ -139,9 +143,16 @@ function createFakeSupabase(params?: {
 
       if (table === 'account_users') {
         return {
-          select() {
+          select(_columns?: string, options?: { count?: string; head?: boolean }) {
+            const headCount = options?.count === 'exact' && options?.head === true;
             return {
               async eq(column: string, value: unknown) {
+                if (headCount) {
+                  assert.equal(column, 'user_id');
+                  const userId = String(value);
+                  const count = state.membershipCountByUser[userId] ?? 1;
+                  return { data: null, count, error: null };
+                }
                 assert.equal(column, 'account_id');
                 assert.equal(value, 'acct-1');
                 return {
@@ -306,23 +317,37 @@ test('buildInboxNotificationActionUrl is path only', () => {
   assert.equal(buildInboxNotificationActionUrl('thread-1'), '/inbox/thread-1');
 });
 
-test('buildWebPushContent uses account title and sender:preview body', () => {
+test('buildWebPushContent uses account title for multi-account users', () => {
   assert.deepEqual(
     buildWebPushContent({
       accountName: 'Acme Workspace',
       fromDisplay: 'Person Example',
       previewBody: 'Body preview text',
+      multiAccount: true,
     }),
     { title: 'Acme Workspace', bodyText: 'Person Example: Body preview text' }
   );
 });
 
-test('buildWebPushContent falls back to sender-only body when preview is empty', () => {
+test('buildWebPushContent keeps sender title for single-account users', () => {
+  assert.deepEqual(
+    buildWebPushContent({
+      accountName: 'Acme Workspace',
+      fromDisplay: 'Person Example',
+      previewBody: 'Body preview text',
+      multiAccount: false,
+    }),
+    { title: 'Person Example', bodyText: 'Body preview text' }
+  );
+});
+
+test('buildWebPushContent falls back to sender-only body when multi-account preview is empty', () => {
   assert.deepEqual(
     buildWebPushContent({
       accountName: '  ',
       fromDisplay: 'person@example.com',
       previewBody: '',
+      multiAccount: true,
     }),
     { title: 'Unnamed', bodyText: 'person@example.com' }
   );
@@ -354,9 +379,39 @@ test('processNotificationRecord still inserts an in-app notification when web pu
   assert.equal(state.notificationsInserted[0]?.action_url, '/inbox/thread-1');
 });
 
-test('processNotificationRecord uses account name for web push title and sender in body', async () => {
+test('processNotificationRecord keeps legacy push format for single-account users', async () => {
   const { supabase, state } = createFakeSupabase({
     account: { id: 'acct-1', name: 'Acme Workspace' },
+    membershipCountByUser: { 'user-1': 1 },
+    pushSubscriptions: [
+      { id: 'sub-1', endpoint: 'https://push.example/1', p256dh: 'p1', auth: 'a1', revoked_at: null },
+    ],
+  });
+  const pushPayloads: string[] = [];
+
+  const result = await processNotificationRecord({
+    record: { body: JSON.stringify({ eventId: 'evt-1' }), messageId: 'msg-1' },
+    supabase: supabase as any,
+    webPushReady: true,
+    webOrigin: 'https://build.getfurnace.io',
+    async sendNotification(_sub, payload) {
+      pushPayloads.push(String(payload));
+    },
+  });
+
+  assert.deepEqual(result, {});
+  assert.equal(state.notificationsInserted[0]?.title, 'Person Example');
+  assert.equal(state.notificationsInserted[0]?.body, 'Body preview text');
+  assert.equal(pushPayloads.length, 1);
+  const parsed = JSON.parse(pushPayloads[0]!);
+  assert.equal(parsed.title, 'Person Example');
+  assert.equal(parsed.body, 'Body preview text');
+});
+
+test('processNotificationRecord uses account name for web push when user has multiple accounts', async () => {
+  const { supabase, state } = createFakeSupabase({
+    account: { id: 'acct-1', name: 'Acme Workspace' },
+    membershipCountByUser: { 'user-1': 2 },
     pushSubscriptions: [
       { id: 'sub-1', endpoint: 'https://push.example/1', p256dh: 'p1', auth: 'a1', revoked_at: null },
     ],
@@ -382,9 +437,10 @@ test('processNotificationRecord uses account name for web push title and sender 
   assert.equal(parsed.body, 'Person Example: Body preview text');
 });
 
-test('processNotificationRecord push body is sender-only when email has no preview', async () => {
+test('processNotificationRecord push body is sender-only when multi-account email has no preview', async () => {
   const { supabase } = createFakeSupabase({
     emailMessage: { body_text: null, body_html: null },
+    membershipCountByUser: { 'user-1': 3 },
     pushSubscriptions: [
       { id: 'sub-1', endpoint: 'https://push.example/1', p256dh: 'p1', auth: 'a1', revoked_at: null },
     ],
@@ -404,6 +460,43 @@ test('processNotificationRecord push body is sender-only when email has no previ
   const parsed = JSON.parse(pushPayloads[0]!);
   assert.equal(parsed.title, 'Acme Workspace');
   assert.equal(parsed.body, 'Person Example');
+});
+
+test('processNotificationRecord mixes push formats for single and multi-account members', async () => {
+  const { supabase } = createFakeSupabase({
+    memberUserIds: ['single-user', 'multi-user'],
+    membershipCountByUser: { 'single-user': 1, 'multi-user': 2 },
+    prefsByUser: {
+      'single-user': {
+        inApp: { enabled: true, frequency: 'instant' },
+        webPush: { enabled: true, frequency: 'instant' },
+      },
+      'multi-user': {
+        inApp: { enabled: true, frequency: 'instant' },
+        webPush: { enabled: true, frequency: 'instant' },
+      },
+    },
+    pushSubscriptions: [
+      { id: 'sub-1', endpoint: 'https://push.example/1', p256dh: 'p1', auth: 'a1', revoked_at: null },
+    ],
+  });
+  const pushPayloads: Array<{ title: string; body: string }> = [];
+
+  await processNotificationRecord({
+    record: { body: JSON.stringify({ eventId: 'evt-1' }), messageId: 'msg-1' },
+    supabase: supabase as any,
+    webPushReady: true,
+    webOrigin: 'https://build.getfurnace.io',
+    async sendNotification(_sub, payload) {
+      pushPayloads.push(JSON.parse(String(payload)) as { title: string; body: string });
+    },
+  });
+
+  assert.equal(pushPayloads.length, 2);
+  assert.equal(pushPayloads[0]?.title, 'Person Example');
+  assert.equal(pushPayloads[0]?.body, 'Body preview text');
+  assert.equal(pushPayloads[1]?.title, 'Acme Workspace');
+  assert.equal(pushPayloads[1]?.body, 'Person Example: Body preview text');
 });
 
 test('processNotificationRecord fans out to every account member with their own prefs', async () => {

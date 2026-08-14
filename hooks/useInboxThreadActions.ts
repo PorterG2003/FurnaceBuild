@@ -39,7 +39,7 @@ export interface UseInboxThreadActionsParams {
   messages: EmailMessage[];
   setThreads: React.Dispatch<React.SetStateAction<EmailThread[]>>;
   loadThreads: (options?: { append?: boolean }) => Promise<void>;
-  loadMessages: (threadId: string, options?: { silent?: boolean }) => Promise<void>;
+  loadMessages: (threadId: string, options?: { silent?: boolean; force?: boolean }) => Promise<void>;
   loadBlockList: () => Promise<void>;
   setCategory: (category: string | null) => Promise<void>;
   openReplyComposer: (message: EmailMessage) => void;

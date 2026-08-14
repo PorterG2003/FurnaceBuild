@@ -38,6 +38,7 @@ import { buildReplaceLeadPrefill } from '@/lib/inbox/replaceLeadPrefill';
 import { parseOutOfOfficeReturnDate } from '@/lib/inbox/parseOutOfOfficeReturnDate';
 import { parseSmartHandlingMetadata } from '@/lib/inbox/smartHandling';
 import { resolveThreadStatusCallout } from '@/lib/inbox/threadStatusCallout';
+import { shouldLoadOlderMessagesOnScroll } from '@/lib/inbox/scrollPagination';
 import { closeConversation, reopenConversation, updateThreadCategory } from '@/lib/supabase/services';
 import {
   buildInboxInternalThreadHref,
@@ -190,6 +191,8 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
     messagesLoading,
     messagesLoadedForThreadId,
     messagesError,
+    hasOlderMessages,
+    loadingOlderMessages,
     refreshing,
     threadSearchQuery,
     mailboxFilterId,
@@ -223,6 +226,8 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
     filterButtonRef,
     loadThreads,
     loadMessages,
+    loadOlderMessages,
+    prefetchMessages,
     loadMoreThreads,
     handleRefresh,
     markThreadReadOptimistic,
@@ -372,12 +377,13 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
 
   const handleSelectThread = useCallback(
     (threadId: string) => {
+      prefetchMessages(threadId);
       const href = buildInboxInternalThreadHref(threadId);
       markThreadReadOptimistic(threadId);
       internalNavigationRef.current = true;
       router.replace(href as Href);
     },
-    [markThreadReadOptimistic, router]
+    [markThreadReadOptimistic, prefetchMessages, router]
   );
 
   const {
@@ -483,7 +489,9 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
 
   const messagesScrollViewRef = useRef<ScrollView>(null);
   const lastContentHeightRef = useRef(0);
-  const prevMessagesLengthRef = useRef(0);
+  const scrollOffsetYRef = useRef(0);
+  const preserveScrollOnPrependRef = useRef(false);
+  const prevNewestMessageIdRef = useRef<string | null>(null);
   const prevSelectedThreadIdRef = useRef<string | null>(null);
   const autoScrollArmedRef = useRef(false);
   const selectedThreadIdRef = useRef(selectedThreadId);
@@ -779,7 +787,43 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
     messagesScrollViewRef.current?.scrollToEnd({ animated: true });
   }, []);
 
+  const handleLoadOlderMessages = useCallback(() => {
+    if (!hasOlderMessages || loadingOlderMessages) return;
+    preserveScrollOnPrependRef.current = true;
+    void loadOlderMessages();
+  }, [hasOlderMessages, loadOlderMessages, loadingOlderMessages]);
+
+  const onMessagesScroll = useCallback(
+    (event: { nativeEvent: { contentOffset: { y: number } } }) => {
+      const offsetY = event.nativeEvent.contentOffset.y;
+      scrollOffsetYRef.current = offsetY;
+      if (
+        shouldLoadOlderMessagesOnScroll({
+          offsetY,
+          hasOlder: hasOlderMessages,
+          loading: loadingOlderMessages,
+        })
+      ) {
+        handleLoadOlderMessages();
+      }
+    },
+    [handleLoadOlderMessages, hasOlderMessages, loadingOlderMessages],
+  );
+
   const onContentSizeChange = useCallback((_w: number, h: number) => {
+    if (preserveScrollOnPrependRef.current) {
+      const previousHeight = lastContentHeightRef.current;
+      const delta = h - previousHeight;
+      lastContentHeightRef.current = h;
+      preserveScrollOnPrependRef.current = false;
+      if (delta > 0) {
+        messagesScrollViewRef.current?.scrollTo({
+          y: scrollOffsetYRef.current + delta,
+          animated: false,
+        });
+      }
+      return;
+    }
     const shouldAutoScroll = autoScrollArmedRef.current;
     if (shouldAutoScroll) {
       autoScrollArmedRef.current = false;
@@ -944,15 +988,16 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
 
   useEffect(() => {
     const previousThreadId = prevSelectedThreadIdRef.current;
-    const previousLength = prevMessagesLengthRef.current;
+    const previousNewestId = prevNewestMessageIdRef.current;
+    const newestId = messages.length > 0 ? messages[messages.length - 1]!.id : null;
     const threadChanged = previousThreadId !== selectedThreadId;
-    const messagesIncreased = messages.length > previousLength;
-    if (threadChanged || messagesIncreased) {
+    const newestChanged = newestId != null && newestId !== previousNewestId;
+    if (threadChanged || newestChanged) {
       autoScrollArmedRef.current = true;
     }
-    prevMessagesLengthRef.current = messages.length;
+    prevNewestMessageIdRef.current = newestId;
     prevSelectedThreadIdRef.current = selectedThreadId;
-  }, [messages.length, selectedThreadId, pendingReplies.length, composerMode]);
+  }, [messages, selectedThreadId, pendingReplies.length, composerMode]);
 
   const handleFetchAttachmentBlob = useCallback(
     async (emailMessageId: string, attachmentIndex: number): Promise<Blob | null> => {
@@ -1097,6 +1142,9 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
       messagesError,
       selectedThreadId,
       loadMessages,
+      hasOlderMessages,
+      loadingOlderMessages,
+      onLoadOlderMessages: handleLoadOlderMessages,
       leadDisplayNamesMap,
       campaigns,
       threadTagsMap,
@@ -1124,6 +1172,7 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
       onSetCategory: handleSetThreadCategory,
       messagesScrollViewRef,
       onContentSizeChange,
+      onScroll: onMessagesScroll,
       onReply: openReplyComposer,
       onForward: openForwardComposer,
       onDownloadAttachment: FETCH_ATTACHMENT_URL ? handleDownloadAttachment : undefined,
@@ -1143,6 +1192,9 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
       messagesError,
       selectedThreadId,
       loadMessages,
+      hasOlderMessages,
+      loadingOlderMessages,
+      handleLoadOlderMessages,
       leadDisplayNamesMap,
       campaigns,
       threadTagsMap,
@@ -1159,6 +1211,7 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
       setTagsPanelVisible,
       handleSetThreadCategory,
       onContentSizeChange,
+      onMessagesScroll,
       openReplyComposer,
       openForwardComposer,
       handleDownloadAttachment,

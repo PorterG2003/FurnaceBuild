@@ -1,5 +1,11 @@
 import React, { useMemo, type ReactNode, type RefObject } from 'react';
-import { View, ScrollView } from 'react-native';
+import {
+  View,
+  ScrollView,
+  ActivityIndicator,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+} from 'react-native';
 import { Alert } from '@/components/ui/feedback';
 import { buildInboxThreadToolbarActions } from '@/lib/inbox';
 import { DateDivider } from './DateDivider';
@@ -40,7 +46,10 @@ export interface InboxMessageListProps {
   messagesError: string | null;
   showMessagesSkeleton: boolean;
   selectedThreadId: string | null;
-  loadMessages: (threadId: string) => void;
+  loadMessages: (threadId: string, options?: { silent?: boolean; force?: boolean }) => void;
+  hasOlderMessages?: boolean;
+  loadingOlderMessages?: boolean;
+  onLoadOlderMessages?: () => void;
   leadDisplayNamesMap: Record<string, string>;
   campaigns: Campaign[];
   threadTagsMap: Record<string, ThreadTag[]>;
@@ -65,6 +74,7 @@ export interface InboxMessageListProps {
   listHeaderComponent?: ReactNode;
   messagesScrollViewRef: RefObject<ScrollView | null>;
   onContentSizeChange: (width: number, height: number) => void;
+  onScroll?: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
   contentContainerStyle: { paddingHorizontal: number; paddingTop: number; paddingBottom: number };
   onReply: (message: EmailMessage) => void;
   onForward: (message: EmailMessage) => void;
@@ -86,6 +96,7 @@ export function InboxMessageList({
   showMessagesSkeleton,
   selectedThreadId,
   loadMessages,
+  loadingOlderMessages = false,
   leadDisplayNamesMap,
   campaigns,
   threadTagsMap,
@@ -108,6 +119,7 @@ export function InboxMessageList({
   listHeaderComponent,
   messagesScrollViewRef,
   onContentSizeChange,
+  onScroll,
   contentContainerStyle,
   onReply,
   onForward,
@@ -195,7 +207,7 @@ export function InboxMessageList({
             variant="error"
             message={messagesError}
             actionText="Retry"
-            onAction={() => selectedThreadId && loadMessages(selectedThreadId)}
+            onAction={() => selectedThreadId && loadMessages(selectedThreadId, { force: true })}
           />
         </View>
       )}
@@ -205,11 +217,18 @@ export function InboxMessageList({
         <ScrollView
           ref={messagesScrollViewRef}
           onContentSizeChange={onContentSizeChange}
+          onScroll={onScroll}
+          scrollEventThrottle={16}
           className="flex-1 bg-[#121212]"
           contentContainerStyle={contentContainerStyle}
           showsVerticalScrollIndicator={false}
         >
           {listHeaderComponent}
+          {loadingOlderMessages ? (
+            <View className="items-center py-3" accessibilityLabel="Loading older messages">
+              <ActivityIndicator color="#F3440D" />
+            </View>
+          ) : null}
           <View className="w-full">
             {groupMessagesByDate(displayMessages).map((group) => (
               <View key={group.label}>

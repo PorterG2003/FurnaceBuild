@@ -1,5 +1,15 @@
-import React, { useMemo, type RefObject } from 'react';
-import { View, Text, TextInput, ScrollView, Pressable, RefreshControl } from 'react-native';
+import React, { useCallback, useMemo, useRef, type RefObject } from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  ScrollView,
+  Pressable,
+  RefreshControl,
+  ActivityIndicator,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+} from 'react-native';
 import { MagnifyingGlassIcon, FunnelIcon, XMarkIcon } from 'react-native-heroicons/outline';
 import { Alert, EmptyState } from '@/components/ui/feedback';
 import { useOnboardingTarget } from '@/components/onboarding/useOnboardingTarget';
@@ -8,6 +18,7 @@ import { ThreadItem } from './ThreadItem';
 import { ThreadListSkeleton } from './MessageListSkeleton';
 import { NO_SUBJECT_DISPLAY } from '@/lib/email';
 import { normalizeInboxSearchQuery, resolveThreadCardTitle } from '@/lib/inbox';
+import { shouldLoadMoreThreadsOnScroll } from '@/lib/inbox/scrollPagination';
 import type { EmailThread } from '@/lib/supabase/types';
 import type { ThreadTag } from '@/lib/supabase/services/thread-tags';
 import type { Campaign } from '@/lib/supabase/types';
@@ -78,6 +89,8 @@ export function InboxThreadList({
   const threadListRef = useOnboardingTarget(TARGETS.inboxThreadList);
   const openThreadRef = useOnboardingTarget(TARGETS.inboxOpenThread);
   const openIndicatorRef = useOnboardingTarget(TARGETS.inboxOpenIndicator);
+  const threadListViewportHeightRef = useRef(0);
+
   const activeSearch = normalizeInboxSearchQuery(threadSearchQuery);
   const showListContent =
     keepPreviousThreadList || (!threadsLoading && threads.length > 0);
@@ -104,6 +117,42 @@ export function InboxThreadList({
     const openThread = displayThreads.find((thread) => thread.conversation_status === 'open');
     return openThread?.id ?? null;
   }, [displayThreads]);
+
+  const maybeLoadMoreThreads = useCallback(
+    (offsetY: number, viewportHeight: number, contentHeight: number) => {
+      if (
+        shouldLoadMoreThreadsOnScroll({
+          offsetY,
+          viewportHeight,
+          contentHeight,
+          hasMore: hasMoreThreads,
+          loading: loadingMoreThreads,
+        })
+      ) {
+        loadMoreThreads();
+      }
+    },
+    [hasMoreThreads, loadMoreThreads, loadingMoreThreads],
+  );
+
+  const onThreadListScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const { contentOffset, layoutMeasurement, contentSize } = event.nativeEvent;
+      threadListViewportHeightRef.current = layoutMeasurement.height;
+      maybeLoadMoreThreads(contentOffset.y, layoutMeasurement.height, contentSize.height);
+    },
+    [maybeLoadMoreThreads],
+  );
+
+  const onThreadListContentSizeChange = useCallback(
+    (_w: number, h: number) => {
+      const viewportHeight = threadListViewportHeightRef.current;
+      if (viewportHeight <= 0) return;
+      // Short lists that never scroll still need to page until they fill or end.
+      maybeLoadMoreThreads(0, viewportHeight, h);
+    },
+    [maybeLoadMoreThreads],
+  );
 
   return (
     <View className="flex-1">
@@ -198,6 +247,12 @@ export function InboxThreadList({
           className="flex-1"
           contentContainerStyle={{ paddingTop: 0, paddingBottom: scrollPaddingBottom }}
           showsVerticalScrollIndicator={false}
+          onScroll={onThreadListScroll}
+          scrollEventThrottle={16}
+          onContentSizeChange={onThreadListContentSizeChange}
+          onLayout={(event) => {
+            threadListViewportHeightRef.current = event.nativeEvent.layout.height;
+          }}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
           }
@@ -226,18 +281,11 @@ export function InboxThreadList({
                 tags={threadTagsMap[thread.id] ?? []}
               />
             ))}
-            {hasMoreThreads && (
-              <Pressable
-                onPress={loadMoreThreads}
-                disabled={loadingMoreThreads}
-                className="mx-3 mt-1.5 mb-3 py-2.5 rounded-xl items-center"
-                style={{ backgroundColor: '#1A1A1A', borderWidth: 1, borderColor: '#2A2A2A' }}
-              >
-                <Text className="text-orange-500 font-instrument text-sm">
-                  {loadingMoreThreads ? 'Loading…' : 'Load more'}
-                </Text>
-              </Pressable>
-            )}
+            {loadingMoreThreads ? (
+              <View className="mx-3 mt-1.5 mb-3 py-2.5 items-center" accessibilityLabel="Loading more conversations">
+                <ActivityIndicator color="#F3440D" />
+              </View>
+            ) : null}
           </View>
         </ScrollView>
       ) : showThreadListSkeleton && !keepPreviousThreadList ? (

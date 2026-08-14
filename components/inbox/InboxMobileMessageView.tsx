@@ -1,5 +1,5 @@
 import React, { type RefObject } from 'react';
-import { View } from 'react-native';
+import { View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import { DetailPageHeader } from '@/components/ui/layout';
 import { MobileHeaderButton } from '@/components/ui/MobileHeaderButton';
 import { useOnboardingTarget } from '@/components/onboarding/useOnboardingTarget';
@@ -21,7 +21,10 @@ export interface InboxMobileMessagePaneProps {
   displayMessages: EmailMessage[];
   messagesError: string | null;
   selectedThreadId: string | null;
-  loadMessages: (threadId: string, options?: { silent?: boolean }) => void;
+  loadMessages: (threadId: string, options?: { silent?: boolean; force?: boolean }) => void;
+  hasOlderMessages?: boolean;
+  loadingOlderMessages?: boolean;
+  onLoadOlderMessages?: () => void;
   leadDisplayNamesMap: Record<string, string>;
   campaigns: Campaign[];
   threadTagsMap: Record<string, ThreadTag[]>;
@@ -41,6 +44,7 @@ export interface InboxMobileMessagePaneProps {
   onSetCategory: (category: string | null) => Promise<void>;
   messagesScrollViewRef: RefObject<import('react-native').ScrollView | null>;
   onContentSizeChange: (width: number, height: number) => void;
+  onScroll?: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
   onReply: (message: EmailMessage) => void;
   onForward: (message: EmailMessage) => void;
   onDownloadAttachment: ((emailMessageId: string, attachmentIndex: number, filename: string) => Promise<void>) | undefined;
@@ -72,6 +76,9 @@ export function InboxMobileMessageView({ messagePane, mobile }: InboxMobileMessa
     messagesError,
     selectedThreadId,
     loadMessages,
+    hasOlderMessages,
+    loadingOlderMessages,
+    onLoadOlderMessages,
     leadDisplayNamesMap,
     campaigns,
     threadTagsMap,
@@ -91,6 +98,7 @@ export function InboxMobileMessageView({ messagePane, mobile }: InboxMobileMessa
     onSetCategory,
     messagesScrollViewRef,
     onContentSizeChange,
+    onScroll,
     onReply,
     onForward,
     onDownloadAttachment,
@@ -156,6 +164,9 @@ export function InboxMobileMessageView({ messagePane, mobile }: InboxMobileMessa
       showMessagesSkeleton={showMessageBodySkeleton}
       selectedThreadId={selectedThreadId}
       loadMessages={loadMessages}
+      hasOlderMessages={hasOlderMessages}
+      loadingOlderMessages={loadingOlderMessages}
+      onLoadOlderMessages={onLoadOlderMessages}
       leadDisplayNamesMap={leadDisplayNamesMap}
       campaigns={campaigns}
       threadTagsMap={threadTagsMap}
@@ -178,6 +189,7 @@ export function InboxMobileMessageView({ messagePane, mobile }: InboxMobileMessa
       listHeaderComponent={header}
       messagesScrollViewRef={messagesScrollViewRef}
       onContentSizeChange={onContentSizeChange}
+      onScroll={onScroll}
       contentContainerStyle={{
         paddingHorizontal: 0,
         paddingTop: 0,

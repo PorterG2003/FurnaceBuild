@@ -1,5 +1,5 @@
 import React, { type RefObject } from 'react';
-import { View, Text, ScrollView, Animated } from 'react-native';
+import { View, Text, ScrollView, Animated, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import type { LeadReplacementSummary } from '@/lib/supabase/services/leads';
 import type { EmailThread, EmailMessage } from '@/lib/supabase/types';
 import type { ThreadTag } from '@/lib/supabase/services/thread-tags';
@@ -52,7 +52,10 @@ export interface InboxDesktopMessagePaneProps {
   selectedThread: EmailThread | undefined;
   displayMessages: EmailMessage[];
   messagesError: string | null;
-  loadMessages: (threadId: string, options?: { silent?: boolean }) => void;
+  loadMessages: (threadId: string, options?: { silent?: boolean; force?: boolean }) => void;
+  hasOlderMessages?: boolean;
+  loadingOlderMessages?: boolean;
+  onLoadOlderMessages?: () => void;
   selectedThreadProspectEmails: string[];
   blockedProspectEmails: Set<string>;
   leadReplacementSummary?: LeadReplacementSummary | null;
@@ -67,6 +70,7 @@ export interface InboxDesktopMessagePaneProps {
   onSetCategory: ((cat: string | null) => Promise<void>) | undefined;
   messagesScrollViewRef: RefObject<ScrollView | null>;
   onContentSizeChange: (width: number, height: number) => void;
+  onScroll?: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
   onReply: (message: EmailMessage) => void;
   onForward: (message: EmailMessage) => void;
   onDownloadAttachment: ((emailMessageId: string, attachmentIndex: number, filename: string) => Promise<void>) | undefined;
@@ -140,6 +144,9 @@ export function InboxDesktopLayout({
     displayMessages,
     messagesError,
     loadMessages,
+    hasOlderMessages,
+    loadingOlderMessages,
+    onLoadOlderMessages,
     selectedThreadProspectEmails,
     blockedProspectEmails,
     leadReplacementSummary,
@@ -154,6 +161,7 @@ export function InboxDesktopLayout({
     onSetCategory,
     messagesScrollViewRef,
     onContentSizeChange,
+    onScroll,
     onReply,
     onForward,
     onDownloadAttachment,
@@ -225,6 +233,9 @@ export function InboxDesktopLayout({
               showMessagesSkeleton={showMessageBodySkeleton}
               selectedThreadId={selectedThreadId}
               loadMessages={loadMessages}
+              hasOlderMessages={hasOlderMessages}
+              loadingOlderMessages={loadingOlderMessages}
+              onLoadOlderMessages={onLoadOlderMessages}
               leadDisplayNamesMap={leadDisplayNamesMap}
               campaigns={campaigns}
               threadTagsMap={threadTagsMap}
@@ -245,6 +256,7 @@ export function InboxDesktopLayout({
               showToolbar={true}
               messagesScrollViewRef={messagesScrollViewRef}
               onContentSizeChange={onContentSizeChange}
+              onScroll={onScroll}
               contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 20, paddingBottom: 32 }}
               onReply={onReply}
               onForward={onForward}

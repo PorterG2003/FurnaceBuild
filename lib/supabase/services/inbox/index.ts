@@ -16,8 +16,17 @@ export {
 } from './threads';
 export {
   getMessagesByThread,
+  getMessagesByThreadPage,
+  mergeNewestMessagesPage,
+  mergeOlderMessagesPage,
+  messageCursorFrom,
+  compareMessagesChronological,
+  INBOX_MESSAGE_SELECT,
+  MESSAGE_PAGE_SIZE,
   type AttachmentMeta,
   type SendAttachment,
+  type MessageCursor,
+  type ThreadMessagesPage,
 } from './messages';
 export { updateThreadCategory } from './thread-categories';
 export {

@@ -28,7 +28,6 @@ import {
   getPendingCampaignReplyJobs,
   getPendingInboxManualJobs,
   getThreadAutoReplyPipelineState,
-  getMessagesByThread,
   isEmailBlockedByEntries,
   requestImmediateManualSend,
   type PendingCampaignReplyJob,
@@ -97,7 +96,7 @@ export interface UseInboxComposerOptions {
   currentLeadEmail?: string | null;
   currentLeadName?: string | null;
   messages: EmailMessage[];
-  loadMessages: (threadId: string, options?: { silent?: boolean }) => void;
+  loadMessages: (threadId: string, options?: { silent?: boolean; force?: boolean }) => void;
   blockList: BlockListEntry[];
   toast: { error: (message: string) => void; success: (message: string) => void };
   setBlockedRecipientConfirm: (value: { mode: 'reply' | 'forward'; onConfirm: () => void } | null) => void;
@@ -208,6 +207,8 @@ export function useInboxComposer({
 
   const composerEditorRef = useRef<EditorBridge | null>(null);
   const slideAnim = useRef(new Animated.Value(1)).current;
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
   const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pendingRepliesRef = useRef<PendingReply[]>([]);
 
@@ -395,9 +396,11 @@ export function useInboxComposer({
         const manualJobsForThread = pendingManualJobs.filter((j) => j.thread_id === selectedThreadId);
         const campaignJobsForThread = pendingCampaignJobs.filter((j) => j.thread_id === selectedThreadId);
 
-        const threadMessages = await getMessagesByThread(selectedThreadId);
-        if (cancelled) return;
-        const fromEmail = threadMessages.find((m) => m.direction === 'sent')?.from_email ?? '';
+        const threadMessages = messagesRef.current;
+        const fromEmail =
+          threadMessages.find((m) => m.direction === 'sent')?.from_email ??
+          threadMessages.find((m) => m.direction === 'received')?.to_email ??
+          '';
 
         const dbIds = new Set([
           ...manualJobsForThread.map((j) => j.id),
@@ -427,6 +430,24 @@ export function useInboxComposer({
       cancelled = true;
     };
   }, [accountId, mailboxSignatureRaw, selectedThreadId, threadsLoading]);
+
+  useEffect(() => {
+    if (!selectedThreadId) return;
+    const fromEmail =
+      messages.find((m) => m.direction === 'sent')?.from_email ??
+      messages.find((m) => m.direction === 'received')?.to_email ??
+      '';
+    if (!fromEmail) return;
+    setPendingReplies((prev) => {
+      let changed = false;
+      const next = prev.map((p) => {
+        if (p.threadId !== selectedThreadId || p.fromEmail) return p;
+        changed = true;
+        return { ...p, fromEmail };
+      });
+      return changed ? next : prev;
+    });
+  }, [messages, selectedThreadId]);
 
   useEffect(() => {
     if (!selectedThreadId || threadsLoading) {
@@ -637,7 +658,7 @@ export function useInboxComposer({
               : p
           )
         );
-        loadMessages(selectedThreadId);
+        loadMessages(selectedThreadId, { force: true });
       } catch (err) {
         toast.error(err instanceof Error ? err.message : 'Failed to retry reply');
       } finally {
@@ -773,7 +794,7 @@ export function useInboxComposer({
         };
         setPendingReplies((prev) => [...prev, newPending]);
         closeComposerPanel();
-        loadMessages(selectedThreadId);
+        loadMessages(selectedThreadId, { force: true });
       } catch (err) {
         toast.error(err instanceof Error ? err.message : 'Failed to send reply');
       } finally {
@@ -929,7 +950,7 @@ export function useInboxComposer({
         };
         setPendingReplies((prev) => [...prev, newPending]);
         closeComposerPanel();
-        loadMessages(selectedThreadId);
+        loadMessages(selectedThreadId, { force: true });
       } catch (err) {
         toast.error(err instanceof Error ? err.message : 'Failed to send forward');
       } finally {

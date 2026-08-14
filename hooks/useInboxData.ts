@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { View } from 'react-native';
 import {
   getThreadsByAccount,
-  getMessagesByThread,
   getBlockList,
   isEmailBlockedByEntries,
   markThreadMessagesRead,
@@ -16,6 +15,14 @@ import {
   getLeadReplacementSummariesByLeadIds,
   getThreadById,
 } from '@/lib/supabase/services';
+import type { MessageCursor } from '@/lib/inbox/messagePagination';
+import {
+  clearThreadMessagesCache,
+  getCachedThreadMessages,
+  loadInitialThreadMessages,
+  loadOlderThreadMessages,
+  prefetchThreadMessages,
+} from '@/lib/inbox/threadMessagesCache';
 import { resolveSelectedThread } from '@/lib/inbox/resolveSelectedThread';
 import { getLeadDisplayName } from '@/lib/leads';
 import { normalizeInboxSearchQuery } from '@/lib/inbox';
@@ -24,7 +31,7 @@ import type { CampaignTag } from '@/lib/supabase/services/campaign-tags';
 import type { ThreadTag } from '@/lib/supabase/services/thread-tags';
 import type { EmailThread, EmailMessage, BlockListEntry, Mailbox, Campaign, Lead } from '@/lib/supabase/types';
 import type { InboxThreadSortBy } from '@/lib/supabase/services/inbox';
-import { THREAD_PAGE_SIZE, SEARCH_DEBOUNCE_MS } from '@/components/inbox/inboxConstants';
+import { THREAD_PAGE_SIZE, MESSAGE_PAGE_SIZE, SEARCH_DEBOUNCE_MS } from '@/components/inbox/inboxConstants';
 
 export interface UseInboxDataOptions {
   accountId: string | null;
@@ -46,6 +53,9 @@ export function useInboxData({
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [messagesLoadedForThreadId, setMessagesLoadedForThreadId] = useState<string | null>(null);
   const [messagesError, setMessagesError] = useState<string | null>(null);
+  const [hasOlderMessages, setHasOlderMessages] = useState(false);
+  const [loadingOlderMessages, setLoadingOlderMessages] = useState(false);
+  const [oldestMessageCursor, setOldestMessageCursor] = useState<MessageCursor | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
   const [threadSearchQuery, setThreadSearchQueryState] = useState('');
@@ -85,6 +95,15 @@ export function useInboxData({
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prevAccountIdRef = useRef<string | null>(null);
   const prevSearchAccountIdRef = useRef<string | null>(null);
+  const messagesRequestIdRef = useRef(0);
+  const messagesAccountIdRef = useRef<string | null>(accountId);
+  messagesAccountIdRef.current = accountId;
+  const hasOlderMessagesRef = useRef(false);
+  hasOlderMessagesRef.current = hasOlderMessages;
+  const oldestMessageCursorRef = useRef<MessageCursor | null>(null);
+  oldestMessageCursorRef.current = oldestMessageCursor;
+  const loadingOlderMessagesRef = useRef(false);
+  const loadingMoreThreadsRef = useRef(false);
 
   const threadIdsKey = useMemo(
     () => [...threads.map((thread) => `${thread.id}:${thread.lead_id ?? ''}`)].sort().join(','),
@@ -170,6 +189,9 @@ export function useInboxData({
     setThreads([]);
     setMessages([]);
     setMessagesLoadedForThreadId(null);
+    setHasOlderMessages(false);
+    setLoadingOlderMessages(false);
+    setOldestMessageCursor(null);
     setThreadOffset(0);
     setHasMoreThreads(false);
     setThreadsTotalCount(0);
@@ -178,7 +200,26 @@ export function useInboxData({
     filtersEffectRanRef.current = false;
     initialLoadDoneRef.current = null;
     setInitialThreadsLoadSettled(false);
+    clearThreadMessagesCache();
   }, [clearAllFilters]);
+
+  const applyMessagesPage = useCallback(
+    (
+      threadId: string,
+      page: {
+        messages: EmailMessage[];
+        hasOlder: boolean;
+        oldestCursor: MessageCursor | null;
+      },
+    ) => {
+      setMessages(page.messages);
+      setHasOlderMessages(page.hasOlder);
+      setOldestMessageCursor(page.oldestCursor);
+      setMessagesLoadedForThreadId(threadId);
+      setMessagesError(null);
+    },
+    [],
+  );
 
   const selectedThreadProspectEmails = useMemo(() => {
     if (!selectedThreadId) return [];
@@ -261,38 +302,124 @@ export function useInboxData({
     }
   }, [accountId]);
 
-  const loadMessages = useCallback(async (threadId: string, options?: { silent?: boolean }) => {
-    if (!options?.silent) {
-      setMessagesError(null);
-      setMessagesLoading(true);
+  const loadMessages = useCallback(async (
+    threadId: string,
+    options?: { silent?: boolean; force?: boolean },
+  ) => {
+    const accountForRequest = messagesAccountIdRef.current;
+    if (!accountForRequest) return;
+
+    const requestId = ++messagesRequestIdRef.current;
+    const silent = options?.silent === true;
+    const force = silent || options?.force === true;
+
+    if (!silent) {
+      const cached = getCachedThreadMessages(accountForRequest, threadId);
+      if (cached) {
+        applyMessagesPage(threadId, {
+          messages: cached.messages,
+          hasOlder: cached.hasOlder,
+          oldestCursor: cached.oldestCursor,
+        });
+        setMessagesLoading(false);
+      } else {
+        setMessagesError(null);
+        setMessagesLoading(true);
+      }
     }
+
     try {
-      const [list] = await Promise.all([
-        getMessagesByThread(threadId),
-        loadBlockList(),
-      ]);
-      setMessages(list);
+      const page = await loadInitialThreadMessages(accountForRequest, threadId, {
+        limit: MESSAGE_PAGE_SIZE,
+        force,
+      });
+      if (
+        messagesRequestIdRef.current !== requestId ||
+        messagesAccountIdRef.current !== accountForRequest
+      ) {
+        return;
+      }
+      applyMessagesPage(threadId, page);
     } catch (err) {
-      if (!options?.silent) {
+      if (
+        messagesRequestIdRef.current !== requestId ||
+        messagesAccountIdRef.current !== accountForRequest
+      ) {
+        return;
+      }
+      if (!silent) {
         setMessagesError(err instanceof Error ? err.message : 'Failed to load messages');
       }
     } finally {
-      if (!options?.silent) {
+      if (
+        !silent &&
+        messagesRequestIdRef.current === requestId &&
+        messagesAccountIdRef.current === accountForRequest
+      ) {
         setMessagesLoading(false);
         setMessagesLoadedForThreadId(threadId);
       }
     }
-  }, [loadBlockList]);
+  }, [applyMessagesPage]);
+
+  const prefetchMessages = useCallback((threadId: string) => {
+    const accountForRequest = messagesAccountIdRef.current;
+    if (!accountForRequest || !threadId) return;
+    prefetchThreadMessages(accountForRequest, threadId);
+  }, []);
+
+  const loadOlderMessages = useCallback(async () => {
+    const accountForRequest = messagesAccountIdRef.current;
+    const threadId = selectedThreadId;
+    const before = oldestMessageCursorRef.current;
+    if (!accountForRequest || !threadId || !before || !hasOlderMessagesRef.current) return;
+    if (loadingOlderMessagesRef.current) return;
+
+    const requestId = ++messagesRequestIdRef.current;
+    loadingOlderMessagesRef.current = true;
+    setLoadingOlderMessages(true);
+    try {
+      const page = await loadOlderThreadMessages(accountForRequest, threadId, before, {
+        limit: MESSAGE_PAGE_SIZE,
+      });
+      if (
+        messagesRequestIdRef.current !== requestId ||
+        messagesAccountIdRef.current !== accountForRequest
+      ) {
+        return;
+      }
+      applyMessagesPage(threadId, page);
+    } catch (err) {
+      if (
+        messagesRequestIdRef.current !== requestId ||
+        messagesAccountIdRef.current !== accountForRequest
+      ) {
+        return;
+      }
+      console.error('Failed to load older messages:', err);
+      setMessagesError(err instanceof Error ? err.message : 'Failed to load older messages');
+    } finally {
+      loadingOlderMessagesRef.current = false;
+      if (
+        messagesRequestIdRef.current === requestId &&
+        messagesAccountIdRef.current === accountForRequest
+      ) {
+        setLoadingOlderMessages(false);
+      }
+    }
+  }, [applyMessagesPage, selectedThreadId]);
 
   const loadThreads = useCallback(
     async (options?: { append?: boolean }) => {
       if (!accountId) return;
       const append = options?.append ?? false;
+      if (append && loadingMoreThreadsRef.current) return;
       const offset = append ? threadOffset : 0;
       if (!append) {
         setThreadsError(null);
         setThreadsLoading(true);
       } else {
+        loadingMoreThreadsRef.current = true;
         setLoadingMoreThreads(true);
       }
       try {
@@ -326,6 +453,9 @@ export function useInboxData({
           setInitialThreadsLoadSettled(true);
         }
         setThreadsLoading(false);
+        if (append) {
+          loadingMoreThreadsRef.current = false;
+        }
         setLoadingMoreThreads(false);
       }
     },
@@ -496,6 +626,9 @@ export function useInboxData({
       if (prevSelectedThreadIdRef.current !== null) {
         setMessages([]);
         setMessagesLoadedForThreadId(null);
+        setHasOlderMessages(false);
+        setOldestMessageCursor(null);
+        setLoadingOlderMessages(false);
         prevSelectedThreadIdRef.current = null;
       }
       return;
@@ -509,10 +642,25 @@ export function useInboxData({
     }
 
     prevSelectedThreadIdRef.current = selectedThreadId;
-    setMessages([]);
-    setMessagesLoadedForThreadId(null);
+    const accountForRequest = messagesAccountIdRef.current;
+    const cached =
+      accountForRequest != null
+        ? getCachedThreadMessages(accountForRequest, selectedThreadId)
+        : null;
+    if (cached) {
+      applyMessagesPage(selectedThreadId, {
+        messages: cached.messages,
+        hasOlder: cached.hasOlder,
+        oldestCursor: cached.oldestCursor,
+      });
+    } else {
+      setMessages([]);
+      setMessagesLoadedForThreadId(null);
+      setHasOlderMessages(false);
+      setOldestMessageCursor(null);
+    }
     loadMessages(selectedThreadId);
-  }, [selectedThreadId, loadMessages, messagesLoadedForThreadId]);
+  }, [selectedThreadId, loadMessages, messagesLoadedForThreadId, applyMessagesPage]);
 
   return {
     threads,
@@ -527,6 +675,8 @@ export function useInboxData({
     messagesLoading,
     messagesLoadedForThreadId,
     messagesError,
+    hasOlderMessages,
+    loadingOlderMessages,
     refreshing,
     threadSearchQuery,
     setThreadSearchQuery: setThreadSearchQueryState,
@@ -571,6 +721,8 @@ export function useInboxData({
     filterButtonRef,
     loadThreads,
     loadMessages,
+    loadOlderMessages,
+    prefetchMessages,
     loadMoreThreads,
     handleRefresh,
     markThreadReadOptimistic,

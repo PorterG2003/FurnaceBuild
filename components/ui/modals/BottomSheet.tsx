@@ -405,8 +405,10 @@ export function BottomSheet({
     }
   }, [visible, screenHeight, backdropOpacity, sheetTranslateY, useNative, isWeb]);
 
-  /** iOS Safari: 100vh is the large viewport; 100svh keeps fixed overlays inside the visible area. */
-  const webFullHeightStyle = { height: '100svh' as unknown as number };
+  /** Resolves to 100svh in browser tabs and 100vh in installed PWAs; see #expo-reset in public/index.html. */
+  const webFullHeightStyle = {
+    height: 'var(--furnace-viewport-height, 100vh)' as unknown as number,
+  };
   const containerClassName = isWeb
     ? 'fixed inset-0 w-screen flex justify-end overflow-hidden'
     : 'flex-1 justify-end overflow-hidden';

@@ -81,17 +81,30 @@
         if (normalized === '/p' || normalized.indexOf('/p/') === 0) {
           document.documentElement.setAttribute('data-flux-landing', '1');
         }
+        // iOS before 16.4: display-mode is unsupported; navigator.standalone is the PWA signal.
+        if (navigator.standalone === true) {
+          document.documentElement.setAttribute('data-standalone', '1');
+        }
       })();
     </script>
     <!-- The `react-native-web` recommended style reset: https://necolas.github.io/react-native-web/docs/setup/#root-element -->
     <style id="expo-reset">
+      :root {
+        /* Safari tabs: svh keeps the shell inside the visible area under variable toolbars. */
+        --furnace-viewport-height: 100vh;
+        --furnace-viewport-height: 100svh;
+      }
+      /* Installed PWAs: WebKit under-reports svh, leaving a gap at the bottom. */
+      @media all and (display-mode: standalone), all and (display-mode: fullscreen) {
+        :root {
+          --furnace-viewport-height: 100vh;
+        }
+      }
       /* These styles make the body full-height */
       html,
       body {
-        height: 100vh;
-        height: 100svh;
-        min-height: 100vh;
-        min-height: 100svh;
+        height: var(--furnace-viewport-height);
+        min-height: var(--furnace-viewport-height);
         background-color: #121212;
       }
       /* These styles disable body scrolling if you are using <ScrollView> */
@@ -101,12 +114,17 @@
       /* These styles make the root element full-height */
       #root {
         display: flex;
-        height: 100vh;
-        height: 100svh;
-        min-height: 100vh;
-        min-height: 100svh;
+        height: var(--furnace-viewport-height);
+        min-height: var(--furnace-viewport-height);
         flex: 1;
         background-color: #121212;
+      }
+      /* Legacy iOS PWA fallback when display-mode media queries are unavailable. */
+      html[data-standalone='1'],
+      html[data-standalone='1'] body,
+      html[data-standalone='1'] #root {
+        height: 100vh;
+        min-height: 100vh;
       }
       html[data-flux-landing='1'],
       html[data-flux-landing='1'] body,

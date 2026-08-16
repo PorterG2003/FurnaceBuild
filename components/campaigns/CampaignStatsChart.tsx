@@ -5,8 +5,11 @@ import type { CampaignStatsByDay } from '@/lib/supabase/services/campaigns';
 import { CAMPAIGN_STAT_COLORS } from '@/lib/campaigns/campaignStatColors';
 import { format, parseISO } from 'date-fns';
 import { Tooltip } from '@/components/ui/Tooltip';
+import { StickyChartYAxis } from '@/components/campaigns/StickyChartYAxis';
 
 const CHART_HEIGHT = 220;
+/** Gifted-charts default: `yAxisExtraHeight` is height/20 unless trimmed. */
+const Y_AXIS_EXTRA_TOP = CHART_HEIGHT / 20;
 /** Extra space below chart so x-axis labels with descenders (e.g. "Aug", "Sep") are not clipped */
 const CHART_X_LABEL_PADDING_BOTTOM = 14;
 const COLORS = CAMPAIGN_STAT_COLORS;
@@ -61,6 +64,15 @@ function useBarGrowAnimation(hasData: boolean) {
   }, [hasData]);
 
   return progress;
+}
+
+function formatYAxisLabel(value: number): string {
+  if (value >= 1000) {
+    const thousands = value / 1000;
+    return `${thousands >= 10 ? Math.round(thousands) : Math.round(thousands * 10) / 10}k`;
+  }
+  if (Number.isInteger(value)) return String(value);
+  return String(Math.round(value * 10) / 10);
 }
 
 function getNiceMax(value: number): number {
@@ -174,26 +186,17 @@ export function CampaignStatsChart({ data, loading, embedded, containerWidth: co
     );
   }
 
-  if (!data || data.length === 0) {
-    return (
-      <View className={wrapperClass} style={wrapperStyle}>
-        <View className={innerClass} style={embedded ? { paddingVertical: 24 } : undefined}>
-          <Text className="text-gray-400 font-instrument text-sm">No activity in this range yet.</Text>
-        </View>
-      </View>
-    );
-  }
-
+  const chartDays = data ?? [];
   const maxSingle = Math.max(
     1,
-    ...data.flatMap((d) => [d.sent, d.replied, d.positiveReply, d.bounce])
+    ...chartDays.flatMap((d) => [d.sent, d.replied, d.positiveReply, d.bounce])
   );
   const maxValue = getNiceMax(maxSingle);
 
-  const chartContentWidth = INITIAL_SPACING + data.length * GROUP_WIDTH + END_SPACING;
+  const chartContentWidth = INITIAL_SPACING + chartDays.length * GROUP_WIDTH + END_SPACING;
 
   const barData: BarItem[] = [];
-  data.forEach((day) => {
+  chartDays.forEach((day) => {
     const dateLabel = format(parseISO(day.date), 'MMM d');
     const values: { value: number; type: BarLabelType; color: string }[] = [
       { value: day.sent * progress, type: 'Sent', color: COLORS.sent },
@@ -259,12 +262,20 @@ export function CampaignStatsChart({ data, loading, embedded, containerWidth: co
           </View>
         </View>
         <View
-          style={{ position: 'relative' }}
+          style={{ position: 'relative', flexDirection: 'row' }}
           onLayout={(e) => {
             const w = e.nativeEvent.layout.width;
             if (w > 0) setMeasuredWidth(w);
           }}
         >
+          <StickyChartYAxis
+            extraTop={Y_AXIS_EXTRA_TOP}
+            chartHeight={CHART_HEIGHT}
+            maxValue={maxValue}
+            noOfSections={4}
+            width={Y_AXIS_LABEL_WIDTH}
+            formatLabel={formatYAxisLabel}
+          />
           {Platform.OS === 'web' ? (
             <ScrollView
               horizontal
@@ -272,7 +283,7 @@ export function CampaignStatsChart({ data, loading, embedded, containerWidth: co
               onScroll={handleScroll}
               scrollEventThrottle={16}
               style={{
-                width: chartParentWidth,
+                width: chartParentWidth - Y_AXIS_LABEL_WIDTH,
                 // Prevent browser back/forward on horizontal swipe at scroll edges; allow normal scroll
                 overscrollBehaviorX: 'contain' as const,
               }}
@@ -298,7 +309,8 @@ export function CampaignStatsChart({ data, loading, embedded, containerWidth: co
                     xAxisThickness={1}
                     xAxisColor="#2A2A2A"
                     yAxisThickness={0}
-                    yAxisLabelWidth={Y_AXIS_LABEL_WIDTH}
+                    yAxisLabelWidth={0}
+                    hideYAxisText
                     yAxisTextStyle={{ color: '#9CA3AF', fontSize: 11, fontFamily: FONT_FAMILY }}
                     xAxisLabelTextStyle={{ color: '#9CA3AF', fontSize: 10, fontFamily: FONT_FAMILY }}
                     labelsDistanceFromXaxis={8}
@@ -319,15 +331,15 @@ export function CampaignStatsChart({ data, loading, embedded, containerWidth: co
                   style={{
                     position: 'absolute',
                     top: 0,
-                    left: Y_AXIS_LABEL_WIDTH,
+                    left: 0,
                     right: 0,
                     bottom: 0,
-                    width: chartContentWidth - Y_AXIS_LABEL_WIDTH,
+                    width: chartContentWidth,
                   }}
                   pointerEvents={webChartTouchLikeOverlay ? 'none' : 'box-none'}
                 >
                   <View
-                    style={{ flex: 1, width: chartContentWidth - Y_AXIS_LABEL_WIDTH }}
+                    style={{ flex: 1, width: chartContentWidth }}
                     pointerEvents={webChartTouchLikeOverlay ? 'none' : 'box-none'}
                   >
                     {tooltipStrips}
@@ -336,10 +348,10 @@ export function CampaignStatsChart({ data, loading, embedded, containerWidth: co
               </View>
             </ScrollView>
           ) : (
-            <View style={{ paddingBottom: CHART_X_LABEL_PADDING_BOTTOM }}>
+            <View style={{ paddingBottom: CHART_X_LABEL_PADDING_BOTTOM, flex: 1 }}>
               <BarChart
                 data={barData}
-                width={chartParentWidth}
+                width={chartParentWidth - Y_AXIS_LABEL_WIDTH}
                 height={CHART_HEIGHT}
                 maxValue={maxValue}
                 noOfSections={4}
@@ -350,7 +362,8 @@ export function CampaignStatsChart({ data, loading, embedded, containerWidth: co
                 xAxisThickness={1}
                 xAxisColor="#2A2A2A"
                 yAxisThickness={0}
-                yAxisLabelWidth={Y_AXIS_LABEL_WIDTH}
+                yAxisLabelWidth={0}
+                hideYAxisText
                 yAxisTextStyle={{ color: '#9CA3AF', fontSize: 11, fontFamily: FONT_FAMILY }}
                 xAxisLabelTextStyle={{ color: '#9CA3AF', fontSize: 10, fontFamily: FONT_FAMILY }}
                 labelsDistanceFromXaxis={8}
@@ -372,7 +385,7 @@ export function CampaignStatsChart({ data, loading, embedded, containerWidth: co
                   position: 'absolute',
                   top: 0,
                   bottom: 0,
-                  left: Y_AXIS_LABEL_WIDTH,
+                  left: 0,
                   right: 0,
                   overflow: 'hidden',
                 }}

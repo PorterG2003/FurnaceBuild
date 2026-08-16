@@ -4,6 +4,7 @@ import { BaseModal, ModalFooter } from '@/components/ui/modals';
 import { Button } from '@/components/ui/button';
 import { SearchAndSelectMulti } from '@/components/ui/forms';
 import type { CampaignTag } from '@/lib/supabase/services/campaign-tags';
+import type { LeadTag } from '@/lib/supabase/services/lead-tags';
 import { resolveTagColor } from '@/lib/tags/tag-colors';
 import type {
   LeadsListFilters,
@@ -17,6 +18,7 @@ export const EMPTY_EXPLORER_FILTERS: LeadsListFilters = {
   replyStatuses: [],
   campaignIds: [],
   campaignTagIds: [],
+  leadTagIds: [],
   enrollmentStates: [],
   replyCategories: [],
 };
@@ -26,6 +28,7 @@ export interface LeadsExplorerFiltersModalProps {
   filters: LeadsListFilters;
   campaigns: MockCampaign[];
   accountCampaignTags: CampaignTag[];
+  accountLeadTags?: LeadTag[];
   onApply: (filters: LeadsListFilters) => void;
   onClear: () => void;
   onClose: () => void;
@@ -60,6 +63,7 @@ export function countActiveExplorerFilters(filters: LeadsListFilters): number {
     (replyStatuses.length > 0 ? 1 : 0) +
     ((filters.campaignIds?.length ?? 0) > 0 ? 1 : 0) +
     ((filters.campaignTagIds?.length ?? 0) > 0 ? 1 : 0) +
+    ((filters.leadTagIds?.length ?? 0) > 0 ? 1 : 0) +
     (enrollmentStates.length > 0 ? 1 : 0) +
     ((filters.replyCategories?.length ?? 0) > 0 ? 1 : 0)
   );
@@ -70,6 +74,7 @@ export function LeadsExplorerFiltersModal({
   filters,
   campaigns,
   accountCampaignTags,
+  accountLeadTags = [],
   onApply,
   onClear,
   onClose,
@@ -162,6 +167,22 @@ export function LeadsExplorerFiltersModal({
           listMaxHeight={200}
           emptyMessage={(hasSearch) =>
             hasSearch ? 'No matching campaign tags.' : 'No campaign tags yet.'
+          }
+        />
+
+        <SearchAndSelectMulti
+          label="Lead tags"
+          items={accountLeadTags}
+          getItemId={(tag) => tag.id}
+          getItemLabel={(tag) => tag.name}
+          getItemColor={(tag) => resolveTagColor(tag.color)}
+          value={draft.leadTagIds ?? []}
+          onChange={(ids) => setDraft((current) => ({ ...current, leadTagIds: ids }))}
+          placeholder="All lead tags"
+          searchPlaceholder="Search lead tags…"
+          listMaxHeight={200}
+          emptyMessage={(hasSearch) =>
+            hasSearch ? 'No matching lead tags.' : 'No lead tags yet.'
           }
         />
 

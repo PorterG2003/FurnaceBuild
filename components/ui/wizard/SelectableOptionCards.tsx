@@ -6,7 +6,7 @@ type SelectableOptionCardsProps<T extends string> = {
     label: string;
     description?: string;
   }>;
-  selectedId: T;
+  selectedId: T | null;
   onSelect: (id: T) => void;
 };
 

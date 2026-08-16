@@ -1206,6 +1206,29 @@ export function buildClientApiComponents() {
             type: 'object',
             additionalProperties: true,
           },
+          tags: {
+            type: 'array',
+            items: { type: 'string' },
+            description:
+              'Optional person-level tags. Pass catalog names or aliases (for example `Hunter`, `Hunter.io`, `Running Meta Ads`) or any custom name. Matching is case-insensitive. Unknown names create an account-owned tag. Tags attach to the person (`global_lead_id`), not the campaign lead row, so they persist across campaigns. Do not put MillionVerifier statuses here — use `email_verification`. Catch-All Domain and Role Account are operator filters and are not auto-applied from verification.',
+          },
+          email_verification: {
+            type: 'object',
+            additionalProperties: false,
+            description:
+              'Optional structured email verification from a vendor such as MillionVerifier. Send this when you already paid for a check; omit it otherwise. Status values: `ok`, `catch_all`, `invalid`, `unknown`, `disposable`. Stored on `lead_email_facts`, not as tags, and survives rollup refresh. Do not invent a status.',
+            properties: {
+              status: {
+                type: 'string',
+                enum: ['ok', 'catch_all', 'invalid', 'unknown', 'disposable'],
+              },
+              quality: { type: 'string' },
+              provider: { type: 'string' },
+              verified_at: { type: 'string', format: 'date-time' },
+              is_free: { type: 'boolean' },
+              is_role: { type: 'boolean' },
+            },
+          },
         },
         required: ['email'],
         additionalProperties: false,

@@ -37,6 +37,14 @@ export function buildLeadsPeopleConceptMarkdown(linkMode: DocLinkMode = 'docs'):
     '',
     'If a campaign\u2019s sequence uses a custom field, you must include that value when you add or update a person in that campaign. Otherwise the request is rejected.',
     '',
+    '## Tags vs custom fields',
+    '',
+    '**Lead tags** are account-level and person-keyed (`global_lead_id`). The same tag follows a person across campaigns. Use them for provider, live signals, and operator filters (for example Hunter, Running Meta Ads, Do Not Send).',
+    '',
+    '`custom_lead_data` is per campaign lead. Use it for sequence personalization tokens such as `{{custom.company}}`.',
+    '',
+    '**Email verification** is a structured fact on the person (`ok`, `catch_all`, `invalid`, `unknown`, `disposable`), not a tag. Send it on import when you already have a vendor check. Catch-All Domain and Role Account tags are optional operator labels and are not auto-synced from verification.',
+    '',
     `To add and manage people, follow the ${guideLink('Lead management', '/guides/lead-management/', linkMode)} guide. Personalization is covered in ${guideLink('Email sequences', '/concepts/sequences/', linkMode)}.`,
   ].join('\n');
 }

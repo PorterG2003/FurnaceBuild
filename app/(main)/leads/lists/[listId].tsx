@@ -51,6 +51,7 @@ import {
   buildLeadsWorkbenchScopeLabel,
 } from '@/lib/leads/workbench/buildLeadsWorkbenchActionGroups';
 import { getCampaignTags, type CampaignTag } from '@/lib/supabase/services/campaign-tags';
+import { getLeadTags, type LeadTag } from '@/lib/supabase/services/lead-tags';
 import { getAccessToken } from '@/lib/supabase/client';
 import { getAccountLeadCampaigns, getAccountLeadWorkbenchDataset } from '@/lib/supabase/services/leads/account-leads';
 import {
@@ -131,6 +132,7 @@ export default function LeadsWorkbenchPage() {
   });
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [accountCampaignTags, setAccountCampaignTags] = useState<CampaignTag[]>([]);
+  const [accountLeadTags, setAccountLeadTags] = useState<LeadTag[]>([]);
   const [sortColumn, setSortColumn] = useState<string>('rollup-activity');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const [hasInitialLoadCompleted, setHasInitialLoadCompleted] = useState(false);
@@ -163,6 +165,7 @@ export default function LeadsWorkbenchPage() {
       searchQuery: listFilters.searchQuery,
       campaignIds: listFilters.campaignIds,
       campaignTagIds: listFilters.campaignTagIds,
+      leadTagIds: listFilters.leadTagIds,
       replyStatuses: listFilters.replyStatuses,
       enrollmentStates: listFilters.enrollmentStates ?? listFilters.statuses,
       replyCategories: listFilters.replyCategories,
@@ -262,23 +265,27 @@ export default function LeadsWorkbenchPage() {
     if (!accountId) {
       setCampaigns([]);
       setAccountCampaignTags([]);
+      setAccountLeadTags([]);
       return;
     }
     let cancelled = false;
     void (async () => {
       try {
-        const [nextCampaigns, nextTags] = await Promise.all([
+        const [nextCampaigns, nextTags, nextLeadTags] = await Promise.all([
           getAccountLeadCampaigns(accountId),
           getCampaignTags(accountId),
+          getLeadTags(accountId),
         ]);
         if (!cancelled) {
           setCampaigns(nextCampaigns);
           setAccountCampaignTags(nextTags);
+          setAccountLeadTags(nextLeadTags);
         }
       } catch {
         if (!cancelled) {
           setCampaigns([]);
           setAccountCampaignTags([]);
+          setAccountLeadTags([]);
         }
       }
     })();
@@ -825,6 +832,7 @@ export default function LeadsWorkbenchPage() {
               filters={listFilters}
               campaigns={campaigns}
               accountCampaignTags={accountCampaignTags}
+              accountLeadTags={accountLeadTags}
               onApply={setAppliedFilters}
               onClear={() => setAppliedFilters({ ...EMPTY_EXPLORER_FILTERS })}
               onClose={() => setFiltersOpen(false)}

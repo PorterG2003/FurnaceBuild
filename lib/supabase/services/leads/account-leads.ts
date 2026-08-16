@@ -64,6 +64,7 @@ export interface AccountLeadExplorerQuery {
   searchQuery?: string;
   campaignIds?: string[];
   campaignTagIds?: string[];
+  leadTagIds?: string[];
   replyStatuses?: LeadsReplyStatusFilter[];
   enrollmentStates?: MockEnrollmentState[];
   replyCategories?: Array<NonNullable<MockReplyCategory> | 'not_categorized'>;
@@ -222,6 +223,7 @@ export async function getAccountLeadPeoplePage(
     p_offset: query.offset ?? 0,
     p_sort_column: query.sortColumn ?? null,
     p_sort_direction: query.sortDirection ?? null,
+    p_tag_ids: query.leadTagIds?.length ? query.leadTagIds : null,
   });
 
   if (error) {

@@ -10,6 +10,7 @@ import { tagChipContainerStyle } from './TagChip';
 import type { TagLike } from '@/lib/tags/types';
 import { TAG_PRESET_COLORS, pickRandomPresetColor, resolveTagColor } from '@/lib/tags/tag-colors';
 import { findTagByName, getTagDuplicateNameMessage } from '@/lib/tags/errors';
+import { groupTagsByName } from '@/lib/tags/groupTags';
 
 const CHIP_GAP = 8;
 const DOT_SIZE = 10;
@@ -41,6 +42,7 @@ export interface TagsAssignmentPanelProps {
   onCreated?: (tag: TagLike) => void;
   onUpdate: (tagId: string, params: { name: string; color: string }) => Promise<TagLike>;
   onDelete: (tagId: string) => Promise<void>;
+  canEditTag?: (tag: TagLike) => boolean;
 }
 
 export function TagsAssignmentPanel({
@@ -57,6 +59,7 @@ export function TagsAssignmentPanel({
   onCreated,
   onUpdate,
   onDelete,
+  canEditTag,
 }: TagsAssignmentPanelProps) {
   const { toast } = useToast();
   const [screen, setScreen] = useState<TagsScreen>('list');
@@ -274,28 +277,43 @@ export function TagsAssignmentPanel({
               <Text className="text-sm font-instrument-medium text-gray-400 mb-3">
                 On this {entityLabel}
               </Text>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: CHIP_GAP }}>
+              <View style={{ gap: 16 }}>
                 {assignedTags.length === 0 ? (
                   <Text className="text-sm font-instrument text-gray-500">No tags yet</Text>
                 ) : (
-                  assignedTags.map((tag) => (
-                    <View key={tag.id} style={tagChipContainerStyle(tag)}>
-                      <Pressable
-                        onPress={() => goToEdit(tag)}
-                        style={{ flexDirection: 'row', alignItems: 'center', gap: CHIP_GAP }}
-                      >
-                        <View style={dotStyle(tag)} />
-                        <Text style={labelStyle} numberOfLines={1}>
-                          {tag.name}
+                  groupTagsByName(assignedTags).map((bucket) => (
+                    <View key={bucket.groupName ?? 'ungrouped'} style={{ gap: CHIP_GAP }}>
+                      {bucket.groupName ? (
+                        <Text className="text-xs font-instrument-medium text-gray-500">
+                          {bucket.groupName}
                         </Text>
-                      </Pressable>
-                      <Pressable
-                        onPress={() => onRemoveTag(tag)}
-                        hitSlop={8}
-                        style={{ padding: 4 }}
-                      >
-                        <XMarkIcon size={14} color="#9CA3AF" />
-                      </Pressable>
+                      ) : null}
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: CHIP_GAP }}>
+                        {bucket.tags.map((tag) => {
+                          const editable = canEditTag ? canEditTag(tag) : true;
+                          return (
+                            <View key={tag.id} style={tagChipContainerStyle(tag)}>
+                              <Pressable
+                                onPress={editable ? () => goToEdit(tag) : undefined}
+                                disabled={!editable}
+                                style={{ flexDirection: 'row', alignItems: 'center', gap: CHIP_GAP }}
+                              >
+                                <View style={dotStyle(tag)} />
+                                <Text style={labelStyle} numberOfLines={1}>
+                                  {tag.name}
+                                </Text>
+                              </Pressable>
+                              <Pressable
+                                onPress={() => onRemoveTag(tag)}
+                                hitSlop={8}
+                                style={{ padding: 4 }}
+                              >
+                                <XMarkIcon size={14} color="#9CA3AF" />
+                              </Pressable>
+                            </View>
+                          );
+                        })}
+                      </View>
                     </View>
                   ))
                 )}
@@ -320,19 +338,30 @@ export function TagsAssignmentPanel({
                       style={{ borderWidth: 1 }}
                     />
                   ) : null}
-                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: CHIP_GAP }}>
-                    {unassignedTags.map((tag) => (
-                      <Pressable
-                        key={tag.id}
-                        onPress={() => onAddTag(tag)}
-                        style={tagChipContainerStyle(tag)}
-                      >
-                        <View style={dotStyle(tag)} />
-                        <Text style={labelStyle} numberOfLines={1}>
-                          {tag.name}
-                        </Text>
-                        <PlusIcon size={14} color="#FFFFFF" />
-                      </Pressable>
+                  <View style={{ gap: 16 }}>
+                    {groupTagsByName(unassignedTags).map((bucket) => (
+                      <View key={bucket.groupName ?? 'ungrouped'} style={{ gap: CHIP_GAP }}>
+                        {bucket.groupName ? (
+                          <Text className="text-xs font-instrument-medium text-gray-500">
+                            {bucket.groupName}
+                          </Text>
+                        ) : null}
+                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: CHIP_GAP }}>
+                          {bucket.tags.map((tag) => (
+                            <Pressable
+                              key={tag.id}
+                              onPress={() => onAddTag(tag)}
+                              style={tagChipContainerStyle(tag)}
+                            >
+                              <View style={dotStyle(tag)} />
+                              <Text style={labelStyle} numberOfLines={1}>
+                                {tag.name}
+                              </Text>
+                              <PlusIcon size={14} color="#FFFFFF" />
+                            </Pressable>
+                          ))}
+                        </View>
+                      </View>
                     ))}
                   </View>
                 </>

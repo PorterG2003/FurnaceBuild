@@ -245,3 +245,32 @@ test('runCsvDedupePipeline aggregates stats correctly', () => {
     'fresh@test.com',
   ]);
 });
+
+test('mapCsvRowToLeadPayload maps tags and verification columns', () => {
+  const mappings = {
+    ...createEmptyCsvFieldMappings(),
+    email: 'Email',
+    tags: 'Tags',
+    verification_status: 'MV',
+    verification_provider: 'Verifier',
+    is_role: 'Role',
+  };
+  const payload = mapCsvRowToLeadPayload(
+    {
+      Email: 'person@test.com',
+      Tags: 'Hunter.io, ICP Fit',
+      MV: 'ok',
+      Verifier: 'millionverifier',
+      Role: 'yes',
+    },
+    mappings,
+    [],
+  );
+  assert.ok(payload);
+  assert.deepEqual(payload.tags, ['Hunter.io', 'ICP Fit']);
+  assert.deepEqual(payload.email_verification, {
+    status: 'ok',
+    provider: 'millionverifier',
+    is_role: true,
+  });
+});

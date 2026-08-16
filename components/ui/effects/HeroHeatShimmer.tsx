@@ -57,8 +57,8 @@ export function HeroHeatShimmer({
         <View className="absolute inset-0 opacity-40 bg-[radial-gradient(70%_50%_at_50%_110%,#FF4D00_0%,transparent_70%)]" />
         <View className="absolute inset-0 opacity-25 bg-[radial-gradient(50%_35%_at_50%_110%,#FFB56B_0%,transparent_70%)]" />
         
-        {/* Bottom glow */}
-        <View className="absolute inset-x-0 bottom-0 h-[30vh] w-full bg-[radial-gradient(100%_100%_at_50%_100%,rgba(255,77,0,0.35)_0%,rgba(255,77,0,0.20)_50%,transparent_100%)]" />
+        {/* Bottom glow — container-relative so cards and full-page heroes match */}
+        <View className="absolute inset-x-0 bottom-0 h-[30%] w-full bg-[radial-gradient(100%_100%_at_50%_100%,rgba(255,77,0,0.35)_0%,rgba(255,77,0,0.20)_50%,transparent_100%)]" />
       </View>
 
       {midground ? (

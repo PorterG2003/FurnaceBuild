@@ -217,6 +217,32 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
+async function applyLeadImportMetadata(
+  supabase: Supabase,
+  accountId: string,
+  globalLeadId: string,
+  email: string,
+  lead: Record<string, unknown>,
+): Promise<void> {
+  const payload: Record<string, unknown> = {};
+  if (Object.prototype.hasOwnProperty.call(lead, 'tags')) {
+    payload.tags = lead.tags;
+  }
+  if (Object.prototype.hasOwnProperty.call(lead, 'email_verification')) {
+    payload.email_verification = lead.email_verification;
+  }
+  if (Object.keys(payload).length === 0) return;
+  const { error } = await supabase.rpc('private_apply_lead_import_metadata', {
+    p_account_id: accountId,
+    p_global_lead_id: globalLeadId,
+    p_email: email,
+    p_lead: payload,
+  });
+  if (error) {
+    throw new Error(`Failed to apply lead import metadata: ${error.message}`);
+  }
+}
+
 function currentWindowStart(): string {
   const now = new Date();
   now.setSeconds(0, 0);
@@ -1542,6 +1568,7 @@ async function upsertCampaignLead(params: {
       .select('*')
       .single();
     if (error) throw new Error(`Failed to update lead: ${error.message}`);
+    await applyLeadImportMetadata(supabase, campaign.account_id!, data.global_lead_id, email, lead);
     return { lead: data, created: false };
   }
   const insertPayload = {
@@ -1557,6 +1584,7 @@ async function upsertCampaignLead(params: {
   if (shouldEnsureEnrollment) {
     await ensureCampaignEnrollmentsForLeadIds(supabase, campaign, [data.id]);
   }
+  await applyLeadImportMetadata(supabase, campaign.account_id!, data.global_lead_id, email, lead);
   return { lead: data, created: true };
 }
 

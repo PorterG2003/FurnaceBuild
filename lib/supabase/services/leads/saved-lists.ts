@@ -517,6 +517,7 @@ export interface SavedLeadListPeopleQuery {
   searchQuery?: string;
   campaignIds?: string[];
   campaignTagIds?: string[];
+  leadTagIds?: string[];
   replyStatuses?: LeadsReplyStatusFilter[];
   enrollmentStates?: MockEnrollmentState[];
   replyCategories?: Array<NonNullable<MockReplyCategory> | 'not_categorized'>;
@@ -548,6 +549,7 @@ export async function getSavedLeadListPeoplePage(
     p_offset: params.offset ?? 0,
     p_sort_column: params.sortColumn ?? null,
     p_sort_direction: params.sortDirection ?? null,
+    p_tag_ids: params.leadTagIds?.length ? params.leadTagIds : null,
   });
 
   if (error) {
@@ -799,6 +801,7 @@ async function fetchSavedLeadListSelectionRows(
       searchQuery: query.searchQuery,
       campaignIds: query.campaignIds,
       campaignTagIds: query.campaignTagIds,
+      leadTagIds: query.leadTagIds,
       replyStatuses: query.replyStatuses,
       enrollmentStates: query.enrollmentStates,
       replyCategories: query.replyCategories,

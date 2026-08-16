@@ -48,6 +48,8 @@ export const LEAD_WRITE_KEYS = [
   'phone_number',
   'mobile_phone_number',
   'custom_lead_data',
+  'tags',
+  'email_verification',
 ] as const;
 
 export const PERSON_UPDATE_KEYS = [

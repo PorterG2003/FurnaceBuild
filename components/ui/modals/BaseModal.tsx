@@ -40,6 +40,11 @@ interface BaseModalProps {
   fitContent?: boolean;
   /** Hide the top-right X (e.g. onboarding, where the flow controls its own exit). */
   hideCloseButton?: boolean;
+  /**
+   * When false, backdrop, hardware back, and the X cannot dismiss.
+   * Pair with `hideCloseButton` for required flows. Default true.
+   */
+  dismissible?: boolean;
   /** Remove the p-6 content padding on desktop (e.g. announcement modals where the visual is edge-to-edge). */
   noPadding?: boolean;
   /** Mobile sheet: max lines for the description. Pass `null` for no limit. */
@@ -77,9 +82,11 @@ export function BaseModal({
   overlayZIndex,
   fitContent = false,
   hideCloseButton = false,
+  dismissible = true,
   noPadding = false,
   descriptionNumberOfLines,
 }: BaseModalProps) {
+  const hideClose = hideCloseButton || !dismissible;
   const mobileDescriptionLines = descriptionNumberOfLines === null ? undefined : (descriptionNumberOfLines ?? 3);
   const { width, height: screenHeight } = useWindowDimensions();
   const isMobile = width < LAYOUT_BREAKPOINT;
@@ -110,14 +117,15 @@ export function BaseModal({
   const dialogRef = useRef<View>(null);
   const webKeyboardInset = useVisualViewportKeyboardInset();
   /** Skip the header chrome entirely when there's nothing to show in it. */
-  const showHeader = !!title || !!description || !!onBack || !hideCloseButton;
+  const showHeader = !!title || !!description || !!onBack || !hideClose;
   const handleDismiss = useCallback(() => {
+    if (!dismissible) return;
     if (onBack) {
       onBack();
       return;
     }
     onClose();
-  }, [onBack, onClose]);
+  }, [dismissible, onBack, onClose]);
 
   useEffect(() => {
     if (visible && isWeb && !isMobile && dialogRef.current) {
@@ -131,7 +139,12 @@ export function BaseModal({
 
   if (isMobile) {
     return (
-      <BottomSheet visible={visible} onClose={handleDismiss} overlayZIndex={overlayZIndex}>
+      <BottomSheet
+        visible={visible}
+        onClose={handleDismiss}
+        overlayZIndex={overlayZIndex}
+        dismissLocked={!dismissible}
+      >
         <View style={{ flex: 1, minHeight: 0 }}>
           {showHeader ? (
           <View className="border-b border-[#2A2A2A] pb-4 mb-4 flex-shrink-0">
@@ -271,7 +284,7 @@ export function BaseModal({
                   </View>
                 ) : null}
               </View>
-              {hideCloseButton ? null : (
+              {hideClose ? null : (
                 <Pressable
                   onPress={handleDismiss}
                   className="p-2 rounded-lg border border-[#3A3A3A] bg-[#2A2A2A]"

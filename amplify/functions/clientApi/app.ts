@@ -220,7 +220,7 @@ function nowIso(): string {
 async function applyLeadImportMetadata(
   supabase: Supabase,
   accountId: string,
-  globalLeadId: string,
+  globalLeadId: string | null,
   email: string,
   lead: Record<string, unknown>,
 ): Promise<void> {
@@ -234,9 +234,9 @@ async function applyLeadImportMetadata(
   if (Object.keys(payload).length === 0) return;
   const { error } = await supabase.rpc('private_apply_lead_import_metadata', {
     p_account_id: accountId,
-    p_global_lead_id: globalLeadId,
+    p_global_lead_id: globalLeadId ?? sha256(email),
     p_email: email,
-    p_lead: payload,
+    p_lead: payload as Json,
   });
   if (error) {
     throw new Error(`Failed to apply lead import metadata: ${error.message}`);

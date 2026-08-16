@@ -16,9 +16,30 @@ export const CSV_STANDARD_FIELD_KEYS = [
   'mobile_phone_number',
 ] as const;
 
+export const CSV_METADATA_FIELD_KEYS = [
+  'tags',
+  'verification_status',
+  'verification_quality',
+  'verification_provider',
+  'verified_at',
+  'is_free',
+  'is_role',
+] as const;
+
 export type CsvStandardFieldKey = (typeof CSV_STANDARD_FIELD_KEYS)[number];
-export type CsvFieldMappings = Record<CsvStandardFieldKey, string>;
+export type CsvMetadataFieldKey = (typeof CSV_METADATA_FIELD_KEYS)[number];
+export type CsvMappableFieldKey = CsvStandardFieldKey | CsvMetadataFieldKey;
+export type CsvFieldMappings = Record<CsvMappableFieldKey, string>;
 export type CsvRow = Record<string, string>;
+
+export type CsvEmailVerificationPayload = {
+  status?: string;
+  quality?: string;
+  provider?: string;
+  verified_at?: string;
+  is_free?: boolean;
+  is_role?: boolean;
+};
 
 /** Lead payload shape accepted by `import_api_leads_to_campaign`. */
 export type CsvImportLeadPayload = {
@@ -33,6 +54,8 @@ export type CsvImportLeadPayload = {
   phone_number?: string | null;
   mobile_phone_number?: string | null;
   custom_lead_data?: Record<string, string> | null;
+  tags?: string[];
+  email_verification?: CsvEmailVerificationPayload;
 };
 
 export type CsvDedupeStats = {
@@ -61,6 +84,43 @@ function sanitizeValue(value?: string): string | null {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+function parseCsvTags(value: string | null): string[] | undefined {
+  if (!value) return undefined;
+  const tags = value
+    .split(/[,;|]/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  return tags.length > 0 ? tags : undefined;
+}
+
+function parseCsvBoolean(value: string | null): boolean | undefined {
+  if (!value) return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (['true', 'yes', '1', 'y'].includes(normalized)) return true;
+  if (['false', 'no', '0', 'n'].includes(normalized)) return false;
+  return undefined;
+}
+
+function buildCsvEmailVerification(
+  fieldMappings: CsvFieldMappings,
+  valueForColumn: (columnName?: string) => string | null,
+): CsvEmailVerificationPayload | undefined {
+  const status = valueForColumn(fieldMappings.verification_status);
+  const quality = valueForColumn(fieldMappings.verification_quality);
+  const provider = valueForColumn(fieldMappings.verification_provider);
+  const verifiedAt = valueForColumn(fieldMappings.verified_at);
+  const isFree = parseCsvBoolean(valueForColumn(fieldMappings.is_free));
+  const isRole = parseCsvBoolean(valueForColumn(fieldMappings.is_role));
+  const verification: CsvEmailVerificationPayload = {};
+  if (status) verification.status = status.toLowerCase();
+  if (quality) verification.quality = quality;
+  if (provider) verification.provider = provider;
+  if (verifiedAt) verification.verified_at = verifiedAt;
+  if (isFree !== undefined) verification.is_free = isFree;
+  if (isRole !== undefined) verification.is_role = isRole;
+  return Object.keys(verification).length > 0 ? verification : undefined;
 }
 
 /**
@@ -217,6 +277,12 @@ export function mapCsvRowToLeadPayload(
     payload.custom_lead_data = customData;
   }
 
+  const tags = parseCsvTags(valueForColumn(fieldMappings.tags));
+  if (tags) payload.tags = tags;
+
+  const verification = buildCsvEmailVerification(fieldMappings, valueForColumn);
+  if (verification) payload.email_verification = verification;
+
   return payload;
 }
 
@@ -361,5 +427,12 @@ export function createEmptyCsvFieldMappings(): CsvFieldMappings {
     company_linkedin_url: '',
     phone_number: '',
     mobile_phone_number: '',
+    tags: '',
+    verification_status: '',
+    verification_quality: '',
+    verification_provider: '',
+    verified_at: '',
+    is_free: '',
+    is_role: '',
   };
 }

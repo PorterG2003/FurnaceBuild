@@ -51,6 +51,21 @@ export function defaultMetricsDateRange(now: Date = new Date()): {
   return presetRange('last_30', now);
 }
 
+/** Inclusive UTC calendar days between `YYYY-MM-DD` bounds. */
+export function inclusiveUtcDayCount(start: string, end: string): number {
+  const startMs = Date.parse(`${start}T00:00:00.000Z`);
+  const endMs = Date.parse(`${end}T00:00:00.000Z`);
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs < startMs) return 0;
+  return Math.round((endMs - startMs) / 86_400_000) + 1;
+}
+
+/** Line charts stay daily through this many inclusive days; longer ranges bucket by ISO week. */
+export const TREND_CHART_DAILY_MAX_DAYS = 41;
+
+export function trendChartGrain(start: string, end: string): 'day' | 'week' {
+  return inclusiveUtcDayCount(start, end) > TREND_CHART_DAILY_MAX_DAYS ? 'week' : 'day';
+}
+
 export function findMatchingPreset(
   start: string,
   end: string,

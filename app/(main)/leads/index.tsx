@@ -34,6 +34,7 @@ import {
   type LeadsTableRow,
 } from '@/lib/leads/columns';
 import { getCampaignTags, type CampaignTag } from '@/lib/supabase/services/campaign-tags';
+import { getLeadTags, type LeadTag } from '@/lib/supabase/services/lead-tags';
 import {
   downloadCsvOnWeb,
   exportLeadsWorkbenchToCsv,
@@ -104,6 +105,7 @@ export default function LeadsIndexPage() {
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [campaigns, setCampaigns] = useState<Awaited<ReturnType<typeof getAccountLeadCampaigns>>>([]);
   const [accountCampaignTags, setAccountCampaignTags] = useState<CampaignTag[]>([]);
+  const [accountLeadTags, setAccountLeadTags] = useState<LeadTag[]>([]);
   const [rows, setRows] = useState<ReturnType<typeof buildExplorerRows>>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(DESKTOP_EXPLORER_PAGE_SIZE);
@@ -146,6 +148,7 @@ export default function LeadsIndexPage() {
       searchQuery: explorerList.filters.searchQuery,
       campaignIds: explorerList.filters.campaignIds,
       campaignTagIds: explorerList.filters.campaignTagIds,
+      leadTagIds: explorerList.filters.leadTagIds,
       replyStatuses: explorerList.filters.replyStatuses,
       enrollmentStates: explorerList.filters.enrollmentStates ?? explorerList.filters.statuses,
       replyCategories: explorerList.filters.replyCategories,
@@ -173,24 +176,28 @@ export default function LeadsIndexPage() {
     if (!accountId) {
       setCampaigns([]);
       setAccountCampaignTags([]);
+      setAccountLeadTags([]);
       return;
     }
 
     let cancelled = false;
     void (async () => {
       try {
-        const [nextCampaigns, nextTags] = await Promise.all([
+        const [nextCampaigns, nextTags, nextLeadTags] = await Promise.all([
           getAccountLeadCampaigns(accountId),
           getCampaignTags(accountId),
+          getLeadTags(accountId),
         ]);
         if (!cancelled) {
           setCampaigns(nextCampaigns);
           setAccountCampaignTags(nextTags);
+          setAccountLeadTags(nextLeadTags);
         }
       } catch {
         if (!cancelled) {
           setCampaigns([]);
           setAccountCampaignTags([]);
+          setAccountLeadTags([]);
         }
       }
     })();
@@ -229,6 +236,7 @@ export default function LeadsIndexPage() {
           searchQuery: explorerList.filters.searchQuery,
           campaignIds: explorerList.filters.campaignIds,
           campaignTagIds: explorerList.filters.campaignTagIds,
+          leadTagIds: explorerList.filters.leadTagIds,
           replyStatuses: explorerList.filters.replyStatuses,
           enrollmentStates: explorerList.filters.enrollmentStates ?? explorerList.filters.statuses,
           replyCategories: explorerList.filters.replyCategories,
@@ -654,6 +662,7 @@ export default function LeadsIndexPage() {
         filters={explorerList.filters}
         campaigns={campaigns}
         accountCampaignTags={accountCampaignTags}
+        accountLeadTags={accountLeadTags}
         onApply={setAppliedFilters}
         onClear={() => setAppliedFilters({ ...EMPTY_EXPLORER_FILTERS })}
         onClose={() => setFiltersOpen(false)}

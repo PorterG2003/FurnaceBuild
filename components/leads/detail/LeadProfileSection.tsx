@@ -13,12 +13,8 @@ import { buildEnrichLeadPath } from '@/lib/leads/navigation';
 import { getLatestEnrichmentSession } from '@/lib/apollo/getPendingEnrichmentSession';
 import { isPendingEnrichmentSession } from '@/lib/apollo/enrichmentSessionTypes';
 import { formatRelativeTime } from '@/lib/formatRelativeTime';
-import {
-  LeadDetailDivider,
-  LeadDetailSection,
-  LeadDetailSubsection,
-  useLeadDetailLayout,
-} from './leadDetailLayout';
+import { LeadDetailDivider, LeadDetailSection, LeadDetailSubsection, useLeadDetailLayout } from './leadDetailLayout';
+import { LeadTagsSection } from './LeadTagsSection';
 import { useLeadDetailMobilePage } from './mobile/LeadDetailMobilePageContext';
 import { ENRICH_COPY } from './enrichCopy';
 import { EnrichCreditBalancePill } from './EnrichLeadMeta';
@@ -327,6 +323,12 @@ export function LeadProfileSection({
           onChangeText={setMobilePhoneNumber}
         />
         <FormTextField label="LinkedIn URL" value={linkedinUrl} onChangeText={setLinkedinUrl} autoCapitalize="none" />
+      </LeadDetailSubsection>
+
+      {!isMobileDrill ? <LeadDetailDivider /> : null}
+
+      <LeadDetailSubsection title="Tags">
+        <LeadTagsSection accountId={accountId} globalLeadId={globalLeadId} />
       </LeadDetailSubsection>
 
       {!isMobileDrill ? <LeadDetailDivider /> : null}

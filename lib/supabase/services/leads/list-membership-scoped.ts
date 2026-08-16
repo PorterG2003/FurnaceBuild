@@ -117,6 +117,7 @@ export async function getListMembershipReviewForScope(
       p_enrollment_states: mapped.params.p_enrollment_states,
       p_reply_categories: mapped.params.p_reply_categories,
       p_search: mapped.params.p_search,
+      p_tag_ids: mapped.params.p_tag_ids,
     });
     if (error) throw new Error(error.message);
     return mode === 'add'
@@ -133,6 +134,7 @@ export async function getListMembershipReviewForScope(
     p_enrollment_states: mapped.params.p_enrollment_states,
     p_reply_categories: mapped.params.p_reply_categories,
     p_search: mapped.params.p_search,
+    p_tag_ids: mapped.params.p_tag_ids,
   });
   if (error) throw new Error(error.message);
   return mode === 'add'

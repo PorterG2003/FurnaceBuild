@@ -32,6 +32,8 @@ export function buildMcpGuideMarkdown(linkMode: DocLinkMode = 'docs'): string {
     'Tools mirror the Furnace Client API \u2014 campaigns, flows, leads, inbox threads, webhooks, API keys, and mailbox connect sessions. ' +
       `The ${referenceLink('API Reference', '/reference/', linkMode)} documents the underlying endpoints and objects.`,
     '',
+    'When adding people, tag by **name** (`Hunter`, `Running Meta Ads`) rather than inventing UUIDs. Send `email_verification` only when you already have a verifier result; never guess `ok`. Tags are person-level; `custom_lead_data` is campaign-level personalization.',
+    '',
     '## Advanced: API key',
     '',
     'For scripts or clients that do not support OAuth, you can authenticate with an API key instead:',

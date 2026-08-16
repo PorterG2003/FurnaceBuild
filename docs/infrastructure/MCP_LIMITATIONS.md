@@ -43,6 +43,13 @@ The remote MCP Lambda **cannot read a path on the caller’s machine**. Never se
 - Presigned upload requires `LEADS_EXPORT_BUCKET` (or equivalent) in the environment; otherwise use staged JSON.
 - Explorer-view preview counts may be approximate until execution resolves filters.
 
+## Lead tags and verification
+
+- On create/bulk/staged import, pass `tags` as **names or aliases** (not UUIDs). Catalog matches are case-insensitive (`Hunter.io` → Hunter). Unknown names create an account-owned tag.
+- Tags are person-keyed and persist across campaigns. Do not put them in `custom_lead_data`.
+- Pass `email_verification` only when you have a real vendor check (`status`: `ok` / `catch_all` / `invalid` / `unknown` / `disposable`). Do not invent a status. Do not auto-apply Catch-All Domain or Role Account tags from verification.
+- Omit both fields to keep 1.11.0 behavior. Unknown extra keys such as `mv_result` are still rejected.
+
 ## Acceptance bar
 
 Realistic multi-thousand-lead workflows (import → enroll with exclusions → list membership → export → cancel/idempotency checks) must complete using only public MCP/Client API tools and customer credentials. Service-role DB access is for fixture setup/cleanup only.

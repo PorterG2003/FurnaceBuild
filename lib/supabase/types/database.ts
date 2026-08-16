@@ -1927,6 +1927,119 @@ export interface Database {
           created_at?: string;
         };
       };
+      lead_tag_groups: {
+        Row: {
+          id: string;
+          account_id: string | null;
+          key: string;
+          name: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          account_id?: string | null;
+          key: string;
+          name: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          account_id?: string | null;
+          key?: string;
+          name?: string;
+          created_at?: string;
+        };
+      };
+      lead_tags: {
+        Row: {
+          id: string;
+          account_id: string | null;
+          group_id: string | null;
+          name: string;
+          aliases: string[];
+          color: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          account_id?: string | null;
+          group_id?: string | null;
+          name: string;
+          aliases?: string[];
+          color?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          account_id?: string | null;
+          group_id?: string | null;
+          name?: string;
+          aliases?: string[];
+          color?: string | null;
+          created_at?: string;
+        };
+      };
+      lead_tag_assignments: {
+        Row: {
+          account_id: string;
+          global_lead_id: string;
+          tag_id: string;
+          created_at: string;
+        };
+        Insert: {
+          account_id: string;
+          global_lead_id: string;
+          tag_id: string;
+          created_at?: string;
+        };
+        Update: {
+          account_id?: string;
+          global_lead_id?: string;
+          tag_id?: string;
+          created_at?: string;
+        };
+      };
+      lead_email_facts: {
+        Row: {
+          account_id: string;
+          global_lead_id: string;
+          email: string | null;
+          verification_status: 'ok' | 'catch_all' | 'invalid' | 'unknown' | 'disposable' | null;
+          verification_quality: string | null;
+          verification_provider: string | null;
+          verified_at: string | null;
+          is_free: boolean | null;
+          is_role: boolean | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          account_id: string;
+          global_lead_id: string;
+          email?: string | null;
+          verification_status?: 'ok' | 'catch_all' | 'invalid' | 'unknown' | 'disposable' | null;
+          verification_quality?: string | null;
+          verification_provider?: string | null;
+          verified_at?: string | null;
+          is_free?: boolean | null;
+          is_role?: boolean | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          account_id?: string;
+          global_lead_id?: string;
+          email?: string | null;
+          verification_status?: 'ok' | 'catch_all' | 'invalid' | 'unknown' | 'disposable' | null;
+          verification_quality?: string | null;
+          verification_provider?: string | null;
+          verified_at?: string | null;
+          is_free?: boolean | null;
+          is_role?: boolean | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
       block_list: {
         Row: {
           id: string;
@@ -3081,6 +3194,7 @@ export interface Database {
           p_offset?: number | null;
           p_sort_column?: string | null;
           p_sort_direction?: string | null;
+          p_tag_ids?: string[] | null;
         };
         Returns: {
           global_lead_id: string;
@@ -3109,6 +3223,7 @@ export interface Database {
           p_offset?: number | null;
           p_sort_column?: string | null;
           p_sort_direction?: string | null;
+          p_tag_ids?: string[] | null;
         };
         Returns: {
           global_lead_id: string;
@@ -3246,6 +3361,60 @@ export interface Database {
           p_campaign_id?: string | null;
         };
         Returns: number;
+      };
+      account_weekly_outreach_volume: {
+        Args: {
+          p_account_id: string;
+          p_start_date: string;
+          p_end_date: string;
+          p_campaign_ids?: string[] | null;
+        };
+        Returns: {
+          week_start: string;
+          emails_sent: number;
+          leads_first_contacted: number;
+        }[];
+      };
+      account_daily_outreach_volume: {
+        Args: {
+          p_account_id: string;
+          p_start_date: string;
+          p_end_date: string;
+          p_campaign_ids?: string[] | null;
+        };
+        Returns: {
+          stat_date: string;
+          emails_sent: number;
+          leads_first_contacted: number;
+        }[];
+      };
+      account_node_stats: {
+        Args: {
+          p_account_id: string;
+          p_start_date?: string | null;
+          p_end_date?: string | null;
+          p_campaign_ids?: string[] | null;
+        };
+        Returns: {
+          campaign_id: string;
+          campaign_name: string | null;
+          node_id: string;
+          flow_node_id: string | null;
+          node_label: string | null;
+          sent_count: number;
+          replied_count: number;
+          positive_reply_count: number;
+          bounce_count: number;
+        }[];
+      };
+      private_apply_lead_import_metadata: {
+        Args: {
+          p_account_id: string;
+          p_global_lead_id: string;
+          p_email: string;
+          p_lead: Json;
+        };
+        Returns: undefined;
       };
     };
     Enums: {

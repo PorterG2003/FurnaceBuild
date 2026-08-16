@@ -9,6 +9,7 @@ export type ExplorerScopeRpcParams = {
   p_reply_categories: string[] | null;
   p_search: string | null;
   p_global_lead_ids: string[] | null;
+  p_tag_ids: string[] | null;
 };
 
 export type SavedListViewScopeRpcParams = {
@@ -17,6 +18,7 @@ export type SavedListViewScopeRpcParams = {
   p_enrollment_states: string[] | null;
   p_reply_categories: string[] | null;
   p_search: string | null;
+  p_tag_ids: string[] | null;
 };
 
 export function explorerQueryToRpcParams(
@@ -29,6 +31,7 @@ export function explorerQueryToRpcParams(
     p_reply_categories: query.replyCategories?.length ? query.replyCategories : null,
     p_search: query.searchQuery?.trim() ? query.searchQuery.trim() : null,
     p_global_lead_ids: query.globalLeadIds?.length ? query.globalLeadIds : null,
+    p_tag_ids: query.leadTagIds?.length ? query.leadTagIds : null,
   };
 }
 
@@ -41,6 +44,7 @@ export function savedListQueryToRpcParams(
     p_enrollment_states: query.enrollmentStates?.length ? query.enrollmentStates : null,
     p_reply_categories: query.replyCategories?.length ? query.replyCategories : null,
     p_search: query.searchQuery?.trim() ? query.searchQuery.trim() : null,
+    p_tag_ids: query.leadTagIds?.length ? query.leadTagIds : null,
   };
 }
 

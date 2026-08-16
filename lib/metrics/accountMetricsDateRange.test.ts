@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import {
   defaultMetricsDateRange,
   findMatchingPreset,
+  inclusiveUtcDayCount,
   presetRange,
+  trendChartGrain,
   ymdUtcFromInstant,
 } from './accountMetricsDateRange.js';
 
@@ -68,4 +70,17 @@ test('findMatchingPreset returns custom when no preset matches', () => {
 
 test('defaultMetricsDateRange defaults to last_30 relative to now', () => {
   assert.deepEqual(defaultMetricsDateRange(REF), presetRange('last_30', REF));
+});
+
+test('inclusiveUtcDayCount is inclusive of start and end', () => {
+  assert.equal(inclusiveUtcDayCount('2026-04-16', '2026-05-15'), 30);
+  assert.equal(inclusiveUtcDayCount('2026-05-15', '2026-05-15'), 1);
+  assert.equal(inclusiveUtcDayCount('2026-05-16', '2026-05-15'), 0);
+});
+
+test('trendChartGrain is daily through 41 days and weekly after', () => {
+  assert.equal(trendChartGrain('2026-04-16', '2026-05-15'), 'day');
+  assert.equal(trendChartGrain('2026-04-05', '2026-05-15'), 'day');
+  assert.equal(trendChartGrain('2026-04-04', '2026-05-15'), 'week');
+  assert.equal(trendChartGrain('2026-02-15', '2026-05-15'), 'week');
 });

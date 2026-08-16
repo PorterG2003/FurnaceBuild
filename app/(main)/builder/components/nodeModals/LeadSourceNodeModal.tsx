@@ -25,6 +25,7 @@ import {
   mapCsvRowsToLeadPayloads,
   normalizeCustomFieldKey,
   runCsvDedupePipeline,
+  CSV_STANDARD_FIELD_KEYS,
   type CsvDedupeResult,
 } from '@/lib/leads/csv-dedupe';
 import { buildLeadSourceFieldConfig } from '@/lib/leads/lead-source-field-config';
@@ -217,6 +218,13 @@ const mappingFields = [
   { id: 'website', label: 'Website', required: false },
   { id: 'linkedin_url', label: 'LinkedIn URL', required: false },
   { id: 'company_linkedin_url', label: 'Company LinkedIn URL', required: false },
+  { id: 'tags', label: 'Tags', required: false },
+  { id: 'verification_status', label: 'Email verification status', required: false },
+  { id: 'verification_quality', label: 'Email verification quality', required: false },
+  { id: 'verification_provider', label: 'Email verification provider', required: false },
+  { id: 'verified_at', label: 'Verified at', required: false },
+  { id: 'is_free', label: 'Free email', required: false },
+  { id: 'is_role', label: 'Role account', required: false },
 ] as const;
 
 type FieldKey = typeof mappingFields[number]['id'];
@@ -232,6 +240,13 @@ const fieldSynonyms: Record<FieldKey, string[]> = {
   website: ['website', 'site', 'url', 'homepage', 'web site'],
   linkedin_url: ['linkedin', 'linkedin url', 'linkedin profile', 'profile url'],
   company_linkedin_url: ['company linkedin', 'company linkedin url', 'linkedin company', 'company profile', 'company profile url'],
+  tags: ['tags', 'tag', 'lead tags', 'provider', 'signals'],
+  verification_status: ['mv_result', 'verification status', 'email status', 'mv result', 'verification_status'],
+  verification_quality: ['hunter_confidence', 'verification quality', 'mv quality', 'quality'],
+  verification_provider: ['verification provider', 'email verifier', 'mv provider'],
+  verified_at: ['verified at', 'verified_at', 'verification date'],
+  is_free: ['is_free', 'free email', 'free mailbox'],
+  is_role: ['is_role', 'role account', 'generic inbox'],
 };
 
 const createEmptyMappings = (): Record<FieldKey, string> => {
@@ -1002,7 +1017,9 @@ function LeadSourceNodeModal({
       existingCustomFieldKeys: initialData?.customFieldKeys,
       existingMappedStandardFieldKeys: initialData?.mappedStandardFieldKeys,
       newCustomFieldColumns: customFieldColumns,
-      fieldMappings,
+      fieldMappings: Object.fromEntries(
+        CSV_STANDARD_FIELD_KEYS.map((key) => [key, fieldMappings[key] ?? '']),
+      ),
       hasActiveCsvMapping: csvColumns.length > 0,
     });
 

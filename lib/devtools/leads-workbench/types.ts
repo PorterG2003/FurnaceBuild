@@ -53,6 +53,8 @@ export interface LeadsListFilters {
   campaignIds?: string[];
   /** Campaigns that have any of these tags (AND with `campaignIds` when both set). */
   campaignTagIds?: string[];
+  /** People that have any of these lead tags (OR). */
+  leadTagIds?: string[];
   /** Empty means all reply statuses. */
   replyStatuses?: LeadsReplyStatusFilter[];
   enrollmentStates?: MockEnrollmentState[];

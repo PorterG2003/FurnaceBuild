@@ -19,6 +19,7 @@ import {
   buildClientApiIntroMdx,
 } from '../../client-api/openapi/intro.js';
 import { buildLlmsFullTxt, buildLlmsTxt } from '../../client-api/openapi/llms.js';
+import { buildMcpGuideMarkdown } from '../../client-api/openapi/mcp.js';
 import { buildClientApiOpenApiSpec } from '../../client-api/openapi/spec.js';
 import {
   buildWebhookEventGroupMarkdown,
@@ -55,6 +56,14 @@ test('client api openapi spec documents auth, schemas, and request contracts', (
   assert.ok(!spec.tags.some((tag) => tag.name === 'Building campaigns'));
 
   assert.ok('LeadCreate' in spec.components.schemas);
+  const leadCreate = spec.components.schemas.LeadCreate as {
+    properties?: Record<string, { type?: string; items?: { type?: string }; description?: string }>;
+  };
+  assert.equal(leadCreate.properties?.tags?.type, 'array');
+  assert.equal(leadCreate.properties?.tags?.items?.type, 'string');
+  assert.match(leadCreate.properties?.tags?.description ?? '', /Hunter\.io/);
+  assert.ok(leadCreate.properties?.email_verification);
+  assert.match(leadCreate.properties?.email_verification?.description ?? '', /millionverifier|verification/i);
   assert.ok('CampaignCreate' in spec.components.schemas);
   assert.ok('FlowUpdate' in spec.components.schemas);
   assert.ok('FlowValidateResponse' in spec.components.schemas);
@@ -131,6 +140,7 @@ test('client api guide markdown includes webhook examples', () => {
 
   const changelog = buildChangelogMarkdown();
   assert.match(changelog, /Breaking changes increment the major version/);
+  assert.match(changelog, /## 1\.12\.0/);
   assert.match(changelog, /## 1\.10\.0/);
   assert.match(changelog, /Central 9–5 Mon–Fri/);
   assert.match(changelog, /## 1\.4\.3/);
@@ -159,6 +169,8 @@ test('client api guide markdown includes webhook examples', () => {
   assert.match(leadManagement, /custom_lead_data/);
   assert.match(leadManagement, /leads\/bulk/);
   assert.match(leadManagement, /leads:add/);
+  assert.match(leadManagement, /Tags and email verification/);
+  assert.match(leadManagement, /email_verification/);
 
   const handlingReplies = buildHandlingRepliesMarkdown('docs');
   assert.match(handlingReplies, /By the end of this guide/);
@@ -176,6 +188,10 @@ test('client api guide markdown includes webhook examples', () => {
 
   const faq = buildFaqMarkdown('docs');
   assert.match(faq, /API key/);
+
+  const mcpGuide = buildMcpGuideMarkdown('docs');
+  assert.match(mcpGuide, /tag by \*\*name\*\*/i);
+  assert.match(mcpGuide, /email_verification/);
 
   const spec = buildClientApiOpenApiSpec('https://api.example.com') as {
     components: { schemas: Record<string, { description?: string }> };

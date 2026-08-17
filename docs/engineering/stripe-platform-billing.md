@@ -51,7 +51,9 @@ Platform invite activation currently completes through the shared Stripe reconci
 6. `complete_platform_invitation(...)` creates the account/membership idempotently
 7. Success UI polls membership and enters the workspace
 
-ACH microdeposit verification is a first-class recoverable phase (`verification_required`) with Stripe's hosted verification URL. Failed/expired attempts allow one controlled replacement checkout without changing the signed agreement.
+ACH microdeposit verification is a first-class recoverable phase (`verification_required`) with Stripe's hosted verification URL. After the customer verifies, Stripe moves the PaymentIntent to `processing`. **That is the activation gate.** Settlement (`succeeded` / `checkout.session.async_payment_succeeded`) is later confirmation, not the event that creates the workspace. Failed/expired attempts allow one controlled replacement checkout without changing the signed agreement.
+
+Handler code can only act on events Stripe actually delivers. The checked-in contract in [`amplify/functions/stripeWebhook/events.ts`](../../amplify/functions/stripeWebhook/events.ts) is the required Dashboard subscription list. Adding a `case` in the Lambda does **not** subscribe the live endpoint.
 
 Free invites are the exception: a `$0` retainer bypasses Stripe entirely and activates through `accept_platform_invitation(...)`. These accounts do not get a Stripe subscription until they are later upgraded to a paid retainer.
 
@@ -109,19 +111,54 @@ If a customer-visible success screen depends on asynchronous provisioning:
 
 After provisioning creates or grants membership, call `useEnterWorkspace().enterWorkspace(...)` from [`lib/account/useEnterWorkspace.ts`](../../lib/account/useEnterWorkspace.ts) before navigating into `(main)`. That helper polls for DB visibility and refreshes `AccountContext` via `refetch()`. DB visibility alone is insufficient — stale client context will still hit `/no-workspace`.
 
-Support recovery for interrupted checkouts:
+## Stripe webhook subscriptions
+
+The prod Stripe webhook is a public Amplify Function URL (`custom.stripeWebhookUrl`) authenticated with `STRIPE_WEBHOOK_SECRET`. Stripe Dashboard (or the sync script below) controls which events are sent. The Lambda handler ignores unknown types with HTTP 200.
+
+Required events (must match `STRIPE_WEBHOOK_EVENTS`):
+
+- `checkout.session.completed`
+- `checkout.session.async_payment_succeeded`
+- `checkout.session.async_payment_failed`
+- `payment_intent.processing`
+- `payment_intent.succeeded`
+- `payment_intent.payment_failed`
+- `payment_intent.requires_action`
+- `invoice.created`
+- `invoice.paid`
+- `invoice.payment_failed`
+- `customer.subscription.deleted`
+
+Setup:
+
+1. Point the live Stripe endpoint at prod `custom.stripeWebhookUrl`.
+2. Store that endpoint's signing secret in Amplify as `STRIPE_WEBHOOK_SECRET`.
+3. Keep enabled events in sync with the handler contract. Extra unrelated events may remain; never rotate the signing secret from the sync script.
+
+```bash
+WEBHOOK_ENDPOINT_ID=we_... SELF_RECOVERY_TARGET_ENV=prod npx tsx scripts/sync-stripe-webhook-events.ts
+WEBHOOK_ENDPOINT_ID=we_... SELF_RECOVERY_TARGET_ENV=prod APPLY=true npx tsx scripts/sync-stripe-webhook-events.ts
+```
+
+Dry-run first. Apply only after confirming the printed `missing` list. The apply path **adds** missing required events and preserves extras.
+
+If `payment_intent.processing` is missing, ACH invites stay `verification_required` after bank verification until someone returns to the invite page or support reconciles.
+
+## Support recovery for interrupted checkouts
 
 ```bash
 INVITATION_ID=<uuid> npx tsx scripts/reconcile-platform-invite-checkout.ts
 INVITATION_ID=<uuid> APPLY=true npx tsx scripts/reconcile-platform-invite-checkout.ts
 ```
 
-Dry-run first. Apply only after confirming the printed Stripe phase and proposed Furnace transition.
+Dry-run first. Apply only after confirming the printed Stripe phase and proposed Furnace transition. For ACH, a Stripe phase of `processing` with action `provision` is enough; do not wait for settlement.
 
 ## Current key files
 
 - `amplify/functions/platformCommerce/handler.ts`
 - `amplify/functions/stripeWebhook/handler.ts`
+- `amplify/functions/stripeWebhook/events.ts`
+- `amplify/functions/stripeWebhook/subscriptionDiff.ts`
 - `lib/billing/inviteCheckoutPhase.ts`
 - `lib/billing/inviteCheckoutRecoveryCopy.ts`
 - `lib/billing/reconcileInviteCheckout.ts`
@@ -129,6 +166,7 @@ Dry-run first. Apply only after confirming the printed Stripe phase and proposed
 - `app/accept-platform-invite/[id].tsx`
 - `components/platform/invite/PlatformInviteRecoveryStep.tsx`
 - `scripts/reconcile-platform-invite-checkout.ts`
+- `scripts/sync-stripe-webhook-events.ts`
 - `scripts/seed/scenarios/platform-invite-preview.ts`
 - `app/accept-account-amendment/[id].tsx`
 - `components/platform/invite/PlatformInviteExperience.tsx`
@@ -145,6 +183,8 @@ Dry-run first. Apply only after confirming the printed Stripe phase and proposed
 - `lib/billing/paymentRoutes.test.ts`
 - `lib/billing/inviteCheckoutPhase.test.ts`
 - `lib/billing/inviteCheckoutRecovery.test.ts`
+- `amplify/functions/stripeWebhook/events.test.ts`
+- `amplify/functions/stripeWebhook/subscriptionDiff.test.ts`
 - `lib/platform/contract/terms.test.ts`
 - `lib/platform/invite/priceSections.test.ts`
 - `lib/platform/invite/prorationSummary.test.ts`
@@ -152,5 +192,6 @@ Dry-run first. Apply only after confirming the printed Stripe phase and proposed
 - `lib/test/platform/accountAmendmentOutcomes.test.ts`
 - `lib/test/platform/platformInviteOutcomes.test.ts`
 - `lib/test/platform/platformInviteCheckoutAttemptOutcomes.test.ts`
+- `lib/test/platform/reconcileInviteCheckoutOutcomes.test.ts`
 - `lib/account/useEnterWorkspace.ts`
 - `lib/account/membershipActivation.ts`

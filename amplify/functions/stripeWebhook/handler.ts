@@ -9,6 +9,10 @@ import { reconcileInviteCheckoutSession } from '../../../lib/billing/reconcileIn
 import {
   buildUpgradeDeltaCouponParams,
 } from './couponParams';
+import {
+  resolveInvitePaymentIntentInvitationId,
+  resolveStripeWebhookDispatch,
+} from './events';
 
 type CheckoutSessionLike = {
   id: string;
@@ -387,20 +391,23 @@ async function handleInvitePaymentIntentEvent(
   paymentIntent: { id: string; metadata?: Record<string, string> | null },
   stripeEvent: { id: string; type: string },
 ) {
-  const invitationId = paymentIntent.metadata?.invitationId ?? null;
   const supabase = getSupabaseAdminClient();
-
-  if (!invitationId) {
-    const { data: attempt, error } = await supabase
-      .from('platform_invite_checkout_attempts')
-      .select('invitation_id')
-      .eq('stripe_payment_intent_id', paymentIntent.id)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (error) throw new Error(error.message);
-    if (!attempt?.invitation_id) return;
-  }
+  const invitationId = await resolveInvitePaymentIntentInvitationId({
+    metadataInvitationId: paymentIntent.metadata?.invitationId ?? null,
+    paymentIntentId: paymentIntent.id,
+    lookupByPaymentIntentId: async (paymentIntentId) => {
+      const { data: attempt, error } = await supabase
+        .from('platform_invite_checkout_attempts')
+        .select('invitation_id')
+        .eq('stripe_payment_intent_id', paymentIntentId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) throw new Error(error.message);
+      return attempt?.invitation_id ?? null;
+    },
+  });
+  if (!invitationId) return;
 
   await reconcileInviteCheckoutSession({
     supabase,
@@ -689,49 +696,46 @@ export const handler = async (event: { headers?: Record<string, string>; body?: 
       ? (event.isBase64Encoded ? Buffer.from(event.body, 'base64').toString() : event.body)
       : '';
     const stripeEvent = stripe.webhooks.constructEvent(rawBody, signature, webhookSecret);
+    const dispatch = resolveStripeWebhookDispatch(stripeEvent.type);
 
-    switch (stripeEvent.type) {
-      case 'checkout.session.completed':
+    switch (dispatch) {
+      case 'checkout_completed':
         await handleCheckoutCompleted(
           stripeEvent.data.object as CheckoutSessionLike,
           { id: stripeEvent.id, type: stripeEvent.type },
         );
         break;
-      case 'checkout.session.async_payment_succeeded':
-        await handleCheckoutCompleted(
-          stripeEvent.data.object as CheckoutSessionLike,
-          { id: stripeEvent.id, type: stripeEvent.type },
-        );
-        break;
-      case 'checkout.session.async_payment_failed':
+      case 'checkout_async_failed':
         await handleCheckoutAsyncPaymentFailed(
           stripeEvent.data.object as CheckoutSessionLike,
           { id: stripeEvent.id, type: stripeEvent.type },
         );
         break;
-      case 'payment_intent.processing':
-      case 'payment_intent.succeeded':
-      case 'payment_intent.payment_failed':
-      case 'payment_intent.requires_action':
+      case 'invite_payment_intent':
         await handleInvitePaymentIntentEvent(
           stripeEvent.data.object as { id: string; metadata?: Record<string, string> | null },
           { id: stripeEvent.id, type: stripeEvent.type },
         );
         break;
-      case 'invoice.payment_failed':
+      case 'invoice_payment_failed':
         await handleInvoicePaymentFailed(stripeEvent.data.object as InvoiceLike);
         break;
-      case 'invoice.paid':
+      case 'invoice_paid':
         await handleInvoicePaid(stripeEvent.data.object as InvoiceLike);
         break;
-      case 'invoice.created':
+      case 'invoice_created':
         await handleInvoiceCreated(stripeEvent.data.object as InvoiceLike);
         break;
-      case 'customer.subscription.deleted':
+      case 'subscription_deleted':
         await handleSubscriptionDeleted(stripeEvent.data.object as SubscriptionLike);
         break;
-      default:
+      case 'ignored':
         break;
+      default: {
+        const exhaustive: never = dispatch;
+        void exhaustive;
+        break;
+      }
     }
 
     return { statusCode: 200, body: JSON.stringify({ received: true }) };

@@ -2,6 +2,7 @@ export type { TransactionalEmail } from './types.js';
 export { buildTeamInvitationEmail } from './teamInvitation.js';
 export { buildPlatformInviteEmail } from './platformInvite.js';
 export { buildAccountAmendmentEmail } from './accountAmendment.js';
+export { buildHelpMessageEmail } from './helpMessage.js';
 export { buildFluxQuizSubmissionEmail, type FluxQuizAnswerRow } from './fluxQuizSubmission.js';
 export {
   buildFurnaceEmailLogoHtml,

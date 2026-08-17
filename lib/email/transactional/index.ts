@@ -14,6 +14,7 @@ export {
   buildTeamInvitationEmail,
   buildPlatformInviteEmail,
   buildAccountAmendmentEmail,
+  buildHelpMessageEmail,
   buildFluxQuizSubmissionEmail,
   buildConfirmSignupEmail,
   buildMagicLinkEmail,

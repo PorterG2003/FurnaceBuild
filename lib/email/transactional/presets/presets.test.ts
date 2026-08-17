@@ -3,6 +3,7 @@ import {
   buildAccountAmendmentEmail,
   buildConfirmSignupEmail,
   buildFluxQuizSubmissionEmail,
+  buildHelpMessageEmail,
   buildMagicLinkEmail,
   buildPlatformInviteEmail,
   buildReauthenticationEmail,
@@ -40,6 +41,19 @@ function run(): void {
   assert(platform.html.includes('Acme Corp'));
   assert(!platform.html.includes('/month'));
   assertNoLegacyStyles(platform.html);
+
+  const help = buildHelpMessageEmail({
+    topicLabel: 'Technical support',
+    notes: 'Campaign send is stuck on node 3.',
+    accountName: 'Acme Corp',
+    fromName: 'Pat',
+    fromEmail: 'pat@acme.com',
+  });
+  assert(help.subject.includes('Technical support'));
+  assert(help.subject.includes('Acme Corp'));
+  assert(help.html.includes('Campaign send is stuck on node 3.'));
+  assert(help.html.includes('pat@acme.com'));
+  assertNoLegacyStyles(help.html);
 
   const amendment = buildAccountAmendmentEmail({
     inviterName: 'Alex Chen',

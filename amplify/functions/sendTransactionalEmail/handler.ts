@@ -1,10 +1,15 @@
 import { reportErrorToSlack } from '@furnace/slack-lib';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { sendHelpMessageEmail } from './kinds/helpMessage.js';
 import { sendPlatformAmendmentEmail } from './kinds/platformAmendment.js';
 import { sendPlatformInviteEmail } from './kinds/platformInvite.js';
 import { sendTeamInvitationEmail } from './kinds/teamInvitation.js';
 
-type TransactionalEmailKind = 'team_invitation' | 'platform_invite' | 'platform_amendment';
+type TransactionalEmailKind =
+  | 'team_invitation'
+  | 'platform_invite'
+  | 'platform_amendment'
+  | 'help_message';
 
 function isFunctionUrlEvent(
   event: unknown,
@@ -82,6 +87,23 @@ export const handler = async (
         inviterEmail: String(args.inviterEmail ?? ''),
         accountName: String(args.accountName ?? ''),
         acceptUrl: args.acceptUrl ? String(args.acceptUrl) : undefined,
+      });
+      return { statusCode: 200, body: JSON.stringify(result) };
+    }
+
+    if (kind === 'help_message') {
+      const fromEmail = user.email?.trim();
+      if (!fromEmail) {
+        return { statusCode: 400, body: JSON.stringify({ error: 'Your account email is missing.' }) };
+      }
+      const recipient = args.recipient === 'kyle' ? 'kyle' : 'porter';
+      const result = await sendHelpMessageEmail({
+        fromEmail,
+        fromName: String(args.userName ?? '').trim() || fromEmail,
+        accountName: String(args.accountName ?? ''),
+        topicLabel: String(args.topicLabel ?? 'Technical support'),
+        notes: String(args.notes ?? ''),
+        recipient,
       });
       return { statusCode: 200, body: JSON.stringify(result) };
     }

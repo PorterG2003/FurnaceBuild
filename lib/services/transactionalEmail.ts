@@ -81,3 +81,19 @@ export async function sendPlatformAmendmentEmail(params: {
     token,
   );
 }
+
+export async function sendHelpMessageEmail(params: {
+  notes: string;
+  accountName?: string;
+  userName?: string;
+  topicLabel?: string;
+  recipient?: 'porter' | 'kyle';
+}) {
+  const token = await getAccessToken();
+  if (!token) throw new Error('You must be signed in to send a message.');
+  return postJson(
+    requireTransactionalEmailUrl(),
+    { kind: 'help_message', ...params },
+    token,
+  );
+}

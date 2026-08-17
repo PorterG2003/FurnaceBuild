@@ -41,6 +41,7 @@ export type PlatformAccountDetailViewProps = {
   handleCancelAmendment: (amendmentId: string) => Promise<void>;
   handleCreateAdjustment: () => Promise<void>;
   handleSetOnboardingSegment: (segment: 'self_serve' | 'dfy' | null) => Promise<void>;
+  handleSetAccountManager: (manager: 'porter' | 'kyle') => Promise<void>;
   adjustmentYear: string;
   setAdjustmentYear: (value: string) => void;
   adjustmentMonth: string;
@@ -68,6 +69,7 @@ export function PlatformAccountDetailView({
   handleCancelAmendment,
   handleCreateAdjustment,
   handleSetOnboardingSegment,
+  handleSetAccountManager,
   adjustmentYear,
   setAdjustmentYear,
   adjustmentMonth,
@@ -172,6 +174,36 @@ export function PlatformAccountDetailView({
         <Text className="text-gray-500 font-instrument text-xs">
           Effective: {segmentLabel(effectiveSegment)}
           {segmentOverride == null ? ' (derived from agreement)' : ' (manual override)'}
+        </Text>
+      </View>
+
+      <View className="rounded-2xl border border-[#2A2A2A] bg-[#181818] p-5 gap-3">
+        <Text className="text-white font-instrument-semibold text-lg">Account manager</Text>
+        <Text className="text-gray-400 font-instrument text-sm">
+          Routes Strategy/check-in booking in Need help. Technical support always goes to Porter.
+        </Text>
+        <View className="flex-row flex-wrap gap-2">
+          {([
+            { value: 'porter', label: 'Porter' },
+            { value: 'kyle', label: 'Kyle' },
+          ] as const).map((option) => {
+            const selected = (account.account_manager ?? 'porter') === option.value;
+            return (
+              <Button
+                key={option.value}
+                size="sm"
+                variant={selected ? 'default' : 'secondary'}
+                disabled={savingAction}
+                onPress={() => void handleSetAccountManager(option.value)}
+              >
+                {option.label}
+              </Button>
+            );
+          })}
+        </View>
+        <Text className="text-gray-500 font-instrument text-xs">
+          Strategy/check-in: {account.account_manager === 'kyle' ? 'Kyle' : 'Porter'}
+          {account.account_manager == null ? ' (default)' : ''}
         </Text>
       </View>
 

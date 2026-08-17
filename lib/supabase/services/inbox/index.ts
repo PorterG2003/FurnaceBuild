@@ -1,4 +1,14 @@
 export {
+  getInboxDefaultFilter,
+  saveInboxDefaultFilter,
+  clearInboxDefaultFilter,
+  parseInboxDefaultFilter,
+  toInboxFilterSnapshot,
+  inboxFiltersEqual,
+  INBOX_DEFAULT_FILTER_SETTING_KEY,
+  type InboxDefaultFilterSnapshot,
+} from './preferences';
+export {
   getOpenConversationCount,
   getOpenConversationCountsByAccountIds,
 } from './openConversationCounts';

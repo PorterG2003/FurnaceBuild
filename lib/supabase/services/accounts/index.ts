@@ -20,6 +20,12 @@ export {
   type FailedWebhookDeliveryRow,
 } from './webhook-deliveries';
 export {
+  getUserAccountPreferences,
+  mergeUserAccountSettings,
+  deleteUserAccountSetting,
+  type UserAccountSettings,
+} from './userAccountPreferences';
+export {
   getAccountMembershipsForUser,
   addUserToAccount,
   updateMemberRole,

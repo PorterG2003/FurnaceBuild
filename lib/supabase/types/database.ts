@@ -59,6 +59,7 @@ export interface Database {
           webhook_signing_secret: string | null;
           webhook_enabled_events: Json;
           onboarding_segment: 'self_serve' | 'dfy' | null;
+          account_manager: 'porter' | 'kyle' | null;
           created_at: string;
           updated_at: string;
         };
@@ -71,6 +72,7 @@ export interface Database {
           webhook_signing_secret?: string | null;
           webhook_enabled_events?: Json;
           onboarding_segment?: 'self_serve' | 'dfy' | null;
+          account_manager?: 'porter' | 'kyle' | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -83,6 +85,7 @@ export interface Database {
           webhook_signing_secret?: string | null;
           webhook_enabled_events?: Json;
           onboarding_segment?: 'self_serve' | 'dfy' | null;
+          account_manager?: 'porter' | 'kyle' | null;
           created_at?: string;
           updated_at?: string;
         };

@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { useToast } from '@/components/ui/feedback';
 import { useAccount } from '@/contexts/AccountContext';
 import {
+  adminSetAccountManager,
   adminSetAccountOnboardingSegment,
   cancelPlatformAccountAmendment,
   createBillingAdjustment,
@@ -14,6 +15,7 @@ import {
   restorePlatformInvitationRevision,
   revokePlatformInvitation,
   unpublishPlatformInvitation,
+  type AccountManager,
   type OnboardingSegment,
   type PlatformAccountAmendment,
   type PlatformAccountAmendmentInfo,
@@ -90,6 +92,7 @@ export type AccountDetailRecord = {
   owner_name?: string | null;
   owner_email?: string | null;
   onboarding_segment?: 'self_serve' | 'dfy' | null;
+  account_manager?: 'porter' | 'kyle' | null;
   created_at: string;
   updated_at: string;
 };
@@ -474,6 +477,22 @@ export function useAccountManagementDetail({
     }
   };
 
+  const handleSetAccountManager = async (manager: AccountManager) => {
+    if (!account?.id) return;
+    setSavingAction(true);
+    try {
+      await adminSetAccountManager(account.id, manager);
+      toast.success(
+        `Account manager set to ${manager === 'kyle' ? 'Kyle' : 'Porter'}.`,
+      );
+      await loadDetail();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to update account manager.');
+    } finally {
+      setSavingAction(false);
+    }
+  };
+
   const handleCreateAdjustment = async () => {
     if (!account?.id) return;
     const discountCents = Math.round(Number(adjustmentDiscount || 0) * 100);
@@ -550,6 +569,7 @@ export function useAccountManagementDetail({
     handleCancelAmendment,
     handleCreateAdjustment,
     handleSetOnboardingSegment,
+    handleSetAccountManager,
     adjustmentYear,
     setAdjustmentYear,
     adjustmentMonth,

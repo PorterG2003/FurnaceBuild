@@ -7,3 +7,4 @@ export * from './terms';
 export * from './billing';
 export * from './amendments';
 export * from './onboarding-segment';
+export * from './account-manager';

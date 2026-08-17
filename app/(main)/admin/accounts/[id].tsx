@@ -157,6 +157,7 @@ export default function AccountManagementDetailPage() {
             handleCancelAmendment={detailState.handleCancelAmendment}
             handleCreateAdjustment={detailState.handleCreateAdjustment}
             handleSetOnboardingSegment={detailState.handleSetOnboardingSegment}
+            handleSetAccountManager={detailState.handleSetAccountManager}
             adjustmentYear={detailState.adjustmentYear}
             setAdjustmentYear={detailState.setAdjustmentYear}
             adjustmentMonth={detailState.adjustmentMonth}

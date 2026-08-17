@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, type ReactNode } from 'react';
 import { Text, View, Platform, Pressable } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { EllipsisHorizontalIcon } from 'react-native-heroicons/outline';
@@ -43,6 +43,38 @@ function ExpandThreadButton({ onPress }: { onPress: () => void }) {
   );
 }
 
+function stopResponderMouseDown(event: { stopPropagation: () => void }) {
+  event.stopPropagation();
+}
+
+const WEB_SELECTABLE_STYLE = {
+  userSelect: 'text',
+  WebkitUserSelect: 'text',
+} as const;
+
+/** Native div so RN-web ScrollView/Pressable responders do not eat drag-to-select. */
+function SelectableTextIsland({ children }: { children: ReactNode }) {
+  if (Platform.OS !== 'web') return children;
+  return React.createElement(
+    'div',
+    {
+      onMouseDown: stopResponderMouseDown,
+      style: WEB_SELECTABLE_STYLE,
+    },
+    children,
+  );
+}
+
+function MessageBodyPlainText({ text }: { text: string }) {
+  return (
+    <SelectableTextIsland>
+      <Text selectable className="text-gray-300 font-instrument text-sm leading-6 text-left">
+        {text}
+      </Text>
+    </SelectableTextIsland>
+  );
+}
+
 /** Renders message body as plain text or HTML (with images) when body_html is present. */
 export function MessageBody({
   bodyHtml,
@@ -62,14 +94,15 @@ export function MessageBody({
   const cleanDisplayText = sanitizeEmailBody(displayText, { format: 'text' });
   const fullTextSource = bodyText ?? bodyHtml ?? '';
   const fullText = sanitizeEmailBody(fullTextSource, { format: bodyText ? 'text' : 'html' });
-  const safeHtml = hasHtml
-    ? stripScripts(
-        sanitizeEmailBody(
-          sanitizeEmailBody(rawHtml!, { format: 'html' }),
-          { format: 'html' }
-        )
+  const safeHtml = useMemo(() => {
+    if (!hasHtml || !rawHtml) return '';
+    return stripScripts(
+      sanitizeEmailBody(
+        sanitizeEmailBody(rawHtml, { format: 'html' }),
+        { format: 'html' }
       )
-    : '';
+    );
+  }, [hasHtml, rawHtml]);
   const hasMeaningfulHtmlMarkup =
     hasHtml && /<(table|img|a|blockquote|ul|ol|li|p|div|span|style|br|h[1-6])\b/i.test(safeHtml);
   const htmlTextOnly = hasHtml ? stripHtmlForHeuristics(safeHtml) : '';
@@ -78,7 +111,10 @@ export function MessageBody({
     !hasMeaningfulHtmlMarkup &&
     hasResidualEncodingArtifacts(htmlTextOnly) &&
     cleanDisplayText.length > 0;
-  const safeHtmlForRender = normalizeEmailHtmlForDarkMode(stripUnresolvableCidImages(safeHtml).html);
+  const wrappedHtml = useMemo(() => {
+    if (!safeHtml) return '';
+    return `<div>${normalizeEmailHtmlForDarkMode(stripUnresolvableCidImages(safeHtml).html)}</div>`;
+  }, [safeHtml]);
   const hasCollapsedThread = useMemo(() => {
     if (disableQuotedThreadCollapse) return false;
     if (!fullText) return false;
@@ -96,17 +132,16 @@ export function MessageBody({
     if (shouldShowCollapsedHtmlPreview) {
       return (
         <View>
-          <Text className="text-gray-300 font-instrument text-sm leading-6 text-left">
-            {cleanDisplayText || '(No content)'}
-          </Text>
+          <MessageBodyPlainText text={cleanDisplayText || '(No content)'} />
           <ExpandThreadButton onPress={() => setShowFullThread(true)} />
         </View>
       );
     }
-    const wrapped = `<div>${safeHtmlForRender}</div>`;
     return React.createElement('div', {
       className: 'message-body-html',
-      dangerouslySetInnerHTML: { __html: wrapped },
+      dangerouslySetInnerHTML: { __html: wrappedHtml },
+      onMouseDown: stopResponderMouseDown,
+      style: WEB_SELECTABLE_STYLE,
     });
   }
 
@@ -114,9 +149,7 @@ export function MessageBody({
     if (shouldShowCollapsedHtmlPreview) {
       return (
         <View>
-          <Text className="text-gray-300 font-instrument text-sm leading-6 text-left">
-            {cleanDisplayText || '(No content)'}
-          </Text>
+          <MessageBodyPlainText text={cleanDisplayText || '(No content)'} />
           <ExpandThreadButton onPress={() => setShowFullThread(true)} />
         </View>
       );
@@ -126,8 +159,8 @@ export function MessageBody({
       <html>
         <head><meta name="viewport" content="width=device-width,initial-scale=1"/></head>
         <body style="margin:0;padding:0;color:${MAILBOX_RENDER_TEXT_COLOR};font-size:14px;line-height:1.6;background:transparent;">
-          <div>${safeHtmlForRender}</div>
-          <style>img{max-width:100%;height:auto;border-radius:8px;display:block;margin:0.5em 0;}a,a *{color:${MAILBOX_RENDER_LINK_COLOR} !important;}body,body *{background-color:transparent !important;}</style>
+          ${wrappedHtml}
+          <style>img{max-width:100%;height:auto;border-radius:8px;display:block;margin:0.5em 0;}a,a *{color:${MAILBOX_RENDER_LINK_COLOR} !important;}body,body *{background-color:transparent !important;-webkit-user-select:text !important;user-select:text !important;}</style>
         </body>
       </html>
     `;
@@ -145,9 +178,7 @@ export function MessageBody({
 
   return (
     <View>
-      <Text className="text-gray-300 font-instrument text-sm leading-6 text-left">
-        {textToRender || '(No content)'}
-      </Text>
+      <MessageBodyPlainText text={textToRender || '(No content)'} />
       {hasCollapsedThread && !showFullThread ? (
         <ExpandThreadButton onPress={() => setShowFullThread(true)} />
       ) : null}

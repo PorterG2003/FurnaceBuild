@@ -694,6 +694,8 @@ input[type="password"]:focus {
 .message-body-html,
 .message-body-html * {
   background-color: transparent !important;
+  -webkit-user-select: text !important;
+  user-select: text !important;
 }
 
 .message-body-html p {

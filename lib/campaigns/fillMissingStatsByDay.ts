@@ -31,6 +31,7 @@ export function fillMissingStatsByDay(
         replied: 0,
         positiveReply: 0,
         bounce: 0,
+        leadsFirstContacted: 0,
       },
     );
     cursor.setUTCDate(cursor.getUTCDate() + 1);

@@ -16,6 +16,7 @@ export type WeeklyOutcomeRow = {
   replied: number;
   positiveReply: number;
   bounce: number;
+  leadsFirstContacted: number;
 };
 
 export function rollupDailyToIsoWeeks(days: CampaignStatsByDay[]): WeeklyOutcomeRow[] {
@@ -28,6 +29,7 @@ export function rollupDailyToIsoWeeks(days: CampaignStatsByDay[]): WeeklyOutcome
       existing.replied += day.replied;
       existing.positiveReply += day.positiveReply;
       existing.bounce += day.bounce;
+      existing.leadsFirstContacted += day.leadsFirstContacted;
     } else {
       byWeek.set(weekStart, {
         weekStart,
@@ -35,6 +37,7 @@ export function rollupDailyToIsoWeeks(days: CampaignStatsByDay[]): WeeklyOutcome
         replied: day.replied,
         positiveReply: day.positiveReply,
         bounce: day.bounce,
+        leadsFirstContacted: day.leadsFirstContacted,
       });
     }
   }

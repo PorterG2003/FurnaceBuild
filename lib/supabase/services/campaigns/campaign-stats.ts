@@ -88,6 +88,7 @@ export interface CampaignStatsByDay {
   replied: number;
   positiveReply: number;
   bounce: number;
+  leadsFirstContacted: number;
 }
 
 export async function getCampaignStatsByDay(
@@ -112,6 +113,7 @@ export async function getCampaignStatsByDay(
       replied: r.replied_count ?? 0,
       positiveReply: r.positive_reply_count ?? 0,
       bounce: r.bounce_count ?? 0,
+      leadsFirstContacted: 0,
     }));
   }
 

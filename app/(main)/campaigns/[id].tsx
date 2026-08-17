@@ -43,7 +43,7 @@ import {
   deleteLeadsBestEffort,
 } from '@/lib/supabase/services/leads';
 import { supabase } from '@/lib/supabase/client';
-import { CampaignStatsChart } from '@/components/campaigns/CampaignStatsChart';
+import { AccountTrendChart } from '@/components/campaigns/AccountTrendChart';
 import { DateInput } from '@/components/ui/DateInput';
 import type { Campaign } from '@/lib/supabase/types';
 import { format } from 'date-fns';
@@ -69,6 +69,8 @@ import { LEGACY_EMAIL_VARIANT_ID, sortVariantsForRoundRobin } from '@/lib/email/
 import { CAMPAIGN_STAT_COLORS } from '@/lib/campaigns/campaignStatColors';
 import { getEmailNodesInSendOrder } from '@/lib/campaigns/emailNodeSendOrder';
 import { fillMissingStatsByDay } from '@/lib/campaigns/fillMissingStatsByDay';
+import { trendChartGrain } from '@/lib/metrics/accountMetricsDateRange';
+import { formatWeekLabel, rollupDailyToIsoWeeks } from '@/lib/metrics/weeklyRollup';
 import { useCampaignStatusActions } from '@/lib/campaigns/useCampaignStatusActions';
 import { useCampaignTags } from '@/lib/campaigns/useCampaignTags';
 import { CampaignTagsSection } from '@/components/campaigns/CampaignTagsSection';
@@ -127,7 +129,7 @@ const variantPerfHeaderLabelWeb = Platform.select({
   default: {},
 });
 
-/** Variant performance table — stats match CampaignStatsChart; variant column uses one neutral hue. */
+/** Variant performance table — stats match the campaign trend chart; variant column uses one neutral hue. */
 /** Use `cell` not `value` for body text colors: Reanimated warns on `.value` inside inline `style` objects. */
 const VARIANT_PERF_COLORS = {
   variant: { header: '#94a3b8', cell: '#94a3b8' },
@@ -212,6 +214,76 @@ export default function CampaignPage() {
   const isMobile = screenWidth < LAYOUT_BREAKPOINT;
   const { showPlaceholder } = usePageSkeleton(isLoading);
   const isSmartlead = isSmartleadCampaign(campaign);
+  const statsGrain = useMemo((): 'day' | 'week' => {
+    if (!statsStartDate || !statsEndDate) return 'day';
+    return trendChartGrain(statsStartDate, statsEndDate);
+  }, [statsStartDate, statsEndDate]);
+  const weeklyOutcomes = useMemo(() => rollupDailyToIsoWeeks(statsByDay), [statsByDay]);
+  const trendPeriods = useMemo(
+    () =>
+      statsGrain === 'day'
+        ? statsByDay.map((day) => ({
+            label: day.date,
+            sent: day.sent,
+            leadsFirstContacted: day.leadsFirstContacted,
+            bounce: day.bounce,
+            replied: day.replied,
+            positiveReply: day.positiveReply,
+          }))
+        : weeklyOutcomes.map((week) => ({
+            label: week.weekStart,
+            sent: week.sent,
+            leadsFirstContacted: week.leadsFirstContacted,
+            bounce: week.bounce,
+            replied: week.replied,
+            positiveReply: week.positiveReply,
+          })),
+    [statsGrain, statsByDay, weeklyOutcomes],
+  );
+  const trendLabels = useMemo(
+    () => trendPeriods.map((period) => formatWeekLabel(period.label)),
+    [trendPeriods],
+  );
+  const trendPanels = useMemo(() => {
+    const volumeSeries = [
+      {
+        name: 'Emails sent',
+        color: CAMPAIGN_STAT_COLORS.sent,
+        data: trendPeriods.map((period) => period.sent),
+      },
+      ...(!isSmartlead
+        ? [
+            {
+              name: 'Leads reached',
+              color: '#38bdf8',
+              data: trendPeriods.map((period) => period.leadsFirstContacted),
+            },
+          ]
+        : []),
+      {
+        name: 'Bounced',
+        color: CAMPAIGN_STAT_COLORS.bounce,
+        data: trendPeriods.map((period) => period.bounce),
+      },
+    ];
+    return [
+      { series: volumeSeries },
+      {
+        series: [
+          {
+            name: 'Replies',
+            color: CAMPAIGN_STAT_COLORS.replied,
+            data: trendPeriods.map((period) => period.replied),
+          },
+          {
+            name: 'Positive',
+            color: CAMPAIGN_STAT_COLORS.positiveReply,
+            data: trendPeriods.map((period) => period.positiveReply),
+          },
+        ],
+      },
+    ];
+  }, [isSmartlead, trendPeriods]);
   const activeLeadFilterCount = useMemo(() => countActiveCampaignLeadFilters(leadFilters), [leadFilters]);
   const leadFilterKey = useMemo(
     () =>
@@ -1165,10 +1237,16 @@ export default function CampaignPage() {
                   <View style={{ borderTopWidth: 1, borderTopColor: '#2A2A2A', paddingTop: 24, marginTop: 24 }}>
                     <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
                       <View>
-                        <Text className="text-lg font-instrument-semibold text-white">Daily activity</Text>
-                        {campaign?.source === 'smartlead' && (
-                          <Text className="text-sm text-neutral-400 font-instrument mt-1">Imported from Smartlead</Text>
-                        )}
+                        <Text className="text-lg font-instrument-semibold text-white">
+                          {statsGrain === 'day' ? 'Daily trends' : 'Weekly trends'}
+                        </Text>
+                        <Text className="text-sm text-neutral-400 font-instrument mt-1">
+                          {campaign?.source === 'smartlead'
+                            ? 'Imported from Smartlead'
+                            : statsGrain === 'day'
+                              ? 'Hover a day for exact counts.'
+                              : 'Hover a week for exact counts.'}
+                        </Text>
                       </View>
                       <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 8 }}>
                         <DateInput
@@ -1187,7 +1265,13 @@ export default function CampaignPage() {
                         />
                       </View>
                     </View>
-                    <CampaignStatsChart data={statsByDay} loading={statsByDayLoading} embedded />
+                    <AccountTrendChart
+                      categoryKind={statsGrain}
+                      categories={trendLabels}
+                      panels={trendPanels}
+                      loading={statsByDayLoading}
+                      embedded
+                    />
                   </View>
                   </View>
 

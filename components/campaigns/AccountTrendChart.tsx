@@ -7,6 +7,13 @@ import { Tooltip } from '@/components/ui/Tooltip';
 import { IconButton } from '@/components/ui/icon-button';
 import { CAMPAIGN_STAT_COLORS } from '@/lib/campaigns/campaignStatColors';
 import { StickyChartYAxis } from '@/components/campaigns/StickyChartYAxis';
+import {
+  BAR_GROUP_GAP,
+  BAR_INTRA_GAP,
+  BAR_WIDTH,
+  barGroupInnerWidth,
+  barGroupTrailingGap,
+} from '@/components/campaigns/accountTrendChartLayout';
 
 const CHART_HEIGHT = 220;
 const CHART_X_LABEL_PADDING_BOTTOM = 14;
@@ -17,11 +24,6 @@ const INITIAL_SPACING = 16;
 const END_SPACING = 24;
 const Y_AXIS_LABEL_WIDTH = 48;
 const MIN_POINT_SPACING = 56;
-/** 10px semibold "9999" — two of these must fit on adjacent bars. */
-const MIN_FOUR_DIGIT_LABEL_WIDTH = 28;
-const BAR_WIDTH = MIN_FOUR_DIGIT_LABEL_WIDTH;
-const BAR_INTRA_GAP = 4;
-const BAR_GROUP_GAP = 16;
 const Y_AXIS_SECTIONS = 4;
 const ACTIVE_CHART_KIND_COLOR = '#FFFFFF';
 const INACTIVE_CHART_KIND_COLOR = '#9CA3AF';
@@ -51,6 +53,8 @@ export type AccountTrendChartProps = {
   title?: string;
   /** Tooltip heading: day label vs "Week of …". */
   categoryKind?: 'day' | 'week';
+  /** When true, omit outer card styling (for use inside another card). */
+  embedded?: boolean;
 };
 
 /** Round the top of the scale so Y-axis ticks are even and match the plotted values. */
@@ -202,6 +206,7 @@ export function AccountTrendChart({
   caption,
   title,
   categoryKind = 'week',
+  embedded,
 }: AccountTrendChartProps) {
   const fillIdPrefix = useId().replace(/:/g, '');
   const [measuredWidth, setMeasuredWidth] = useState<number | null>(null);
@@ -227,18 +232,18 @@ export function AccountTrendChart({
   const allSeries = useMemo(() => chartPanels.flatMap((panel) => panel.series), [chartPanels]);
   const pointCount = Math.max(chartCategories.length, 1);
   const seriesCount = Math.max(1, ...chartPanels.map((panel) => panel.series.length));
-  const groupInnerWidth = seriesCount * BAR_WIDTH + Math.max(seriesCount - 1, 0) * BAR_INTRA_GAP;
+  const groupInnerWidth = barGroupInnerWidth(seriesCount);
   const minSlotWidth = Math.max(MIN_POINT_SPACING, groupInnerWidth + BAR_GROUP_GAP);
   const minPlotWidth = INITIAL_SPACING + pointCount * minSlotWidth + END_SPACING;
   const plotWidth = Math.max(minPlotWidth, chartParentWidth - Y_AXIS_LABEL_WIDTH);
   const slotWidth = (plotWidth - INITIAL_SPACING - END_SPACING) / pointCount;
-  const barGroupGap = slotWidth - groupInnerWidth;
   const lineInitialSpacing = INITIAL_SPACING + groupInnerWidth / 2;
   const lineEndSpacing =
     plotWidth - lineInitialSpacing - Math.max(pointCount - 1, 0) * slotWidth;
   const plotScrollWidth = chartParentWidth - Y_AXIS_LABEL_WIDTH;
 
-  const wrapperClass = 'rounded-xl border border-[#2A2A2A] bg-[#1A1A1A]';
+  const wrapperClass = embedded ? undefined : 'rounded-xl border border-[#2A2A2A] bg-[#1A1A1A]';
+  const innerClass = embedded ? undefined : 'p-4';
 
   const header = (
     <View
@@ -261,7 +266,7 @@ export function AccountTrendChart({
   if (loading) {
     return (
       <View className={wrapperClass}>
-        <View className="p-4">
+        <View className={innerClass} style={embedded ? { paddingVertical: 24 } : undefined}>
           {header}
           <Text className="text-gray-400 font-instrument text-sm">Loading chart...</Text>
         </View>
@@ -411,6 +416,8 @@ export function AccountTrendChart({
     const tertiary = panel.series[2];
     const quaternary = panel.series[3];
     const barSeries = panel.series.length > 0 ? panel.series : [primary];
+    const panelInnerWidth = barGroupInnerWidth(barSeries.length);
+    const panelTrailingGap = barGroupTrailingGap(slotWidth, barSeries.length);
     const barData = chartCategories.flatMap((category, i) =>
       barSeries.map((s, si) => {
         const value = s.data[i] ?? 0;
@@ -418,9 +425,9 @@ export function AccountTrendChart({
           value,
           frontColor: s.color,
           label: isLast && si === 0 && i % labelEvery === 0 ? category : '',
-          labelWidth: si === 0 ? groupInnerWidth : 0,
+          labelWidth: si === 0 ? panelInnerWidth : 0,
           labelComponent: si === 0 ? undefined : () => null,
-          spacing: si === barSeries.length - 1 ? barGroupGap : BAR_INTRA_GAP,
+          spacing: si === barSeries.length - 1 ? panelTrailingGap : BAR_INTRA_GAP,
           barWidth: BAR_WIDTH,
           labelTextStyle:
             si === 0 ? { color: '#9CA3AF', fontSize: 10, fontFamily: FONT_FAMILY } : undefined,
@@ -620,7 +627,7 @@ export function AccountTrendChart({
 
   return (
     <View className={wrapperClass}>
-      <View className="p-4">
+      <View className={innerClass}>
         {header}
         <View
           style={{ position: 'relative', flexDirection: 'row' }}

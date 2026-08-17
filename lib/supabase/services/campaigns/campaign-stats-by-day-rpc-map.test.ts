@@ -13,7 +13,7 @@ test('mapCampaignStatsByDayRpcRows maps stat_date and counts', () => {
     },
   ]);
   assert.deepEqual(out, [
-    { date: '2026-05-01', sent: 10, replied: 2, positiveReply: 1, bounce: 0 },
+    { date: '2026-05-01', sent: 10, replied: 2, positiveReply: 1, bounce: 0, leadsFirstContacted: 0 },
   ]);
 });
 
@@ -28,7 +28,7 @@ test('mapCampaignStatsByDayRpcRows coerces string bigint-style counts', () => {
     },
   ]);
   assert.deepEqual(out, [
-    { date: '2026-05-02', sent: 122, replied: 3, positiveReply: 0, bounce: 1 },
+    { date: '2026-05-02', sent: 122, replied: 3, positiveReply: 0, bounce: 1, leadsFirstContacted: 0 },
   ]);
 });
 
@@ -47,4 +47,19 @@ test('mapCampaignStatsByDayRpcRows normalizes non-ISO stat_date to UTC Y-m-d', (
   assert.equal(out[0]?.replied, 0);
   assert.equal(out[0]?.positiveReply, 0);
   assert.equal(out[0]?.bounce, 0);
+  assert.equal(out[0]?.leadsFirstContacted, 0);
+});
+
+test('mapCampaignStatsByDayRpcRows maps leads_first_contacted', () => {
+  const out = mapCampaignStatsByDayRpcRows([
+    {
+      stat_date: '2026-05-04',
+      sent_count: 8,
+      replied_count: 1,
+      positive_reply_count: 0,
+      bounce_count: 0,
+      leads_first_contacted: '3',
+    },
+  ]);
+  assert.equal(out[0]?.leadsFirstContacted, 3);
 });

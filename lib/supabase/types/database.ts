@@ -3327,6 +3327,7 @@ export interface Database {
           replied_count: number;
           positive_reply_count: number;
           bounce_count: number;
+          leads_first_contacted: number;
         }[];
       };
       campaigns_list_summary: {

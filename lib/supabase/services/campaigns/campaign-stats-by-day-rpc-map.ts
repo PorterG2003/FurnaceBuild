@@ -4,6 +4,7 @@ export type CampaignStatsByDayRpcRow = {
   replied_count: number | string | null;
   positive_reply_count: number | string | null;
   bounce_count: number | string | null;
+  leads_first_contacted?: number | string | null;
 };
 
 function num(v: number | string | null | undefined): number {
@@ -20,12 +21,20 @@ function toYmd(statDate: string): string {
 /** Map rows from `campaign_stats_by_day` / `account_outreach_stats_by_day` RPCs to chart DTOs. */
 export function mapCampaignStatsByDayRpcRows(
   rows: CampaignStatsByDayRpcRow[],
-): { date: string; sent: number; replied: number; positiveReply: number; bounce: number }[] {
+): {
+  date: string;
+  sent: number;
+  replied: number;
+  positiveReply: number;
+  bounce: number;
+  leadsFirstContacted: number;
+}[] {
   return rows.map((r) => ({
     date: toYmd(r.stat_date),
     sent: num(r.sent_count),
     replied: num(r.replied_count),
     positiveReply: num(r.positive_reply_count),
     bounce: num(r.bounce_count),
+    leadsFirstContacted: num(r.leads_first_contacted),
   }));
 }

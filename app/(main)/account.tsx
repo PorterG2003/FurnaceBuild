@@ -1319,7 +1319,10 @@ export default function AccountPage() {
                 <WorkspaceSwitcherContent
                   memberships={memberships}
                   currentAccountId={account?.id ?? null}
-                  onChange={(id) => setCurrentAccountId(id)}
+                  onChange={(id) => {
+                    setAccountSwitcherOpen(false);
+                    setCurrentAccountId(id);
+                  }}
                   listMaxHeight={320}
                 />
               </BottomSheet>

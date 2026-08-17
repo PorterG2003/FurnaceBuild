@@ -855,6 +855,29 @@ export interface Database {
           created_at?: string;
         };
       };
+      user_account_preferences: {
+        Row: {
+          user_id: string;
+          account_id: string;
+          settings: Json;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          user_id: string;
+          account_id: string;
+          settings?: Json;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          user_id?: string;
+          account_id?: string;
+          settings?: Json;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
       user_onboarding_state: {
         Row: {
           user_id: string;

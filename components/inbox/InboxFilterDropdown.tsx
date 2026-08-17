@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { BottomSheet } from '@/components/ui/modals';
 import { Select, SearchAndSelectMulti } from '@/components/ui/forms';
+import { Button } from '@/components/ui/button';
 import { Toggle } from '@/components/ui/Toggle';
 import type { Mailbox, Campaign } from '@/lib/supabase/types';
 import type { CampaignTag } from '@/lib/supabase/services/campaign-tags';
@@ -72,6 +73,9 @@ export interface InboxFilterDropdownProps {
   accountTags: ThreadTag[];
   accountCampaignTags: CampaignTag[];
   onClearAll: () => void;
+  isOnSavedDefault: boolean;
+  onSaveAsDefault: () => void;
+  onRemoveSavedDefault: () => void;
 }
 
 export function InboxFilterDropdown({
@@ -103,6 +107,9 @@ export function InboxFilterDropdown({
   accountTags,
   accountCampaignTags,
   onClearAll,
+  isOnSavedDefault,
+  onSaveAsDefault,
+  onRemoveSavedDefault,
 }: InboxFilterDropdownProps) {
   const [mailboxSearch, setMailboxSearch] = useState('');
   const [campaignSearch, setCampaignSearch] = useState('');
@@ -299,9 +306,19 @@ export function InboxFilterDropdown({
         }
       />
 
-      <Pressable onPress={onClearAll} className="py-2 mt-1">
-        <Text className="text-gray-400 font-instrument text-sm text-center">Clear all</Text>
-      </Pressable>
+      <View className="flex-row gap-2 mt-3">
+        <Button variant="secondary" size="sm" className="flex-1" onPress={onClearAll}>
+          Clear all
+        </Button>
+        <Button
+          variant={isOnSavedDefault ? 'secondary' : 'default'}
+          size="sm"
+          className="flex-1"
+          onPress={isOnSavedDefault ? onRemoveSavedDefault : onSaveAsDefault}
+        >
+          {isOnSavedDefault ? 'Remove saved default filter' : 'Save as default filter'}
+        </Button>
+      </View>
     </ScrollView>
   );
 

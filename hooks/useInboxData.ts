@@ -30,7 +30,15 @@ import type { LeadReplacementSummary } from '@/lib/supabase/services/leads';
 import type { CampaignTag } from '@/lib/supabase/services/campaign-tags';
 import type { ThreadTag } from '@/lib/supabase/services/thread-tags';
 import type { EmailThread, EmailMessage, BlockListEntry, Mailbox, Campaign, Lead } from '@/lib/supabase/types';
-import type { InboxThreadSortBy } from '@/lib/supabase/services/inbox';
+import {
+  clearInboxDefaultFilter,
+  getInboxDefaultFilter,
+  inboxFiltersEqual,
+  saveInboxDefaultFilter,
+  toInboxFilterSnapshot,
+  type InboxDefaultFilterSnapshot,
+  type InboxThreadSortBy,
+} from '@/lib/supabase/services/inbox';
 import { THREAD_PAGE_SIZE, MESSAGE_PAGE_SIZE, SEARCH_DEBOUNCE_MS } from '@/components/inbox/inboxConstants';
 
 export interface UseInboxDataOptions {
@@ -68,6 +76,8 @@ export function useInboxData({
   const [categoryFilter, setCategoryFilterState] = useState<string | null>(null);
   const [conversationStatusFilter, setConversationStatusFilterState] = useState<'open' | 'closed' | 'all'>('all');
   const [sortBy, setSortByState] = useState<InboxThreadSortBy>('newest');
+  const [savedDefault, setSavedDefault] = useState<InboxDefaultFilterSnapshot | null>(null);
+  const [hydratedAccountId, setHydratedAccountId] = useState<string | null>(null);
   const [threadOffset, setThreadOffset] = useState(0);
   const [hasMoreThreads, setHasMoreThreads] = useState(false);
   const [threadsTotalCount, setThreadsTotalCount] = useState(0);
@@ -171,6 +181,47 @@ export function useInboxData({
     conversationStatusFilter !== 'all' ||
     !!normalizeInboxSearchQuery(threadSearchQuery);
 
+  const applyFilterSnapshot = useCallback((snapshot: InboxDefaultFilterSnapshot) => {
+    setMailboxFilterIdState(snapshot.mailboxFilterId);
+    setCampaignFilterIdState(snapshot.campaignFilterId);
+    setUnreadOnlyFilterState(snapshot.unreadOnlyFilter);
+    setDatePresetState(snapshot.datePreset);
+    setTagFilterIdsState(snapshot.tagFilterIds);
+    setCampaignTagFilterIdsState(snapshot.campaignTagFilterIds);
+    setCategoryFilterState(snapshot.categoryFilter);
+    setConversationStatusFilterState(snapshot.conversationStatusFilter);
+    setSortByState(snapshot.sortBy);
+  }, []);
+
+  const currentFilterSnapshot = useMemo(
+    () =>
+      toInboxFilterSnapshot({
+        mailboxFilterId,
+        campaignFilterId,
+        unreadOnlyFilter,
+        datePreset,
+        tagFilterIds,
+        campaignTagFilterIds,
+        categoryFilter,
+        conversationStatusFilter,
+        sortBy,
+      }),
+    [
+      mailboxFilterId,
+      campaignFilterId,
+      unreadOnlyFilter,
+      datePreset,
+      tagFilterIds,
+      campaignTagFilterIds,
+      categoryFilter,
+      conversationStatusFilter,
+      sortBy,
+    ],
+  );
+
+  const isOnSavedDefault =
+    savedDefault != null && inboxFiltersEqual(currentFilterSnapshot, savedDefault);
+
   const clearAllFilters = useCallback(() => {
     setThreadSearchQueryState('');
     setMailboxFilterIdState(null);
@@ -184,8 +235,31 @@ export function useInboxData({
     setSortByState('newest');
   }, []);
 
+  const saveAsDefaultFilter = useCallback(async () => {
+    if (!accountId) return;
+    try {
+      await saveInboxDefaultFilter(accountId, currentFilterSnapshot);
+      setSavedDefault(currentFilterSnapshot);
+    } catch (err) {
+      console.error('Failed to save inbox default filter:', err);
+    }
+  }, [accountId, currentFilterSnapshot]);
+
+  const removeSavedDefaultFilter = useCallback(async () => {
+    if (!accountId) return;
+    try {
+      await clearInboxDefaultFilter(accountId);
+      setSavedDefault(null);
+    } catch (err) {
+      console.error('Failed to remove inbox default filter:', err);
+    }
+  }, [accountId]);
+
   const resetForAccountChange = useCallback(() => {
     clearAllFilters();
+    setSavedDefault(null);
+    setHydratedAccountId(null);
+    setThreadsLoading(true);
     setThreads([]);
     setMessages([]);
     setMessagesLoadedForThreadId(null);
@@ -519,6 +593,8 @@ export function useInboxData({
       initialLoadDoneRef.current = null;
       prevAccountIdRef.current = null;
       setInitialThreadsLoadSettled(false);
+      setSavedDefault(null);
+      setHydratedAccountId(null);
       return;
     }
 
@@ -526,13 +602,36 @@ export function useInboxData({
       resetForAccountChange();
     }
     prevAccountIdRef.current = accountId;
+    setThreadsLoading(true);
 
+    let cancelled = false;
+    void getInboxDefaultFilter(accountId)
+      .then((saved) => {
+        if (cancelled) return;
+        if (saved) applyFilterSnapshot(saved);
+        setSavedDefault(saved);
+        setHydratedAccountId(accountId);
+      })
+      .catch((err) => {
+        console.error('Failed to load inbox preferences:', err);
+        if (cancelled) return;
+        setSavedDefault(null);
+        setHydratedAccountId(accountId);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [accountId, applyFilterSnapshot, resetForAccountChange]);
+
+  useEffect(() => {
+    if (!accountId || hydratedAccountId !== accountId) return;
     if (initialLoadDoneRef.current === accountId) return;
     initialLoadDoneRef.current = accountId;
     loadMailboxesAndCampaigns();
     loadThreads();
     loadBlockList();
-  }, [accountId, loadThreads, loadBlockList, loadMailboxesAndCampaigns, resetForAccountChange]);
+  }, [accountId, hydratedAccountId, loadThreads, loadBlockList, loadMailboxesAndCampaigns]);
 
   useEffect(() => {
     if (!threadIdsKey) {
@@ -570,7 +669,7 @@ export function useInboxData({
   }, [threadIdsKey]);
 
   useEffect(() => {
-    if (!accountId) return;
+    if (!accountId || hydratedAccountId !== accountId) return;
     if (!filtersEffectRanRef.current) {
       filtersEffectRanRef.current = true;
       return;
@@ -579,6 +678,7 @@ export function useInboxData({
     loadThreadsRef.current();
   }, [
     accountId,
+    hydratedAccountId,
     mailboxFilterId,
     campaignFilterId,
     unreadOnlyFilter,
@@ -716,6 +816,9 @@ export function useInboxData({
     accountCampaignTags,
     displayThreads,
     hasActiveFilters,
+    isOnSavedDefault,
+    saveAsDefaultFilter,
+    removeSavedDefaultFilter,
     selectedThreadProspectEmails,
     blockedProspectEmails,
     filterButtonRef,

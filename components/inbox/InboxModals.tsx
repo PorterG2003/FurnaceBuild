@@ -40,6 +40,9 @@ export interface InboxModalsFiltersProps {
   accountTags: ThreadTag[];
   accountCampaignTags: CampaignTag[];
   onClearAllFilters: () => void;
+  isOnSavedDefault: boolean;
+  onSaveAsDefault: () => void;
+  onRemoveSavedDefault: () => void;
   filterPresentation: 'dropdown' | 'sheet';
   filterSheetMaxHeight: number;
 }
@@ -116,6 +119,9 @@ export function InboxModals({ filters, visibility, actions }: InboxModalsProps) 
     accountTags,
     accountCampaignTags,
     onClearAllFilters,
+    isOnSavedDefault,
+    onSaveAsDefault,
+    onRemoveSavedDefault,
     filterPresentation,
     filterSheetMaxHeight,
   } = filters;
@@ -189,6 +195,9 @@ export function InboxModals({ filters, visibility, actions }: InboxModalsProps) 
         accountTags={accountTags}
         accountCampaignTags={accountCampaignTags}
         onClearAll={onClearAllFilters}
+        isOnSavedDefault={isOnSavedDefault}
+        onSaveAsDefault={onSaveAsDefault}
+        onRemoveSavedDefault={onRemoveSavedDefault}
       />
 
       {accountId && (

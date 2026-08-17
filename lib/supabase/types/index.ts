@@ -57,6 +57,10 @@ export type UserUpdate = Database['public']['Tables']['users']['Update'];
 export type UserAccessFlag = Database['public']['Tables']['user_access_flags']['Row'];
 export type UserAccessFlagInsert = Database['public']['Tables']['user_access_flags']['Insert'];
 
+export type UserAccountPreferences = Database['public']['Tables']['user_account_preferences']['Row'];
+export type UserAccountPreferencesInsert = Database['public']['Tables']['user_account_preferences']['Insert'];
+export type UserAccountPreferencesUpdate = Database['public']['Tables']['user_account_preferences']['Update'];
+
 export type UserOnboardingState = Database['public']['Tables']['user_onboarding_state']['Row'];
 export type UserOnboardingStateInsert = Database['public']['Tables']['user_onboarding_state']['Insert'];
 export type UserOnboardingStateUpdate = Database['public']['Tables']['user_onboarding_state']['Update'];

@@ -4,28 +4,22 @@ import {
   formatRelativeDay,
   formatRunwayThrough,
   formatRunwayWeeks,
+  queueRunwayDays,
   queueRunwayEndDate,
   queueRunwayWeeks,
 } from './runway';
 
-const days = [
-  { date: '2026-07-20', sent: 100, replied: 0, positiveReply: 0, bounce: 0 },
-  { date: '2026-07-27', sent: 100, replied: 0, positiveReply: 0, bounce: 0 },
-  { date: '2026-08-03', sent: 100, replied: 0, positiveReply: 0, bounce: 0 },
-  { date: '2026-08-10', sent: 100, replied: 0, positiveReply: 0, bounce: 0 },
-];
-
-test('queueRunwayWeeks divides queue by trailing 4-week send pace', () => {
-  assert.equal(queueRunwayWeeks(400, days), 4);
-  assert.equal(queueRunwayWeeks(200, days), 2);
+test('queueRunwayDays divides queue by daily send capacity', () => {
+  assert.equal(queueRunwayDays(400, 100), 4);
+  assert.equal(queueRunwayDays(200, 100), 2);
+  assert.equal(queueRunwayWeeks(700, 100), 1);
 });
 
-test('queueRunwayWeeks returns null when there is no send pace', () => {
-  assert.equal(queueRunwayWeeks(10, []), null);
-  assert.equal(
-    queueRunwayWeeks(10, [{ date: '2026-08-10', sent: 0, replied: 0, positiveReply: 0, bounce: 0 }]),
-    null,
-  );
+test('queueRunwayDays returns null when there is no send capacity', () => {
+  assert.equal(queueRunwayDays(10, 0), null);
+  assert.equal(queueRunwayDays(10, -1), null);
+  assert.equal(queueRunwayWeeks(10, 0), null);
+  assert.equal(queueRunwayEndDate(10, 0), null);
 });
 
 test('formatRunwayWeeks', () => {
@@ -45,11 +39,11 @@ test('formatRelativeDay uses today, tomorrow, weekday, then a date', () => {
 
 test('queueRunwayEndDate is today plus rounded runway days', () => {
   const now = new Date(2026, 7, 14);
-  const end = queueRunwayEndDate(400, days, now);
+  const end = queueRunwayEndDate(400, 100, now);
   assert.ok(end);
   assert.equal(end.getFullYear(), 2026);
-  assert.equal(end.getMonth(), 8);
-  assert.equal(end.getDate(), 11);
-  assert.equal(formatRunwayThrough(end, now), 'Through Sep 11');
-  assert.equal(formatRunwayThrough(queueRunwayEndDate(0, days, now), now), 'Through today');
+  assert.equal(end.getMonth(), 7);
+  assert.equal(end.getDate(), 18);
+  assert.equal(formatRunwayThrough(end, now), 'Through Tuesday');
+  assert.equal(formatRunwayThrough(queueRunwayEndDate(0, 100, now), now), 'Through today');
 });

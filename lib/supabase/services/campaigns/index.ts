@@ -34,6 +34,9 @@ export {
 } from './account-outreach-metrics';
 export { getAccountOutreachStatsByDay } from './account-outreach-stats-by-day';
 export {
+  getAccountQueueSendCapacity,
+} from './account-queue-send-capacity';
+export {
   getAccountWeeklyOutreachVolume,
   mapAccountWeeklyOutreachVolumeRows,
   type AccountWeeklyOutreachVolume,

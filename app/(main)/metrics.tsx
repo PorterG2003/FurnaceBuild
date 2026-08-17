@@ -20,18 +20,20 @@ import {
   formatCountPerOutcome,
   formatRate,
 } from '@/lib/metrics/lowVolume';
-import { formatRelativeDay, formatRunwayThrough, queueRunwayEndDate, queueRunwayWeeks } from '@/lib/metrics/runway';
+import { formatRunwayThrough, queueRunwayEndDate } from '@/lib/metrics/runway';
 import { formatWeekLabel, rollupDailyToIsoWeeks } from '@/lib/metrics/weeklyRollup';
 import {
   getAccountDailyOutreachVolume,
   getAccountOutreachMetrics,
   getAccountOutreachStatsByDay,
+  getAccountQueueSendCapacity,
   getAccountWeeklyOutreachVolume,
   getCampaignsListSummary,
   type AccountOutreachMetrics,
   type CampaignListSummary,
   type CampaignStatsByDay,
 } from '@/lib/supabase/services/campaigns';
+import type { QueueSendCapacity } from '@/lib/metrics/queueSendCapacity';
 import { FunnelIcon } from 'react-native-heroicons/outline';
 import { EmberParticlesLite, HeroHeatShimmer } from '@/components/ui/effects';
 
@@ -66,6 +68,7 @@ export default function AccountMetricsPage() {
   const [metrics, setMetrics] = useState<AccountOutreachMetrics | null>(null);
   const [statsByDay, setStatsByDay] = useState<CampaignStatsByDay[]>([]);
   const [outreachVolume, setOutreachVolume] = useState<OutreachVolumePoint[]>([]);
+  const [sendCapacity, setSendCapacity] = useState<QueueSendCapacity | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [warningDismissed, setWarningDismissed] = useState(false);
@@ -112,6 +115,7 @@ export default function AccountMetricsPage() {
       setMetrics(null);
       setStatsByDay([]);
       setOutreachVolume([]);
+      setSendCapacity(null);
       return;
     }
     setLoading(true);
@@ -120,15 +124,17 @@ export default function AccountMetricsPage() {
       selectedCampaignIds.length > 0 ? selectedCampaignIds : undefined;
     const grain = trendChartGrain(startDate, endDate);
     try {
-      const [summary, byDay, volume] = await Promise.all([
+      const [summary, byDay, volume, capacity] = await Promise.all([
         getAccountOutreachMetrics(account.id, startDate, endDate, campaignFilter),
         getAccountOutreachStatsByDay(account.id, startDate, endDate, campaignFilter),
         grain === 'day'
           ? getAccountDailyOutreachVolume(account.id, startDate, endDate, campaignFilter)
           : getAccountWeeklyOutreachVolume(account.id, startDate, endDate, campaignFilter),
+        getAccountQueueSendCapacity(account.id, campaignFilter),
       ]);
       setMetrics(summary);
       setStatsByDay(fillMissingStatsByDay(byDay, startDate, endDate));
+      setSendCapacity(capacity);
       setOutreachVolume(
         volume.map((row) =>
           'date' in row
@@ -148,6 +154,7 @@ export default function AccountMetricsPage() {
       setMetrics(null);
       setStatsByDay([]);
       setOutreachVolume([]);
+      setSendCapacity(null);
       setError(e instanceof Error ? e.message : 'Failed to load metrics');
     } finally {
       setLoading(false);
@@ -241,13 +248,12 @@ export default function AccountMetricsPage() {
     [trendPeriods, volumeByPeriod, outcomeByPeriod],
   );
 
-  const runway = useMemo(
-    () => (metrics ? queueRunwayWeeks(metrics.leadsInQueue, statsByDay) : null),
-    [metrics, statsByDay],
-  );
   const runwayEndDate = useMemo(
-    () => (metrics ? queueRunwayEndDate(metrics.leadsInQueue, statsByDay) : null),
-    [metrics, statsByDay],
+    () =>
+      metrics && sendCapacity
+        ? queueRunwayEndDate(metrics.leadsInQueue, sendCapacity.dailyEmails)
+        : null,
+    [metrics, sendCapacity],
   );
 
   const headerActions = isMobile ? (
@@ -356,20 +362,11 @@ export default function AccountMetricsPage() {
             loading
               ? null
               : formatRunwayThrough(runwayEndDate) ??
-                (queue > 0 ? 'No recent send pace' : 'No unsent leads')
+                (queue > 0 ? 'No send capacity' : 'No unsent leads')
           }
           color="#f59e0b"
         />
       </View>
-
-      {runway != null && runwayEndDate != null && runway < 6 && queue > 0 ? (
-        <View className="mb-8">
-          <Alert
-            variant="warning"
-            message={`At the current send pace, the queue of ${formatInt(queue)} unsent leads lasts through ${formatRelativeDay(runwayEndDate)}.`}
-          />
-        </View>
-      ) : null}
 
       <Text className="text-lg font-instrument-semibold text-white mb-1">
         {grain === 'day' ? 'Daily trends' : 'Weekly trends'}

@@ -4,6 +4,7 @@ import {
   Easing,
   KeyboardAvoidingView,
   Modal,
+  PanResponder,
   Platform,
   Pressable,
   StyleSheet,
@@ -20,6 +21,10 @@ import {
   type BottomSheetTakeoverOptions,
   PickerInsideBottomSheetProvider,
 } from './PickerInsideBottomSheetContext';
+import {
+  BOTTOM_SHEET_DRAG_HANDLE_HIT_HEIGHT,
+  resolveBottomSheetDragRelease,
+} from './bottomSheetDrag';
 
 const isWeb = Platform.OS === 'web';
 
@@ -31,12 +36,12 @@ export const BOTTOM_SHEET_HORIZONTAL_PADDING = 16;
 
 /**
  * Vertical space available for scrollable sheet content (below drag handle, inside sheet padding).
- * Keep in sync with `sheetStyle` padding and `dragHandleStyle` margins in this file.
+ * Keep in sync with `sheetStyle` padding and `dragHandleHitStyle` height in this file.
  */
 export function getBottomSheetBodyScrollMaxHeight(screenHeight: number, bottomInset: number): number {
   const sheetMax = screenHeight * BOTTOM_SHEET_MAX_VIEWPORT_RATIO;
   const paddingBottom = Math.max(bottomInset, 16);
-  const dragBlock = 4 + 16; // handle height + marginBottom
+  const dragBlock = BOTTOM_SHEET_DRAG_HANDLE_HIT_HEIGHT;
   return sheetMax - 12 - paddingBottom - dragBlock;
 }
 
@@ -65,9 +70,9 @@ export interface BottomSheetProps {
   expandBodyHeightFraction?: number;
   overlayZIndex?: number;
   /**
-   * When true, backdrop taps and the hardware back button do not dismiss the
-   * sheet (an open takeover still dismisses first). Used to pin the sheet open,
-   * e.g. while an onboarding step is highlighting content inside it.
+   * When true, backdrop taps, handle drag, and the hardware back button do not
+   * dismiss the sheet (an open takeover still dismisses first). Used to pin the
+   * sheet open, e.g. while an onboarding step is highlighting content inside it.
    */
   dismissLocked?: boolean;
   /**
@@ -94,7 +99,8 @@ const HOST_OPACITY_WHEN_PICKER = 0.92;
 
 /**
  * Slide-up bottom sheet (modal). Use for mobile action sheets and option lists.
- * Backdrop fades in place; sheet slides up from the bottom. Backdrop tap closes.
+ * Backdrop fades in place; sheet slides up from the bottom.
+ * Backdrop tap or dragging the handle down closes.
  */
 export function BottomSheet({
   visible,
@@ -274,6 +280,10 @@ export function BottomSheet({
 
   const dismissLockedRef = useRef(dismissLocked);
   dismissLockedRef.current = dismissLocked;
+  const webKeyboardInsetRef = useRef(webKeyboardInset);
+  webKeyboardInsetRef.current = webKeyboardInset;
+  const screenHeightRef = useRef(screenHeight);
+  screenHeightRef.current = screenHeight;
 
   const handleBackdropOrHardwareBack = useCallback(() => {
     if (takeoverRef.current != null) {
@@ -405,6 +415,78 @@ export function BottomSheet({
     }
   }, [visible, screenHeight, backdropOpacity, sheetTranslateY, useNative, isWeb]);
 
+  const handleBackdropOrHardwareBackRef = useRef(handleBackdropOrHardwareBack);
+  handleBackdropOrHardwareBackRef.current = handleBackdropOrHardwareBack;
+  const sheetHeightRef = useRef(0);
+
+  const snapSheetToRest = useCallback(() => {
+    if (!prevVisibleRef.current) return;
+    Animated.parallel([
+      Animated.timing(sheetTranslateY, {
+        toValue: 0,
+        duration: ANIMATION_DURATION,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: useNative,
+      }),
+      Animated.timing(backdropOpacity, {
+        toValue: 1,
+        duration: ANIMATION_DURATION,
+        useNativeDriver: useNative,
+      }),
+    ]).start();
+  }, [sheetTranslateY, backdropOpacity, useNative]);
+
+  const snapSheetToRestRef = useRef(snapSheetToRest);
+  snapSheetToRestRef.current = snapSheetToRest;
+
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => {
+          if (isWeb && webKeyboardInsetRef.current > 0) return false;
+          if (dismissLockedRef.current && takeoverRef.current == null) return false;
+          return true;
+        },
+        onMoveShouldSetPanResponder: (_, gesture) => {
+          if (isWeb && webKeyboardInsetRef.current > 0) return false;
+          if (dismissLockedRef.current && takeoverRef.current == null) return false;
+          return gesture.dy > 2 && Math.abs(gesture.dy) > Math.abs(gesture.dx);
+        },
+        onPanResponderGrant: () => {
+          sheetTranslateY.stopAnimation();
+          backdropOpacity.stopAnimation();
+        },
+        onPanResponderMove: (_, gesture) => {
+          const dy = Math.max(0, gesture.dy);
+          sheetTranslateY.setValue(dy);
+          const height = sheetHeightRef.current || screenHeightRef.current * 0.3;
+          const progress = height > 0 ? Math.min(1, dy / height) : 0;
+          backdropOpacity.setValue(1 - progress);
+        },
+        onPanResponderRelease: (_, gesture) => {
+          const action = resolveBottomSheetDragRelease({
+            dy: Math.max(0, gesture.dy),
+            vy: gesture.vy,
+            sheetHeight: sheetHeightRef.current || screenHeightRef.current * 0.3,
+            dismissLocked: dismissLockedRef.current,
+            takeoverActive: takeoverRef.current != null,
+          });
+          if (action === 'dismiss-sheet') {
+            handleBackdropOrHardwareBackRef.current();
+            return;
+          }
+          snapSheetToRestRef.current();
+          if (action === 'dismiss-takeover') {
+            handleBackdropOrHardwareBackRef.current();
+          }
+        },
+        onPanResponderTerminate: () => {
+          snapSheetToRestRef.current();
+        },
+      }),
+    [sheetTranslateY, backdropOpacity],
+  );
+
   /** Resolves to 100svh in browser tabs and 100vh in installed PWAs; see #expo-reset in public/index.html. */
   const webFullHeightStyle = {
     height: 'var(--furnace-viewport-height, 100vh)' as unknown as number,
@@ -461,18 +543,22 @@ export function BottomSheet({
     opacity: backdropOpacity,
   };
 
-  const dragHandleStyle = {
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#4B5563',
-    alignSelf: 'center' as const,
-    marginBottom: 16,
-  };
+  const sheetOnLayout = useCallback((event: { nativeEvent: { layout: { height: number } } }) => {
+    sheetHeightRef.current = event.nativeEvent.layout.height;
+  }, []);
 
   const sheetInterior = (
     <>
-      <View style={dragHandleStyle} />
+      <View
+        collapsable={false}
+        style={styles.dragHandleHit}
+        {...panResponder.panHandlers}
+        accessibilityRole="adjustable"
+        accessibilityLabel="Dismiss"
+        accessibilityHint="Drag down to close"
+      >
+        <View style={styles.dragHandlePill} />
+      </View>
       <BottomSheetTakeoverContext.Provider value={takeoverContextValue}>
         <View
           style={[
@@ -567,6 +653,7 @@ export function BottomSheet({
               ref={webSheetRef}
               className="overflow-hidden flex-shrink-0"
               style={sheetStyle}
+              onLayout={sheetOnLayout}
               onStartShouldSetResponder={() => true}
             >
               {sheetBody}
@@ -592,6 +679,7 @@ export function BottomSheet({
         <Animated.View
           className="overflow-hidden"
           style={sheetStyle}
+          onLayout={sheetOnLayout}
           onStartShouldSetResponder={() => true}
         >
           {sheetBody}
@@ -602,6 +690,18 @@ export function BottomSheet({
 }
 
 const styles = StyleSheet.create({
+  dragHandleHit: {
+    height: BOTTOM_SHEET_DRAG_HANDLE_HIT_HEIGHT,
+    marginHorizontal: -BOTTOM_SHEET_HORIZONTAL_PADDING,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dragHandlePill: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#4B5563',
+  },
   sheetBodyHost: {
     position: 'relative',
     minHeight: 120,

@@ -30,6 +30,7 @@ import {
   type CampaignsListSummaryCursor,
 } from '@/lib/supabase/services/campaigns';
 import type { CampaignTag } from '@/lib/supabase/services/campaign-tags';
+import { campaignStatPct } from '@/lib/campaigns/campaignStatPct';
 import { useCampaignTags } from '@/lib/campaigns/useCampaignTags';
 import {
   DEFAULT_CAMPAIGN_SCHEDULE,
@@ -563,8 +564,9 @@ function CampaignCard({
     />
   );
 
-  const repliedPct = sentCount > 0 ? Math.round((repliedCount / sentCount) * 100) : 0;
-  const positivePct = repliedCount > 0 ? Math.round((positiveReplyCount / repliedCount) * 100) : 0;
+  const repliedPct = campaignStatPct(repliedCount, sentCount);
+  const positivePct = campaignStatPct(positiveReplyCount, repliedCount);
+  const bouncePct = campaignStatPct(bounceCount, sentCount);
 
   const openInNewTabButton =
     Platform.OS === 'web' && !isMobileLayout ? (
@@ -603,7 +605,7 @@ function CampaignCard({
         />
       </View>
       <View className="w-[72px] items-center">
-        <StatColumn icon={ExclamationTriangleIcon} value={bounceCount} label="Bounced" color="#f59e0b" />
+        <StatColumn icon={ExclamationTriangleIcon} value={bounceCount} pct={bouncePct} label="Bounced" color="#f59e0b" />
       </View>
     </>
   );
@@ -772,7 +774,7 @@ function CampaignCard({
                 />
               </View>
               <View className="items-center">
-                <StatColumn icon={ExclamationTriangleIcon} value={bounceCount} label="Bounced" color="#f59e0b" size={statSize} />
+                <StatColumn icon={ExclamationTriangleIcon} value={bounceCount} pct={bouncePct} label="Bounced" color="#f59e0b" size={statSize} />
               </View>
             </View>
         </Card>

@@ -147,6 +147,8 @@ export function NavBar() {
     };
   });
 
+  const webNoSelectStyle = Platform.OS === 'web' ? ({ userSelect: 'none' } as const) : undefined;
+
   const navItems = [
     { label: 'Campaigns', path: '/campaigns', icon: MegaphoneIcon },
     { label: 'Metrics', path: '/metrics', icon: ChartBarIcon },
@@ -245,7 +247,7 @@ export function NavBar() {
     <Animated.View
       ref={navRef}
       className="bg-[#1A1A1A] border-r border-[#2A2A2A] h-full py-6 overflow-hidden"
-      style={animatedStyle}
+      style={[animatedStyle, webNoSelectStyle]}
       {...(mouseProps as any)}
     >
       <View className="flex-col h-full">
@@ -334,6 +336,8 @@ export function NavBar() {
                   className="text-gray-400 font-instrument text-xs"
                   numberOfLines={1}
                   ellipsizeMode="tail"
+                  selectable={false}
+                  style={webNoSelectStyle}
                 >
                   {account.name}
                 </Text>

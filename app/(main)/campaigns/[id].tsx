@@ -22,7 +22,10 @@ import {
 import { downloadCsvOnWeb, exportCampaignLeadsToCsv } from '@/components/campaigns/exportCampaignLeadsCsv';
 import { Tabs, type Tab } from '@/components/ui/tabs';
 import { isWithinSchedule, isSmartleadCampaign } from '@/lib/campaigns/utils';
-import { formatVariantPerfCells } from '@/lib/campaigns/formatVariantPerfCells';
+import {
+  formatVariantPerfCells,
+  type VariantPerfCellValue,
+} from '@/lib/campaigns/formatVariantPerfCells';
 import { SmartleadRestrictedModal } from '@/components/campaigns/SmartleadRestrictedModal';
 import { Tooltip } from '@/components/ui/Tooltip';
 import {
@@ -141,6 +144,44 @@ const VARIANT_PERF_COLORS = {
   },
   bounce: { header: CAMPAIGN_STAT_COLORS.bounce, cell: CAMPAIGN_STAT_COLORS.bounce },
 } as const;
+
+const VARIANT_PERF_NA_COLOR = '#6b7280';
+
+function VariantPerfStatText({
+  cell,
+  color,
+}: {
+  cell: VariantPerfCellValue;
+  color: string;
+}) {
+  if (cell === '—') {
+    return (
+      <Text
+        style={{
+          color: VARIANT_PERF_NA_COLOR,
+          fontSize: 14,
+          textAlign: 'left',
+          fontWeight: '600',
+        }}
+      >
+        —
+      </Text>
+    );
+  }
+  return (
+    <Text
+      style={{
+        color,
+        fontSize: 14,
+        textAlign: 'left',
+        fontWeight: '600',
+      }}
+    >
+      {cell.value}
+      <Text style={{ color: VARIANT_PERF_NA_COLOR, fontSize: 13, fontWeight: '400' }}> ({cell.pct}%)</Text>
+    </Text>
+  );
+}
 
 export default function CampaignPage() {
   const router = useRouter();
@@ -1137,7 +1178,6 @@ export default function CampaignPage() {
                                           counts,
                                         });
                                         const isLastRow = rowIndex === variants.length - 1;
-                                        const naColor = '#6b7280';
                                         return (
                                           <View
                                             key={v.id}
@@ -1182,46 +1222,22 @@ export default function CampaignPage() {
                                               </Text>
                                             </View>
                                             <View style={variantPerfCol}>
-                                              <Text
-                                                style={{
-                                                  color:
-                                                    cells.replied === '—'
-                                                      ? naColor
-                                                      : VARIANT_PERF_COLORS.reply.cell,
-                                                  fontSize: 14,
-                                                  textAlign: 'left',
-                                                  fontWeight: '600',
-                                                }}
-                                              >
-                                                {cells.replied}
-                                              </Text>
+                                              <VariantPerfStatText
+                                                cell={cells.replied}
+                                                color={VARIANT_PERF_COLORS.reply.cell}
+                                              />
                                             </View>
                                             <View style={variantPerfCol}>
-                                              <Text
-                                                style={{
-                                                  color:
-                                                    cells.interested === '—'
-                                                      ? naColor
-                                                      : VARIANT_PERF_COLORS.interested.cell,
-                                                  fontSize: 14,
-                                                  textAlign: 'left',
-                                                  fontWeight: '600',
-                                                }}
-                                              >
-                                                {cells.interested}
-                                              </Text>
+                                              <VariantPerfStatText
+                                                cell={cells.interested}
+                                                color={VARIANT_PERF_COLORS.interested.cell}
+                                              />
                                             </View>
                                             <View style={{ ...variantPerfCol, paddingRight: 0 }}>
-                                              <Text
-                                                style={{
-                                                  color: VARIANT_PERF_COLORS.bounce.cell,
-                                                  fontSize: 14,
-                                                  textAlign: 'left',
-                                                  fontWeight: '600',
-                                                }}
-                                              >
-                                                {cells.bounced}
-                                              </Text>
+                                              <VariantPerfStatText
+                                                cell={cells.bounced}
+                                                color={VARIANT_PERF_COLORS.bounce.cell}
+                                              />
                                             </View>
                                           </View>
                                         );

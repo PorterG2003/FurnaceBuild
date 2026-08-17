@@ -67,7 +67,10 @@ export const NavBarButton = React.forwardRef<View, NavBarButtonProps>(function N
       onHoverIn={isWeb ? () => setHovered(true) : undefined}
       onHoverOut={isWeb ? () => setHovered(false) : undefined}
       className={`h-9 rounded-lg ${isExpanded ? 'px-2' : 'px-0'}`}
-      style={{ backgroundColor }}
+      style={{
+        backgroundColor,
+        ...(isWeb ? { userSelect: 'none' as const } : {}),
+      }}
     >
       <View
         className={`h-full flex-row items-center ${isExpanded ? 'w-full' : 'justify-center'}`}
@@ -82,7 +85,14 @@ export const NavBarButton = React.forwardRef<View, NavBarButtonProps>(function N
               }`}
               numberOfLines={1}
               ellipsizeMode="tail"
-              style={{ flexGrow: 1, flexShrink: 1, flexBasis: 0, minWidth: 0 }}
+              style={{
+                flexGrow: 1,
+                flexShrink: 1,
+                flexBasis: 0,
+                minWidth: 0,
+                ...(isWeb ? { userSelect: 'none' as const } : {}),
+              }}
+              selectable={false}
             >
               {label}
             </Text>

@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Campaign } from '../../types';
 import type { Database } from '../../types/database';
 import type { CampaignFlowSaveResult } from './campaigns';
+import { kickCopyParseFromServer } from '../../../copy/kickCopyParseServer';
 
 type DbClient = SupabaseClient<Database>;
 
@@ -52,5 +53,7 @@ export async function updateCampaignFlowDataWithClient(
   if (!data) {
     throw new Error('Failed to update campaign flow: No data returned');
   }
-  return parseCampaignFlowSaveRpcResult(data);
+  const result = parseCampaignFlowSaveRpcResult(data);
+  await kickCopyParseFromServer(accountId);
+  return result;
 }

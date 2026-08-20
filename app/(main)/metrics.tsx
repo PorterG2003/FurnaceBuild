@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { View, Text, Pressable, ScrollView, useWindowDimensions, Platform, type ViewStyle } from 'react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { View, Text, Pressable, ScrollView, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   PageLayout,
@@ -11,6 +11,7 @@ import { Card } from '@/components/ui/Card';
 import { Alert } from '@/components/ui/feedback';
 import { AccountMetricsToolbar } from '@/components/campaigns/AccountMetricsToolbar';
 import { AccountTrendChart } from '@/components/campaigns/AccountTrendChart';
+import { CopyPerformancePanel } from '@/components/campaigns/copyPerformance';
 import { useAccount } from '@/contexts/AccountContext';
 import { fillMissingStatsByDay } from '@/lib/campaigns/fillMissingStatsByDay';
 import { CAMPAIGN_STAT_COLORS } from '@/lib/campaigns/campaignStatColors';
@@ -24,18 +25,20 @@ import { formatRunwayThrough, queueRunwayEndDate } from '@/lib/metrics/runway';
 import { formatWeekLabel, rollupDailyToIsoWeeks } from '@/lib/metrics/weeklyRollup';
 import {
   getAccountDailyOutreachVolume,
+  getAccountCopyStats,
   getAccountOutreachMetrics,
   getAccountOutreachStatsByDay,
   getAccountQueueSendCapacity,
   getAccountWeeklyOutreachVolume,
   getCampaignsListSummary,
   type AccountOutreachMetrics,
+  type AccountCopyStats,
   type CampaignListSummary,
   type CampaignStatsByDay,
 } from '@/lib/supabase/services/campaigns';
 import type { QueueSendCapacity } from '@/lib/metrics/queueSendCapacity';
 import { FunnelIcon } from 'react-native-heroicons/outline';
-import { EmberParticlesLite, HeroHeatShimmer } from '@/components/ui/effects';
+import { kickCopyParseFromClient } from '@/lib/copy/kickCopyParse';
 
 type OutreachVolumePoint = {
   periodStart: string;
@@ -43,10 +46,11 @@ type OutreachVolumePoint = {
   leadsFirstContacted: number;
 };
 
-function formatInt(n: number): string {
-  return new Intl.NumberFormat('en-US').format(n);
-}
+const INTEGER_FORMATTER = new Intl.NumberFormat('en-US');
 
+function formatInt(n: number): string {
+  return INTEGER_FORMATTER.format(n);
+}
 export default function AccountMetricsPage() {
   const { account } = useAccount();
   const { width, height: screenHeight } = useWindowDimensions();
@@ -69,6 +73,7 @@ export default function AccountMetricsPage() {
   const [statsByDay, setStatsByDay] = useState<CampaignStatsByDay[]>([]);
   const [outreachVolume, setOutreachVolume] = useState<OutreachVolumePoint[]>([]);
   const [sendCapacity, setSendCapacity] = useState<QueueSendCapacity | null>(null);
+  const [copyStats, setCopyStats] = useState<AccountCopyStats | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [warningDismissed, setWarningDismissed] = useState(false);
@@ -116,6 +121,7 @@ export default function AccountMetricsPage() {
       setStatsByDay([]);
       setOutreachVolume([]);
       setSendCapacity(null);
+      setCopyStats(null);
       return;
     }
     setLoading(true);
@@ -124,17 +130,22 @@ export default function AccountMetricsPage() {
       selectedCampaignIds.length > 0 ? selectedCampaignIds : undefined;
     const grain = trendChartGrain(startDate, endDate);
     try {
-      const [summary, byDay, volume, capacity] = await Promise.all([
+      const [summary, byDay, volume, capacity, copy] = await Promise.all([
         getAccountOutreachMetrics(account.id, startDate, endDate, campaignFilter),
         getAccountOutreachStatsByDay(account.id, startDate, endDate, campaignFilter),
         grain === 'day'
           ? getAccountDailyOutreachVolume(account.id, startDate, endDate, campaignFilter)
           : getAccountWeeklyOutreachVolume(account.id, startDate, endDate, campaignFilter),
         getAccountQueueSendCapacity(account.id, campaignFilter),
+        getAccountCopyStats(account.id, startDate, endDate, campaignFilter),
       ]);
       setMetrics(summary);
       setStatsByDay(fillMissingStatsByDay(byDay, startDate, endDate));
       setSendCapacity(capacity);
+      setCopyStats(copy);
+      if (copy.copyBacklog > 0) {
+        void kickCopyParseFromClient(account.id);
+      }
       setOutreachVolume(
         volume.map((row) =>
           'date' in row
@@ -155,6 +166,7 @@ export default function AccountMetricsPage() {
       setStatsByDay([]);
       setOutreachVolume([]);
       setSendCapacity(null);
+      setCopyStats(null);
       setError(e instanceof Error ? e.message : 'Failed to load metrics');
     } finally {
       setLoading(false);
@@ -383,11 +395,21 @@ export default function AccountMetricsPage() {
         />
       </View>
 
+      <View className="flex-row items-center gap-2 mb-1">
+        <Text className="text-lg font-instrument-semibold text-white">
+          Copy performance
+        </Text>
+        <View className="rounded px-1.5 py-0.5 shrink-0" style={{ backgroundColor: '#f85102' }}>
+          <Text className="text-[10px] font-instrument-semibold uppercase tracking-wide text-white">
+            Beta
+          </Text>
+        </View>
+      </View>
+      <Text className="text-gray-400 font-instrument text-sm mb-4">
+        Which hooks, offers, and CTAs correlate with interested replies. Rates are per send.
+      </Text>
       <View className="mb-8">
-        <ComingSoonCard
-          title="Detailed Stats on all of your Hooks, CTA's, and Offers"
-          preview={<HooksOffersPreview />}
-        />
+        <CopyPerformancePanel stats={copyStats} loading={loading} />
       </View>
 
       {isMobile ? (
@@ -411,7 +433,6 @@ export default function AccountMetricsPage() {
     </PageLayout>
   );
 }
-
 function MetricCard({
   label,
   value,
@@ -433,144 +454,5 @@ function MetricCard({
         <Text className="text-gray-500 font-instrument text-xs mt-1.5">{hint}</Text>
       ) : null}
     </Card>
-  );
-}
-
-function MockTable({
-  columns,
-  rows,
-}: {
-  columns: string[];
-  rows: string[][];
-}) {
-  return (
-    <View className="pt-8 px-1">
-      <View className="border border-[#2A2A2A] rounded-xl overflow-hidden bg-[#141414]/80">
-        <View className="flex-row border-b border-[#2A2A2A] bg-[#1F1F1F]">
-          {columns.map((column, index) => (
-            <View
-              key={column}
-              className={`px-3 py-2.5 min-w-0 ${index === 0 ? 'flex-[3]' : 'flex-1'}`}
-            >
-              <Text
-                className={`text-xs font-instrument-semibold text-gray-500 ${
-                  index === 0 ? '' : 'text-right'
-                }`}
-                numberOfLines={1}
-              >
-                {column}
-              </Text>
-            </View>
-          ))}
-        </View>
-        {rows.map((row, rowIndex) => (
-          <View
-            key={row.join('|')}
-            className={`flex-row ${rowIndex < rows.length - 1 ? 'border-b border-[#2A2A2A]' : ''}`}
-            style={rowIndex % 2 === 1 ? { backgroundColor: 'rgba(255,255,255,0.03)' } : undefined}
-          >
-            {row.map((cell, index) => (
-              <View
-                key={`${row.join('|')}::${columns[index] ?? index}`}
-                className={`px-3 py-2.5 min-w-0 ${index === 0 ? 'flex-[3]' : 'flex-1'}`}
-              >
-                <Text
-                  className={`text-xs font-instrument text-gray-300 ${
-                    index === 0 ? '' : 'text-right'
-                  }`}
-                  numberOfLines={1}
-                >
-                  {cell}
-                </Text>
-              </View>
-            ))}
-          </View>
-        ))}
-      </View>
-    </View>
-  );
-}
-
-function HooksOffersPreview() {
-  return (
-    <MockTable
-      columns={['Hook / CTA / Offer', 'interested']}
-      rows={[
-        ['Hook: quick question', '9.4%'],
-        ['CTA: 15-min audit', '7.1%'],
-        ['Offer: webinar replay', '5.8%'],
-        ['Hook: case-study proof', '2.1%'],
-      ]}
-    />
-  );
-}
-
-const PREVIEW_BLUR_STYLE: ViewStyle =
-  Platform.OS === 'web'
-    ? ({ opacity: 0.42, filter: 'blur(6px)' } as ViewStyle)
-    : { opacity: 0.35 };
-
-function ComingSoonCard({
-  preview,
-  title,
-}: {
-  preview: ReactNode;
-  title: string;
-}) {
-  const isWeb = Platform.OS === 'web';
-  const [glowHeight, setGlowHeight] = useState(240);
-
-  return (
-    <View
-      className="relative overflow-hidden rounded-xl border border-[#2A2A2A] bg-[#1A1A1A] h-full"
-      style={{ minHeight: 240 }}
-      onLayout={(event) => {
-        const next = Math.round(event.nativeEvent.layout.height);
-        if (next > 0 && next !== glowHeight) setGlowHeight(next);
-      }}
-    >
-      {isWeb ? (
-        <View className="absolute inset-0" pointerEvents="none">
-          <HeroHeatShimmer intensity="medium" speed="slow" tint="ember" />
-        </View>
-      ) : (
-        <>
-          <View className="absolute inset-0" style={{ backgroundColor: '#0c0c0c' }} />
-          <View
-            className="absolute inset-0"
-            style={{ backgroundColor: '#f85102', opacity: 0.07 }}
-          />
-        </>
-      )}
-      {isWeb ? (
-        <EmberParticlesLite
-          density="low"
-          maxOpacity={0.12}
-          count={5}
-          maxSize={8}
-          speedScale={0.6}
-          containerHeight={glowHeight}
-        />
-      ) : null}
-      <View className="absolute inset-0 p-5" pointerEvents="none" style={PREVIEW_BLUR_STYLE}>
-        {preview}
-      </View>
-      <View
-        className="absolute inset-0 items-center justify-center px-4"
-        pointerEvents="none"
-      >
-        <View
-          className="items-center rounded-2xl px-6 py-4"
-          style={{ backgroundColor: 'rgba(12,12,12,0.62)' }}
-        >
-          <Text className="text-brand-orange text-xs font-instrument-semibold uppercase tracking-[2px] text-center">
-            Coming soon
-          </Text>
-          <Text className="text-white font-instrument-semibold text-lg text-center mt-1.5">
-            {title}
-          </Text>
-        </View>
-      </View>
-    </View>
   );
 }

@@ -65,6 +65,15 @@ class MutationStub implements PromiseLike<{ data: any; error: any }> {
     return this;
   }
 
+  upsert(payload: Record<string, unknown>, _options?: Record<string, unknown>) {
+    this.call.updates = payload;
+    return this;
+  }
+
+  delete() {
+    return this;
+  }
+
   eq(column: string, value: unknown) {
     this.call.filters.push({ op: 'eq', column, value });
     return this;
@@ -136,6 +145,15 @@ class ProcessMessageMutationStub implements PromiseLike<{ data: any; error: any 
 
   insert(payload: Record<string, unknown>) {
     this.updates = payload;
+    return this;
+  }
+
+  upsert(payload: Record<string, unknown>, _options?: Record<string, unknown>) {
+    this.updates = payload;
+    return this;
+  }
+
+  delete() {
     return this;
   }
 
@@ -1523,6 +1541,90 @@ test('SendWorker persists sent_subject onto message_jobs.message_data', async ()
   assert.ok(persistCall, 'expected message_data.sent_subject persistence');
   assert.equal((persistCall.updates.message_data as any).sent_subject, expected.subject);
   assert.equal((messageJob.message_data as any).sent_subject, expected.subject);
+  assert.equal(
+    persistCall.updates.copy_rendering_id,
+    undefined,
+    'unparsed copy must not fail the send or stamp a rendering',
+  );
+});
+
+test('SendWorker stamps copy_rendering_id when copy is parsed', async () => {
+  const supabase = new ProcessMessageSupabase();
+  const originalResolve = supabase.resolveTableResult.bind(supabase);
+  supabase.resolveTableResult = (table: string, updates: Record<string, unknown> | null) => {
+    if (table === 'nodes') {
+      return { data: { flow_node_id: 'email-1' }, error: null };
+    }
+    if (table === 'copy_variant_content_map') {
+      return {
+        data: {
+          content_id: 'content-1',
+          copy_contents: { subject: '{Hi|Hello} {{first_name}}' },
+        },
+        error: null,
+      };
+    }
+    if (table === 'copy_piece_occurrences') {
+      return {
+        data: [
+          {
+            piece_id: 'piece-subject-0',
+            copy_pieces: {
+              id: 'piece-subject-0',
+              kind: 'subject',
+              fingerprint: 'unused',
+              raw_text: 'Hi {{first_name}}',
+            },
+          },
+          {
+            piece_id: 'piece-subject-1',
+            copy_pieces: {
+              id: 'piece-subject-1',
+              kind: 'subject',
+              fingerprint: 'unused',
+              raw_text: 'Hello {{first_name}}',
+            },
+          },
+        ],
+        error: null,
+      };
+    }
+    if (table === 'copy_renderings') {
+      return { data: { id: 'rendering-1' }, error: null };
+    }
+    if (table === 'copy_rendering_pieces') {
+      return { data: [], error: null };
+    }
+    return originalResolve(table, updates);
+  };
+
+  const worker = new SendWorker({
+    supabase: supabase as any,
+    databaseClient: {} as any,
+    campaignEmailSender: async () => ({ submittedMessageId: '<job-1@furnace.build>', providerMessageId: '<provider@example.com>' }),
+  });
+  const messageJob = createCampaignMessageJob({
+    variant_id: 'variant-1',
+    flow_version_number: 1,
+    message_data: {
+      node_config: {
+        subject: '{Hi {{first_name}}|Hello {{first_name}}}',
+        body_html: '<p>Hey {{first_name}}</p>',
+        body_text: 'Hey {{first_name}}',
+      },
+      skip_smtp: true,
+    },
+  });
+  stubCampaignSendWorker(worker, messageJob, { firstSent: null });
+  await (worker as any).processMessageJob(messageJob);
+  const persistCall = supabase.tableUpdates.find(
+    (call) =>
+      call.table === 'message_jobs' &&
+      call.updates &&
+      typeof (call.updates.message_data as any)?.sent_subject === 'string',
+  );
+  assert.ok(persistCall, 'expected persist');
+  assert.equal(persistCall.updates.copy_rendering_id, 'rendering-1');
 });
 
 test('SendWorker.stop awaits active batch before closing SMTP pool', async () => {

@@ -52,6 +52,13 @@ export {
   type AccountNodeStatRow,
 } from './account-node-stats';
 export {
+  getAccountCopyStats,
+  type AccountCopyStats,
+  type AccountCopyStatRow,
+  type CopyStatsGroupBy,
+  type CopyStatsWording,
+} from './account-copy-stats';
+export {
   getCampaignLeadProgressBuckets,
   getCampaignContactedLeadIds,
   type CampaignLeadProgressBuckets,

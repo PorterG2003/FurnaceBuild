@@ -1,7 +1,9 @@
-import outputs from '../../amplify_outputs.json';
+import outputs from '@/amplify_outputs.json';
 import { supabase } from '../supabase/client';
 
 function copyStructureParseUrl(): string | null {
+  const fromEnv = process.env.EXPO_PUBLIC_COPY_STRUCTURE_PARSE_URL?.trim();
+  if (fromEnv) return fromEnv;
   const custom = (
     outputs as { custom?: { copyStructureParseUrl?: string } }
   ).custom;

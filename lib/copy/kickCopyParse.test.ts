@@ -30,6 +30,12 @@ test('all sanctioned flow save wrappers kick copy parsing after successful write
     serviceWrites,
     /updateCampaignFlowDataWithClient[\s\S]*await kickCopyParseFromServer\(accountId\)/,
   );
+  assert.doesNotMatch(
+    serviceWrites,
+    /from ['"]\.\/campaigns['"]/,
+    'Client API must not typecheck browser kickCopyParse via campaigns.ts',
+  );
+  assert.doesNotMatch(serviceWrites, /kickCopyParseFromClient/);
 });
 
 test('copy parser infrastructure remains demand-driven with no schedule', () => {

@@ -103,26 +103,63 @@ export function buildCopyStructurePrompt(input: CopyStructurePromptInput): {
   return { system, user };
 }
 
+function coerceJsonObject(parsed: unknown): Record<string, unknown> | null {
+  if (Array.isArray(parsed)) return { pieces: parsed };
+  if (parsed && typeof parsed === 'object') return parsed as Record<string, unknown>;
+  return null;
+}
+
+function stripTrailingCommas(value: string): string {
+  return value.replace(/,\s*([}\]])/g, '$1');
+}
+
+function tryParseJsonObject(candidate: string): Record<string, unknown> | null {
+  for (const variant of [candidate, stripTrailingCommas(candidate)]) {
+    try {
+      const coerced = coerceJsonObject(JSON.parse(variant));
+      if (coerced) return coerced;
+    } catch {
+      // Try the next repair.
+    }
+  }
+  return null;
+}
+
 function extractJsonObject(raw: string): Record<string, unknown> {
   const trimmed = raw.trim();
   const candidates = [trimmed];
   const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
   if (fenced?.[1]) candidates.unshift(fenced[1].trim());
-  const start = trimmed.indexOf('{');
-  const end = trimmed.lastIndexOf('}');
-  if (start >= 0 && end > start) candidates.push(trimmed.slice(start, end + 1));
+  const braceStart = trimmed.indexOf('{');
+  const braceEnd = trimmed.lastIndexOf('}');
+  if (braceStart >= 0 && braceEnd > braceStart) {
+    candidates.push(trimmed.slice(braceStart, braceEnd + 1));
+  }
+  const bracketStart = trimmed.indexOf('[');
+  const bracketEnd = trimmed.lastIndexOf(']');
+  if (bracketStart >= 0 && bracketEnd > bracketStart) {
+    candidates.push(trimmed.slice(bracketStart, bracketEnd + 1));
+  }
 
   for (const candidate of candidates) {
-    try {
-      const parsed = JSON.parse(candidate);
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        return parsed as Record<string, unknown>;
-      }
-    } catch {
-      // Try the next bounded representation.
-    }
+    const parsed = tryParseJsonObject(candidate);
+    if (parsed) return parsed;
   }
   throw new CopyStructureParseError('Model returned malformed JSON');
+}
+
+function piecesFromEnvelope(parsed: Record<string, unknown>, depth = 0): unknown[] | null {
+  if (depth > 2) return null;
+  for (const [key, value] of Object.entries(parsed)) {
+    if (key.toLowerCase() === 'pieces' && Array.isArray(value)) return value;
+  }
+  for (const value of Object.values(parsed)) {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      const nested = piecesFromEnvelope(value as Record<string, unknown>, depth + 1);
+      if (nested) return nested;
+    }
+  }
+  return null;
 }
 
 function sanitizeSlug(value: unknown): string {
@@ -152,7 +189,8 @@ export function parseCopyStructureResponse(
   input: CopyStructurePromptInput,
 ): ParsedCopyPiece[] {
   const parsed = extractJsonObject(raw);
-  if (!Array.isArray(parsed.pieces)) {
+  const pieceRows = piecesFromEnvelope(parsed);
+  if (!pieceRows) {
     throw new CopyStructureParseError('Model response must contain a pieces array');
   }
 
@@ -165,7 +203,7 @@ export function parseCopyStructureResponse(
   const counts = new Map<CopyPieceKind, number>();
   const result: ParsedCopyPiece[] = [];
 
-  for (const item of parsed.pieces) {
+  for (const item of pieceRows) {
     if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
     const row = item as Record<string, unknown>;
     if (!isCopyPieceKind(row.kind) || typeof row.text !== 'string') continue;

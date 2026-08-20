@@ -158,3 +158,52 @@ test('parseCopyStructureResponse fails malformed envelopes rather than returning
     /pieces array/,
   );
 });
+
+test('parseCopyStructureResponse accepts a top-level pieces array', () => {
+  const parsed = parseCopyStructureResponse(
+    JSON.stringify([
+      {
+        kind: 'cta',
+        text: 'Worth a look?',
+        position: 121,
+        archetype_slug: 'permission-question',
+        archetype_name: 'Ignored',
+      },
+    ]),
+    INPUT,
+  );
+  assert.equal(parsed.length, 1);
+  assert.equal(parsed[0]?.kind, 'cta');
+});
+
+test('parseCopyStructureResponse accepts nested or oddly keyed pieces envelopes', () => {
+  const parsed = parseCopyStructureResponse(
+    JSON.stringify({
+      data: {
+        Pieces: [
+          {
+            kind: 'cta',
+            text: 'Worth a look?',
+            position: 121,
+            archetype_slug: 'permission-question',
+            archetype_name: 'Ignored',
+          },
+        ],
+      },
+    }),
+    INPUT,
+  );
+  assert.equal(parsed.length, 1);
+  assert.equal(parsed[0]?.kind, 'cta');
+});
+
+test('parseCopyStructureResponse does not treat truncated JSON as success', () => {
+  assert.throws(
+    () =>
+      parseCopyStructureResponse(
+        '{"pieces":[{"kind":"cta","text":"Worth a look?","position":121,"archetype_slug":"permission-question","archetype_name":"X"',
+        INPUT,
+      ),
+    CopyStructureParseError,
+  );
+});

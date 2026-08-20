@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Campaign } from '../../types';
 import type { Database } from '../../types/database';
-import type { CampaignFlowSaveResult } from './campaigns';
+import type { CampaignFlowSaveResult } from './campaign-flow-save-result';
 import { kickCopyParseFromServer } from '../../../copy/kickCopyParseServer';
 
 type DbClient = SupabaseClient<Database>;

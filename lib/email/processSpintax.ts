@@ -70,13 +70,13 @@ export function selectSpintaxOptionIndex(
   return fnv1a32(key) % optionCount;
 }
 
-type SpintaxGroup = { start: number; end: number; inner: string };
+export type SpintaxGroup = { start: number; end: number; inner: string };
 
 /**
  * Find top-level `{a|b}` groups. Skips `{{var}}` placeholders. Requires a
  * top-level `|` so literal `{foo}` braces are left alone.
  */
-function findTopLevelSpintaxGroups(str: string): SpintaxGroup[] {
+export function findTopLevelSpintaxGroups(str: string): SpintaxGroup[] {
   const groups: SpintaxGroup[] = [];
   let i = 0;
   while (i < str.length) {
@@ -120,7 +120,7 @@ function findTopLevelSpintaxGroups(str: string): SpintaxGroup[] {
 }
 
 /** Split spintax options on top-level `|`, respecting nested braces and `{{var}}`. */
-function splitTopLevelOptions(inner: string): string[] {
+export function splitTopLevelOptions(inner: string): string[] {
   const options: string[] = [];
   let start = 0;
   let depth = 0;

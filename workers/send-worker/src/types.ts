@@ -101,6 +101,8 @@ export interface MessageJob {
   updated_at: string;
   /** Chosen A/B variant UUID at job creation (matches flow_data variants[].id). */
   variant_id?: string | null;
+  flow_version_number?: number | null;
+  copy_rendering_id?: string | null;
 }
 
 export interface Mailbox {

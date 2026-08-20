@@ -43,6 +43,7 @@ import { apolloEnrich } from './functions/apolloEnrich/resource';
 import { fluxCompetitorAuditJob } from './functions/fluxCompetitorAuditJob/resource';
 import { fluxCompetitorAuditStart } from './functions/fluxCompetitorAuditStart/resource';
 import { categorizerPreview } from './functions/categorizerPreview/resource';
+import { copyStructureParse } from './functions/copyStructureParse/resource';
 
 // Load .env.local so EXPO_PUBLIC_SUPABASE_URL is available for Lambdas at synth time
 config({ path: '.env.local' });
@@ -90,6 +91,7 @@ const backend = defineBackend({
   fluxCompetitorAuditJob,
   fluxCompetitorAuditStart,
   categorizerPreview,
+  copyStructureParse,
   ...(smartleadMigrationEnabled ? { launchSmartleadMigration } : {}),
 });
 
@@ -1731,6 +1733,58 @@ const allowPublicCategorizerPreviewInvoke = new lambda.CfnPermission(
 );
 allowPublicCategorizerPreviewInvoke.addPropertyOverride('InvokedViaFunctionUrl', true);
 
+// Copy structure parser: on-write async invoke for server callers, Function URL
+// for authenticated app callers. No schedule; the metrics read path is fallback.
+const copyStructureParseLambda = backend.copyStructureParse.resources.lambda as lambda.Function;
+copyStructureParseLambda.addEnvironment(
+  'SUPABASE_URL',
+  process.env.EXPO_PUBLIC_SUPABASE_URL ?? '',
+);
+if (process.env.OPENROUTER_COPY_PARSE_MODEL) {
+  copyStructureParseLambda.addEnvironment(
+    'OPENROUTER_COPY_PARSE_MODEL',
+    process.env.OPENROUTER_COPY_PARSE_MODEL,
+  );
+}
+const copyStructureParseCfn = copyStructureParseLambda.node.defaultChild as lambda.CfnFunction;
+copyStructureParseCfn.reservedConcurrentExecutions = 1;
+const copyStructureParseUrl = copyStructureParseLambda.addFunctionUrl({
+  authType: lambda.FunctionUrlAuthType.NONE,
+  cors: {
+    allowedOrigins: ['*'],
+    allowedMethods: [lambda.HttpMethod.POST],
+    allowedHeaders: [
+      'Authorization',
+      'Content-Type',
+      'X-Furnace-Internal-Secret',
+    ],
+  },
+});
+new lambda.CfnPermission(copyStructureParseLambda.stack, 'AllowPublicCopyStructureParseUrlInvoke', {
+  action: 'lambda:InvokeFunctionUrl',
+  functionName: copyStructureParseLambda.functionName,
+  principal: '*',
+  functionUrlAuthType: 'NONE',
+});
+const allowPublicCopyStructureParseInvoke = new lambda.CfnPermission(
+  copyStructureParseLambda.stack,
+  'AllowPublicCopyStructureParseInvokeViaUrl',
+  {
+    action: 'lambda:InvokeFunction',
+    functionName: copyStructureParseLambda.functionName,
+    principal: '*',
+  },
+);
+allowPublicCopyStructureParseInvoke.addPropertyOverride('InvokedViaFunctionUrl', true);
+
+// Lambda-to-Lambda uses InvocationType Event so Client API saves never wait for
+// OpenRouter. This is the async hand-off that a Function URL cannot provide.
+copyStructureParseLambda.grantInvoke(clientApiLambda);
+clientApiLambda.addEnvironment(
+  'COPY_STRUCTURE_PARSE_FUNCTION_NAME',
+  copyStructureParseLambda.functionName,
+);
+
 // Google Places API (New) proxy — Function URL + Supabase JWT (flux or foundry flag)
 const googlePlacesLambda = backend.googlePlaces.resources.lambda as lambda.Function;
 googlePlacesLambda.addEnvironment('SUPABASE_URL', process.env.EXPO_PUBLIC_SUPABASE_URL ?? '');
@@ -2138,6 +2192,7 @@ const customOutputs: Record<string, string> = {
   apolloEnrichUrl: apolloEnrichUrl.url,
   fluxCompetitorAuditStartUrl: fluxCompetitorAuditStartUrl.url,
   categorizerPreviewUrl: categorizerPreviewUrl.url,
+  copyStructureParseUrl: copyStructureParseUrl.url,
 };
 if (launchSmartleadMigrationUrlRef) {
   customOutputs.launchSmartleadMigrationUrl = launchSmartleadMigrationUrlRef.url;

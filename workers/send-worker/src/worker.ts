@@ -15,6 +15,7 @@ import {
   type ThreadingDecision,
 } from '../../../lib/email/dist/index.js';
 import { loadThreadTimeline } from './loadThreadTimeline.js';
+import { stampCopyRenderingId } from './stampCopyRendering.js';
 import { describeLegacyThreadingDivergence } from './threadingParity.js';
 import {
   formatUnknownError,
@@ -1285,21 +1286,24 @@ export class SendWorker {
         providerMessageId,
         sendResult.submittedMessageId,
       );
-      await this.persistSentThreadingMetadataOnMessageJob(messageJob, {
-        subject,
-        inReplyTo,
-        references,
-        referenceMessageIds,
-        threadTopic,
-        submittedMessageId: sendResult.submittedMessageId,
-        threadingDecision: threading.decision,
-        parentEmailMessageId: threading.parentEmailMessageId,
-        // A new epoch is rooted at this very send, so it names itself.
-        conversationRootMessageId:
-          threading.conversationRootMessageId ??
-          normalizeMessageId(providerMessageId) ??
-          normalizeMessageId(sendResult.submittedMessageId),
-      });
+      await this.persistSentThreadingMetadataOnMessageJob(
+        messageJob,
+        {
+          subject,
+          inReplyTo,
+          references,
+          referenceMessageIds,
+          threadTopic,
+          submittedMessageId: sendResult.submittedMessageId,
+          threadingDecision: threading.decision,
+          parentEmailMessageId: threading.parentEmailMessageId,
+          conversationRootMessageId:
+            threading.conversationRootMessageId ??
+            normalizeMessageId(providerMessageId) ??
+            normalizeMessageId(sendResult.submittedMessageId),
+        },
+        accountId,
+      );
 
       await this.reconcileLeadMailboxAfterSuccessfulSend(messageJob, lead.mailbox_id);
 
@@ -1988,6 +1992,7 @@ export class SendWorker {
       parentEmailMessageId?: string | null;
       conversationRootMessageId?: string | null;
     },
+    accountId?: string | null,
   ): Promise<void> {
     const existing =
       messageJob.message_data && typeof messageJob.message_data === 'object'
@@ -2001,14 +2006,30 @@ export class SendWorker {
       reference_message_ids: meta.referenceMessageIds ?? undefined,
       thread_topic: meta.threadTopic ?? undefined,
       submitted_message_id: meta.submittedMessageId,
-      // Provenance: why this send threaded the way it did.
       threading_decision: meta.threadingDecision ?? undefined,
       parent_email_message_id: meta.parentEmailMessageId ?? undefined,
       conversation_root_message_id: meta.conversationRootMessageId ?? undefined,
     };
+    let copyRenderingId: string | null = null;
+    try {
+      copyRenderingId = await stampCopyRenderingId({
+        db: this.supabase,
+        accountId,
+        messageJob,
+      });
+    } catch (error) {
+      console.error(
+        `[SEND WORKER] Failed to resolve copy rendering for message job ${messageJob.id}:`,
+        error,
+      );
+    }
+    const updates: Record<string, unknown> = { message_data: nextMessageData };
+    if (copyRenderingId) {
+      updates.copy_rendering_id = copyRenderingId;
+    }
     const { error } = await this.supabase
       .from('message_jobs')
-      .update({ message_data: nextMessageData })
+      .update(updates)
       .eq('id', messageJob.id);
 
     if (error) {
@@ -2029,6 +2050,9 @@ export class SendWorker {
       });
     } else {
       messageJob.message_data = nextMessageData;
+      if (copyRenderingId) {
+        messageJob.copy_rendering_id = copyRenderingId;
+      }
     }
   }
 

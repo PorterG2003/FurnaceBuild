@@ -39,12 +39,24 @@ export {
   buildSpintaxSeed,
   selectSpintaxOptionIndex,
   fnv1a32,
+  findTopLevelSpintaxGroups,
+  splitTopLevelOptions,
   SPINTAX_SEED_VERSION,
   LEGACY_MISSING_VARIANT_ID,
   type ProcessSpintaxOptions,
   type SpintaxScope,
   type SpintaxSeedIdentity,
+  type SpintaxGroup,
 } from './processSpintax.js';
+export {
+  expandSubjectSpintax,
+  selectSubjectBranchKey,
+  resolvedSubjectForBranchKey,
+  MAX_SUBJECT_BRANCH_PRODUCT,
+  type SubjectExpansionResult,
+  type ExpandedSubjectBranch,
+  type SubjectSpintaxGroupMeta,
+} from './expandSubjectSpintax.js';
 export { getLeadVariables, STANDARD_MERGE_FIELD_KEYS, type LeadVariable } from './leadVariables.js';
 export { stripSignatureStyles } from './strip-signature-styles.js';
 export {

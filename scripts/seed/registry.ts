@@ -33,6 +33,7 @@ import { clientApiCampaignWalkthroughModule } from './scenarios/client-api-campa
 import { bucketInsightsSmokeModule } from './scenarios/bucket-insights-smoke';
 import { replaceLeadAttachSeedModule } from './scenarios/replace-lead-attach/index';
 import { threadingSubjectComposerModule } from './scenarios/threading-subject-composer/index';
+import { copyStructureMetricsModule } from './scenarios/copy-structure-metrics/index';
 
 export const allModules: Record<string, SeedModule> = {
   minimal: minimalModule,
@@ -63,6 +64,7 @@ export const allModules: Record<string, SeedModule> = {
   clientApiWalkthrough_seed: clientApiCampaignWalkthroughModule,
   replaceLeadAttach_seed: replaceLeadAttachSeedModule,
   threadingSubjectComposer_seed: threadingSubjectComposerModule,
+  copyStructureMetrics_seed: copyStructureMetricsModule,
 };
 
 /**
@@ -83,6 +85,7 @@ export const scenarioModuleIds: Record<string, string[]> = {
   'client-api-campaign-walkthrough': ['clientApiWalkthrough_seed'],
   'replace-lead-attach': ['replaceLeadAttach_seed'],
   'threading-subject-composer': ['threadingSubjectComposer_seed'],
+  'copy-structure-metrics': ['copyStructureMetrics_seed'],
 };
 
 function collectModuleIdsWithDeps(seedIds: string[]): Set<string> {

@@ -1,0 +1,1 @@
+export { CopyPerformancePanel } from './CopyPerformancePanel';

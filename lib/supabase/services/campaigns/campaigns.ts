@@ -8,6 +8,7 @@ import {
   duplicateCampaignWithClient,
   type DuplicateCampaignOptions,
 } from './duplicate-campaign-with-client';
+import { kickCopyParseFromClient } from '../../../copy/kickCopyParse';
 
 export type { CampaignFlowVersion };
 export type { DuplicateCampaignOptions };
@@ -84,6 +85,7 @@ export async function createCampaign(campaign: CampaignInsert): Promise<Campaign
 
   if (error) throw new Error(`Failed to create campaign: ${error.message}`);
   if (!data) throw new Error('Failed to create campaign: No data returned');
+  if (campaign.flow_data) void kickCopyParseFromClient(accountId);
   return data;
 }
 
@@ -97,6 +99,9 @@ export async function updateCampaign(id: string, updates: CampaignUpdate): Promi
     .single();
   if (error) throw new Error(`Failed to update campaign: ${error.message}`);
   if (!data) throw new Error('Failed to update campaign: No data returned');
+  if (Object.prototype.hasOwnProperty.call(updates, 'flow_data') && data.account_id) {
+    void kickCopyParseFromClient(data.account_id);
+  }
   return data;
 }
 
@@ -132,7 +137,11 @@ export async function updateCampaignFlowData(
   });
 
   if (error) throw new Error(`Failed to update campaign flow: ${error.message}`);
-  return parseCampaignFlowSaveRpcResult(data);
+  const result = parseCampaignFlowSaveRpcResult(data);
+  if (result.campaign.account_id) {
+    void kickCopyParseFromClient(result.campaign.account_id);
+  }
+  return result;
 }
 
 export async function getCampaignFlowVersions(campaignId: string): Promise<CampaignFlowVersion[]> {

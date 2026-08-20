@@ -27,6 +27,11 @@ export {
   MAILBOX_RENDER_TEXT_COLOR,
   MAILBOX_RENDER_LINK_COLOR,
 } from './normalize-render-html.js';
+export {
+  EMAIL_HTML_SCOPE_SELECTOR,
+  isolateEmailCss,
+  isolateEmailHtmlForRender,
+} from './isolate-email-html.js';
 
 export { mergeTemplate, extractVariableKeys, extractMalformedVariables, hasMissingValues, type LeadLike } from './mergeTemplate.js';
 export {

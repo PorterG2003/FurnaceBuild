@@ -5,6 +5,7 @@ import { EllipsisHorizontalIcon } from 'react-native-heroicons/outline';
 import {
   sanitizeEmailBody,
   hasResidualEncodingArtifacts,
+  isolateEmailHtmlForRender,
   normalizeEmailHtmlForDarkMode,
   MAILBOX_RENDER_TEXT_COLOR,
   MAILBOX_RENDER_LINK_COLOR,
@@ -113,7 +114,9 @@ export function MessageBody({
     cleanDisplayText.length > 0;
   const wrappedHtml = useMemo(() => {
     if (!safeHtml) return '';
-    return `<div>${normalizeEmailHtmlForDarkMode(stripUnresolvableCidImages(safeHtml).html)}</div>`;
+    return isolateEmailHtmlForRender(
+      normalizeEmailHtmlForDarkMode(stripUnresolvableCidImages(safeHtml).html)
+    );
   }, [safeHtml]);
   const hasCollapsedThread = useMemo(() => {
     if (disableQuotedThreadCollapse) return false;
@@ -158,7 +161,7 @@ export function MessageBody({
       <!DOCTYPE html>
       <html>
         <head><meta name="viewport" content="width=device-width,initial-scale=1"/></head>
-        <body style="margin:0;padding:0;color:${MAILBOX_RENDER_TEXT_COLOR};font-size:14px;line-height:1.6;background:transparent;">
+        <body class="message-body-html" style="margin:0;padding:0;color:${MAILBOX_RENDER_TEXT_COLOR};font-size:14px;line-height:1.6;background:transparent;">
           ${wrappedHtml}
           <style>img{max-width:100%;height:auto;border-radius:8px;display:block;margin:0.5em 0;}a,a *{color:${MAILBOX_RENDER_LINK_COLOR} !important;}body,body *{background-color:transparent !important;-webkit-user-select:text !important;user-select:text !important;}</style>
         </body>

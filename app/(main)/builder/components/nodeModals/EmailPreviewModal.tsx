@@ -21,6 +21,7 @@ import {
   buildCampaignEmailContent,
   buildSpintaxSeed,
   hasMissingValues,
+  isolateEmailHtmlForRender,
   isFullHtmlDocument,
   sanitizeEmailBody,
   type EmailEditorMode,
@@ -677,7 +678,7 @@ function EmailPreviewModal({
                           },
                           React.createElement('div', {
                             className: 'message-body-html',
-                            dangerouslySetInnerHTML: { __html: `<div>${safeHtml}</div>` },
+                            dangerouslySetInnerHTML: { __html: isolateEmailHtmlForRender(safeHtml) },
                           })
                         )
                       )}

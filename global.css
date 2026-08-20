@@ -672,6 +672,9 @@ input[type="password"]:focus {
   font-size: 14px;
   line-height: 1.6;
   font-family: var(--font-instrument), 'Instrument Sans', system-ui, sans-serif;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-wrap: anywhere;
 }
 
 .message-body-html img {

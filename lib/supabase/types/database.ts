@@ -499,6 +499,41 @@ export interface Database {
           updated_at?: string;
         };
       };
+      campaign_stats_daily: {
+        Row: {
+          campaign_id: string;
+          account_id: string;
+          stat_date: string;
+          sent_count: number;
+          replied_count: number;
+          positive_reply_count: number;
+          bounce_count: number;
+          leads_first_contacted: number;
+          updated_at: string;
+        };
+        Insert: {
+          campaign_id: string;
+          account_id: string;
+          stat_date: string;
+          sent_count?: number;
+          replied_count?: number;
+          positive_reply_count?: number;
+          bounce_count?: number;
+          leads_first_contacted?: number;
+          updated_at?: string;
+        };
+        Update: {
+          campaign_id?: string;
+          account_id?: string;
+          stat_date?: string;
+          sent_count?: number;
+          replied_count?: number;
+          positive_reply_count?: number;
+          bounce_count?: number;
+          leads_first_contacted?: number;
+          updated_at?: string;
+        };
+      };
       nodes: {
         Row: {
           id: string;
@@ -3324,6 +3359,7 @@ export interface Database {
         };
         Returns: {
           total_sent: number;
+          total_replied: number;
           total_positive_reply: number;
           leads_reached: number;
           leads_in_queue: number;
@@ -3343,6 +3379,7 @@ export interface Database {
           replied_count: number;
           positive_reply_count: number;
           bounce_count: number;
+          leads_first_contacted: number;
         }[];
       };
       campaign_stats_by_day: {
@@ -3433,6 +3470,19 @@ export interface Database {
           positive_reply_count: number;
           bounce_count: number;
         }[];
+      };
+      rebuild_campaign_stats_daily: {
+        Args: {
+          p_campaign_id?: string | null;
+        };
+        Returns: number;
+      };
+      campaign_stats_daily_health_report: {
+        Args: {
+          p_account_id?: string | null;
+          p_campaign_id?: string | null;
+        };
+        Returns: Json;
       };
       private_apply_lead_import_metadata: {
         Args: {

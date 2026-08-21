@@ -72,6 +72,18 @@ export async function applyDerivedCampaignStats(
   return stats;
 }
 
+async function rebuildCampaignStatsDaily(
+  supabase: DbClient,
+  campaignId: string,
+): Promise<void> {
+  const { error } = await supabase.rpc('rebuild_campaign_stats_daily', {
+    p_campaign_id: campaignId,
+  });
+  if (error) {
+    throw new Error(`seedCampaignStats: rebuild_campaign_stats_daily failed: ${error.message}`);
+  }
+}
+
 async function updateEventCreatedAt(
   supabase: DbClient,
   params: {
@@ -121,6 +133,7 @@ export async function seedThreadSentAndRepliedEvents(
   });
 
   if (!params.replyAt) {
+    await rebuildCampaignStatsDaily(supabase, params.campaignId);
     return;
   }
 
@@ -160,6 +173,8 @@ export async function seedThreadSentAndRepliedEvents(
     eventType: 'replied',
     createdAt: params.replyAt,
   });
+
+  await rebuildCampaignStatsDaily(supabase, params.campaignId);
 }
 
 export async function applyDemoHubCampaignStats(

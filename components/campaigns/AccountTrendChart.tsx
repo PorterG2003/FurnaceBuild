@@ -7,6 +7,7 @@ import { Tooltip } from '@/components/ui/Tooltip';
 import { IconButton } from '@/components/ui/icon-button';
 import { CAMPAIGN_STAT_COLORS } from '@/lib/campaigns/campaignStatColors';
 import { StickyChartYAxis } from '@/components/campaigns/StickyChartYAxis';
+import { AccountTrendChartSkeleton } from '@/components/skeletons/AccountMetricsSkeleton';
 import {
   BAR_GROUP_GAP,
   BAR_INTRA_GAP,
@@ -33,6 +34,13 @@ const AREA_FILL_END_OPACITY = 0.06;
 /** Gifted-charts default: `yAxisExtraHeight` is height/20 unless trimmed. */
 const Y_AXIS_EXTRA_TOP = CHART_HEIGHT / 20;
 const PLOT_BOTTOM = Y_AXIS_EXTRA_TOP + CHART_HEIGHT;
+
+const LOADING_LEGEND_SERIES: TrendSeries[] = [
+  { name: 'Emails sent', color: CAMPAIGN_STAT_COLORS.sent, data: [] },
+  { name: 'Leads reached', color: '#38bdf8', data: [] },
+  { name: 'Replies', color: CAMPAIGN_STAT_COLORS.replied, data: [] },
+  { name: 'Interested', color: CAMPAIGN_STAT_COLORS.positiveReply, data: [] },
+];
 
 export type TrendSeries = {
   name: string;
@@ -111,28 +119,32 @@ function fallbackPanelHeight(isLast: boolean): number {
 function ChartKindToggle({
   chartKind,
   onChange,
+  disabled = false,
 }: {
   chartKind: 'line' | 'bar';
   onChange: (kind: 'line' | 'bar') => void;
+  disabled?: boolean;
 }) {
   const lineColor = chartKind === 'line' ? ACTIVE_CHART_KIND_COLOR : INACTIVE_CHART_KIND_COLOR;
   const barColor = chartKind === 'bar' ? ACTIVE_CHART_KIND_COLOR : INACTIVE_CHART_KIND_COLOR;
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+    <View style={{ flexDirection: 'row', alignItems: 'center', opacity: disabled ? 0.45 : 1 }}>
       <IconButton
         icon={({ size }) => <PresentationChartLineIcon size={size} color={lineColor} />}
         variant="ghost"
         size="sm"
+        disabled={disabled}
         accessibilityLabel="Line chart"
-        accessibilityState={{ selected: chartKind === 'line' }}
+        accessibilityState={{ selected: chartKind === 'line', disabled }}
         onPress={() => onChange('line')}
       />
       <IconButton
         icon={({ size }) => <ChartBarIcon size={size} color={barColor} />}
         variant="ghost"
         size="sm"
+        disabled={disabled}
         accessibilityLabel="Bar chart"
-        accessibilityState={{ selected: chartKind === 'bar' }}
+        accessibilityState={{ selected: chartKind === 'bar', disabled }}
         onPress={() => onChange('bar')}
       />
     </View>
@@ -230,6 +242,7 @@ export function AccountTrendChart({
   }, [panels, chartCategories]);
 
   const allSeries = useMemo(() => chartPanels.flatMap((panel) => panel.series), [chartPanels]);
+  const legendSeries = loading && allSeries.length === 0 ? LOADING_LEGEND_SERIES : allSeries;
   const pointCount = Math.max(chartCategories.length, 1);
   const seriesCount = Math.max(1, ...chartPanels.map((panel) => panel.series.length));
   const groupInnerWidth = barGroupInnerWidth(seriesCount);
@@ -258,8 +271,8 @@ export function AccountTrendChart({
       {title ? (
         <Text className="text-white font-instrument-semibold text-sm">{title}</Text>
       ) : null}
-      <SeriesLegend series={allSeries} />
-      <ChartKindToggle chartKind={chartKind} onChange={setChartKind} />
+      <SeriesLegend series={legendSeries} />
+      <ChartKindToggle chartKind={chartKind} onChange={setChartKind} disabled={loading} />
     </View>
   );
 
@@ -268,7 +281,7 @@ export function AccountTrendChart({
       <View className={wrapperClass}>
         <View className={innerClass} style={embedded ? { paddingVertical: 24 } : undefined}>
           {header}
-          <Text className="text-gray-400 font-instrument text-sm">Loading chart...</Text>
+          <AccountTrendChartSkeleton />
         </View>
       </View>
     );

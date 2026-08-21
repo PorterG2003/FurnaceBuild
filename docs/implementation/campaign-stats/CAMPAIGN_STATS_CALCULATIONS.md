@@ -11,7 +11,8 @@ Campaign stats are **totals** (sent, replied, positive reply, bounce) plus **enr
 Two storage layers back these numbers:
 
 - **campaign_stats** — Cached totals, one row per campaign. Updated incrementally by workers and the inbox service. Used for list and detail totals.
-- **events** — Immutable log of `sent`, `replied`, and `bounced` events. Per-day charts aggregate these in the database via **`campaign_stats_by_day`** (native campaigns) so results are not capped by the PostgREST row limit on raw `events` selects.
+- **campaign_stats_daily** — Cached **per UTC calendar day** counts (`sent`, `replied`, `positive_reply`, `bounce`, `leads_first_contacted`) for Furnace campaigns. Updated in the same transaction as `record_*_event_and_increment`, and rebuilt from **`events`** by `rebuild_campaign_stats_daily` / `reconcile_campaign_stats`. Used by `/metrics` and campaign-detail day charts.
+- **events** — Immutable log of `sent`, `replied`, and `bounced` events. Source of truth for the daily cache and for **leads reached** (distinct `lead_id` in a date window, which is not additive from daily distincts).
 
 Event insert and stats increment are **atomic**: a single RPC per stat type inserts the event and updates campaign_stats in one transaction, so the two tables do not drift. List and detail totals read from **campaign_stats** (and enrollments for enrollment count). Per-day charts read from **events**. The diagram in [Who updates what](#who-updates-what) and the [Stat definitions](#stat-definitions) below spell out who writes each stat and what it means.
 
@@ -148,9 +149,9 @@ flowchart LR
 - **Date range:** Event rows are filtered by **UTC calendar day** of `created_at` (`(created_at AT TIME ZONE 'UTC')::date` between `p_start_date` and `p_end_date`, inclusive).
 - **Total sent / Total positive replies:** Raw **`COUNT(*)`** on `events` (`sent`, and `replied` with `event_data->>'is_positive' = 'true'`). Not deduplicated by lead.
 - **Leads reached:** **`COUNT(DISTINCT COALESCE(events.lead_id, enrollments.lead_id))`** over `sent` events in range (join `enrollments` on `enrollment_id`, `enrollments.deleted_at IS NULL`); rows where the coalesced id is null are omitted.
-- **Leads in queue:** Snapshot (ignores date range): active enrollments in **running** non-Smartlead campaigns with **no** sent campaign `message_job`; **`COUNT(DISTINCT enrollments.lead_id)`** with `lead_id IS NOT NULL`.
+- **Leads in queue:** Snapshot (ignores date range): active enrollments in **running** non-Smartlead campaigns with **`has_been_contacted = false`**; **`COUNT(DISTINCT enrollments.lead_id)`** with `lead_id IS NOT NULL`.
 - **Smartlead import warning:** RPC sets `smartlead_import_warning` when a **`smartlead_migration_runs`** row for the account has `status IN ('completed', 'completed_with_warnings')`, `finished_at` set, and `(finished_at AT TIME ZONE 'UTC')::date >= p_start_date`. The UI shows a dismissable banner so users know imported Smartlead history is not in these totals.
-- **Daily series:** `getAccountOutreachStatsByDay` in [lib/supabase/services/campaigns/account-outreach-stats-by-day.ts](../../../lib/supabase/services/campaigns/account-outreach-stats-by-day.ts) calls **`account_outreach_stats_by_day`**, which emits **one row per UTC calendar day** in the range (dense series) with the same per-day semantics as native **`getCampaignStatsByDay`** (bucket by `(created_at AT TIME ZONE 'UTC')::date`; sent / replied / positive from `replied` + `is_positive` / bounce counts). The UI passes the result through shared **`fillMissingStatsByDay`** in [lib/campaigns/fillMissingStatsByDay.ts](../../../lib/campaigns/fillMissingStatsByDay.ts) (same helper as campaign Details). `/metrics` uses this series for hero totals, runway, and the replies/interested panel of the combined trend card (two stacked plots, one shared line/bar toggle). Campaign Details renders the same **`AccountTrendChart`** from `getCampaignStatsByDay` (volume + outcomes panels; Smartlead omits Leads reached).
+- **Daily series:** `getAccountOutreachStatsByDay` in [lib/supabase/services/campaigns/account-outreach-stats-by-day.ts](../../../lib/supabase/services/campaigns/account-outreach-stats-by-day.ts) calls **`account_outreach_stats_by_day`**, which reads **`campaign_stats_daily`** and emits **one row per UTC calendar day** in the range (dense series) with sent / replied / positive / bounce / **leads_first_contacted**. `/metrics` uses this series for both trend panels (emails sent + first-contact, and replies / interested). `campaign_stats_daily_health_report` compares the cache to `events` by UTC day.
 
 ### Account weekly outreach volume (`account_weekly_outreach_volume`)
 
@@ -221,19 +222,20 @@ One-time backfill: [supabase/migrations/20260216000002_backfill_campaign_stats.s
 - **Atomic (event + stats in one transaction):** `record_sent_event_and_increment`, `record_replied_event_and_increment`, `record_bounced_event_and_increment`.
 - **Contacted count (completion dial):** `get_campaign_contacted_counts(p_campaign_ids UUID[])` — returns per-campaign count of distinct enrollments with ≥1 sent campaign email.
 - **Campaigns list (aggregated row per campaign):** `campaigns_list_summary(p_account_id UUID)` — list-only columns plus enrollment/terminal/contacted aggregates and `campaign_stats` counts (same semantics as the former list client merge; avoids raw enrollment list truncation).
-- **Account outreach metrics:** `account_outreach_metrics(p_account_id, p_start_date, p_end_date)` — Furnace-only sent/positive reply counts, distinct leads reached, leads in queue, and Smartlead import warning flag (see “Account outreach metrics” above).
-- **Account outreach by day:** `account_outreach_stats_by_day(p_account_id, p_start_date, p_end_date)` — one row per UTC day in range for the account metrics chart.
-- **Account weekly volume:** `account_weekly_outreach_volume(p_account_id, p_start_date, p_end_date, p_campaign_ids)` — per ISO week emails sent and first-contacted leads (full history for first contact).
-- **Account daily volume:** `account_daily_outreach_volume(p_account_id, p_start_date, p_end_date, p_campaign_ids)` — per UTC day emails sent and first-contacted leads (same first-contact semantics). `/metrics` uses this for the volume panel of the combined trend card when the range is ≤41 days.
+- **Account outreach metrics:** `account_outreach_metrics(p_account_id, p_start_date, p_end_date, p_campaign_ids)` — Furnace-only sent/replied/positive from `campaign_stats_daily`; distinct leads reached from `events`; queue from `has_been_contacted`; Smartlead import warning.
+- **Account outreach by day:** `account_outreach_stats_by_day` — dense UTC days from `campaign_stats_daily` including `leads_first_contacted`.
+- **Campaign outreach by day:** `campaign_stats_by_day` — same daily cache, one campaign.
+- **Daily rebuild / health:** `rebuild_campaign_stats_daily(p_campaign_id)`, `campaign_stats_daily_health_report(p_account_id, p_campaign_id)`.
+- **Reconciliation:** `reconcile_campaign_stats(p_campaign_id)` — pass NULL for all campaigns; also rebuilds `campaign_stats_daily` from `events`.
+- **Account weekly volume:** `account_weekly_outreach_volume` — thin wrapper over `campaign_stats_daily` grouped by ISO week.
+- **Account daily volume:** `account_daily_outreach_volume` — thin wrapper over `account_outreach_stats_by_day`.
 - **Account node stats:** `account_node_stats(p_account_id, p_start_date, p_end_date, p_campaign_ids)` — per email step sent/replied/interested/bounce across Furnace campaigns.
-- **Campaign outreach by day:** `campaign_stats_by_day(p_campaign_id, p_start_date, p_end_date)` — one row per UTC day in range for the campaign detail chart (Furnace campaigns only).
-- **Reconciliation:** `reconcile_campaign_stats(p_campaign_id)` — pass NULL for all campaigns.
-- **Positive reply (user override):** `update_campaign_stats_positive_reply(p_campaign_id, p_delta)`, `update_replied_event_is_positive(p_campaign_id, p_message_job_id, p_is_positive)`.
+- **Positive reply (user override):** `update_campaign_stats_positive_reply(p_campaign_id, p_delta)`, `update_replied_event_is_positive(p_campaign_id, p_message_job_id, p_is_positive)` (the latter also adjusts `campaign_stats_daily` on the replied event’s UTC day).
 - **Legacy (still present, used by reconciliation):** `increment_campaign_stats_sent`, `increment_campaign_stats_replied`, `increment_campaign_stats_bounce` — workers now use the atomic RPCs above.
 
 ### Scripts
 
-- [scripts/reconcile-campaign-stats.ts](../../../scripts/reconcile-campaign-stats.ts) — calls `reconcile_campaign_stats`; optional `CAMPAIGN_ID` env var.
+- [scripts/reconcile-campaign-stats.ts](../../../scripts/reconcile-campaign-stats.ts) — calls `reconcile_campaign_stats` then prints `campaign_stats_daily_health_report`; optional `CAMPAIGN_ID` env var.
 
 ### Key code
 

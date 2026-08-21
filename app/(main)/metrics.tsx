@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, Pressable, ScrollView, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -8,10 +8,11 @@ import {
 } from '@/components/ui/layout';
 import { BottomSheet, getBottomSheetBodyScrollMaxHeight, getBottomSheetExpandedBodyHeight } from '@/components/ui/modals';
 import { Card } from '@/components/ui/Card';
-import { Alert } from '@/components/ui/feedback';
+import { Alert, usePageSkeleton } from '@/components/ui/feedback';
 import { AccountMetricsToolbar } from '@/components/campaigns/AccountMetricsToolbar';
 import { AccountTrendChart } from '@/components/campaigns/AccountTrendChart';
 import { CopyPerformancePanel } from '@/components/campaigns/copyPerformance';
+import { MetricCardsSkeleton } from '@/components/skeletons';
 import { useAccount } from '@/contexts/AccountContext';
 import { fillMissingStatsByDay } from '@/lib/campaigns/fillMissingStatsByDay';
 import { CAMPAIGN_STAT_COLORS } from '@/lib/campaigns/campaignStatColors';
@@ -24,12 +25,10 @@ import {
 import { formatRunwayThrough, queueRunwayEndDate } from '@/lib/metrics/runway';
 import { formatWeekLabel, rollupDailyToIsoWeeks } from '@/lib/metrics/weeklyRollup';
 import {
-  getAccountDailyOutreachVolume,
   getAccountCopyStats,
   getAccountOutreachMetrics,
   getAccountOutreachStatsByDay,
   getAccountQueueSendCapacity,
-  getAccountWeeklyOutreachVolume,
   getCampaignsListSummary,
   type AccountOutreachMetrics,
   type AccountCopyStats,
@@ -39,12 +38,6 @@ import {
 import type { QueueSendCapacity } from '@/lib/metrics/queueSendCapacity';
 import { FunnelIcon } from 'react-native-heroicons/outline';
 import { kickCopyParseFromClient } from '@/lib/copy/kickCopyParse';
-
-type OutreachVolumePoint = {
-  periodStart: string;
-  emailsSent: number;
-  leadsFirstContacted: number;
-};
 
 const INTEGER_FORMATTER = new Intl.NumberFormat('en-US');
 
@@ -71,11 +64,17 @@ export default function AccountMetricsPage() {
   const [campaignsLoading, setCampaignsLoading] = useState(false);
   const [metrics, setMetrics] = useState<AccountOutreachMetrics | null>(null);
   const [statsByDay, setStatsByDay] = useState<CampaignStatsByDay[]>([]);
-  const [outreachVolume, setOutreachVolume] = useState<OutreachVolumePoint[]>([]);
   const [sendCapacity, setSendCapacity] = useState<QueueSendCapacity | null>(null);
   const [copyStats, setCopyStats] = useState<AccountCopyStats | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [heroLoading, setHeroLoading] = useState(false);
+  const [trendsLoading, setTrendsLoading] = useState(false);
+  const [copyLoading, setCopyLoading] = useState(false);
+  const [heroError, setHeroError] = useState<string | null>(null);
+  const [trendsError, setTrendsError] = useState<string | null>(null);
+  const [copyError, setCopyError] = useState<string | null>(null);
+  const heroGen = useRef(0);
+  const trendsGen = useRef(0);
+  const copyGen = useRef(0);
   const [warningDismissed, setWarningDismissed] = useState(false);
 
   const onChangeRange = useCallback((start: string, end: string) => {
@@ -83,9 +82,18 @@ export default function AccountMetricsPage() {
     setEndDate(end);
   }, []);
 
+  const rangeInvalid = Boolean(startDate && endDate && startDate > endDate);
+
   useEffect(() => {
     setSelectedCampaignIds([]);
     setCampaignOptions([]);
+    setMetrics(null);
+    setStatsByDay([]);
+    setSendCapacity(null);
+    setCopyStats(null);
+    setHeroError(null);
+    setTrendsError(null);
+    setCopyError(null);
   }, [account?.id]);
 
   useEffect(() => {
@@ -112,70 +120,122 @@ export default function AccountMetricsPage() {
     setWarningDismissed(false);
   }, [account?.id, startDate, endDate, selectedCampaignIds]);
 
-  const load = useCallback(async () => {
-    if (!account?.id) return;
-    if (!startDate || !endDate) return;
-    if (startDate > endDate) {
-      setError('Start date must be on or before end date.');
-      setMetrics(null);
-      setStatsByDay([]);
-      setOutreachVolume([]);
-      setSendCapacity(null);
-      setCopyStats(null);
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    const campaignFilter =
-      selectedCampaignIds.length > 0 ? selectedCampaignIds : undefined;
-    const grain = trendChartGrain(startDate, endDate);
+  const loadHero = useCallback(async () => {
+    if (!account?.id || !startDate || !endDate || rangeInvalid) return;
+    const gen = ++heroGen.current;
+    setHeroLoading(true);
+    setHeroError(null);
     try {
-      const [summary, byDay, volume, capacity, copy] = await Promise.all([
-        getAccountOutreachMetrics(account.id, startDate, endDate, campaignFilter),
-        getAccountOutreachStatsByDay(account.id, startDate, endDate, campaignFilter),
-        grain === 'day'
-          ? getAccountDailyOutreachVolume(account.id, startDate, endDate, campaignFilter)
-          : getAccountWeeklyOutreachVolume(account.id, startDate, endDate, campaignFilter),
-        getAccountQueueSendCapacity(account.id, campaignFilter),
-        getAccountCopyStats(account.id, startDate, endDate, campaignFilter),
+      const [summary, capacity] = await Promise.all([
+        getAccountOutreachMetrics(
+          account.id,
+          startDate,
+          endDate,
+          selectedCampaignIds.length > 0 ? selectedCampaignIds : undefined,
+        ),
+        getAccountQueueSendCapacity(
+          account.id,
+          selectedCampaignIds.length > 0 ? selectedCampaignIds : undefined,
+        ),
       ]);
+      if (gen !== heroGen.current) return;
       setMetrics(summary);
-      setStatsByDay(fillMissingStatsByDay(byDay, startDate, endDate));
       setSendCapacity(capacity);
+    } catch (e) {
+      if (gen !== heroGen.current) return;
+      setHeroError(e instanceof Error ? e.message : 'Failed to load metrics');
+    } finally {
+      if (gen === heroGen.current) setHeroLoading(false);
+    }
+  }, [account?.id, startDate, endDate, rangeInvalid, selectedCampaignIds]);
+
+  const loadTrends = useCallback(async () => {
+    if (!account?.id || !startDate || !endDate || rangeInvalid) return;
+    const gen = ++trendsGen.current;
+    setTrendsLoading(true);
+    setTrendsError(null);
+    try {
+      const byDay = await getAccountOutreachStatsByDay(
+        account.id,
+        startDate,
+        endDate,
+        selectedCampaignIds.length > 0 ? selectedCampaignIds : undefined,
+      );
+      if (gen !== trendsGen.current) return;
+      setStatsByDay(fillMissingStatsByDay(byDay, startDate, endDate));
+    } catch (e) {
+      if (gen !== trendsGen.current) return;
+      setTrendsError(e instanceof Error ? e.message : 'Failed to load trends');
+    } finally {
+      if (gen === trendsGen.current) setTrendsLoading(false);
+    }
+  }, [account?.id, startDate, endDate, rangeInvalid, selectedCampaignIds]);
+
+  const loadCopy = useCallback(async () => {
+    if (!account?.id || !startDate || !endDate || rangeInvalid) return;
+    const gen = ++copyGen.current;
+    setCopyLoading(true);
+    setCopyError(null);
+    try {
+      const copy = await getAccountCopyStats(
+        account.id,
+        startDate,
+        endDate,
+        selectedCampaignIds.length > 0 ? selectedCampaignIds : undefined,
+      );
+      if (gen !== copyGen.current) return;
       setCopyStats(copy);
       if (copy.copyBacklog > 0) {
         void kickCopyParseFromClient(account.id);
       }
-      setOutreachVolume(
-        volume.map((row) =>
-          'date' in row
-            ? {
-                periodStart: row.date,
-                emailsSent: row.emailsSent,
-                leadsFirstContacted: row.leadsFirstContacted,
-              }
-            : {
-                periodStart: row.weekStart,
-                emailsSent: row.emailsSent,
-                leadsFirstContacted: row.leadsFirstContacted,
-              },
-        ),
-      );
     } catch (e) {
-      setMetrics(null);
-      setStatsByDay([]);
-      setOutreachVolume([]);
-      setSendCapacity(null);
-      setCopyStats(null);
-      setError(e instanceof Error ? e.message : 'Failed to load metrics');
+      if (gen !== copyGen.current) return;
+      setCopyError(e instanceof Error ? e.message : 'Failed to load copy performance');
     } finally {
-      setLoading(false);
+      if (gen === copyGen.current) setCopyLoading(false);
     }
-  }, [account?.id, startDate, endDate, selectedCampaignIds]);
+  }, [account?.id, startDate, endDate, rangeInvalid, selectedCampaignIds]);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    if (rangeInvalid) {
+      setHeroError('Start date must be on or before end date.');
+      setTrendsError(null);
+      setCopyError(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      await loadHero();
+      if (cancelled) return;
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [loadHero, rangeInvalid]);
+
+  useEffect(() => {
+    if (rangeInvalid) return;
+    let cancelled = false;
+    void (async () => {
+      await loadTrends();
+      if (cancelled) return;
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [loadTrends, rangeInvalid]);
+
+  useEffect(() => {
+    if (rangeInvalid) return;
+    let cancelled = false;
+    void (async () => {
+      await loadCopy();
+      if (cancelled) return;
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [loadCopy, rangeInvalid]);
 
   const metricsToolbarProps = {
     startDate,
@@ -184,17 +244,13 @@ export default function AccountMetricsPage() {
     campaignIds: selectedCampaignIds,
     onChangeCampaignIds: setSelectedCampaignIds,
     campaignOptions,
-    loading,
     campaignsLoading,
   };
 
   const hasActiveFilters = selectedCampaignIds.length > 0;
-
-  const totals = useMemo(() => {
-    const sent = statsByDay.reduce((s, d) => s + d.sent, 0);
-    const replied = statsByDay.reduce((s, d) => s + d.replied, 0);
-    return { sent, replied };
-  }, [statsByDay]);
+  const { showPlaceholder: showHeroSkeleton } = usePageSkeleton(heroLoading && !metrics);
+  const { showPlaceholder: showTrendsSkeleton } = usePageSkeleton(trendsLoading && statsByDay.length === 0);
+  const { showPlaceholder: showCopySkeleton } = usePageSkeleton(copyLoading && !copyStats);
 
   const grain = useMemo(() => trendChartGrain(startDate, endDate), [startDate, endDate]);
   const weeklyOutcomes = useMemo(() => rollupDailyToIsoWeeks(statsByDay), [statsByDay]);
@@ -205,10 +261,22 @@ export default function AccountMetricsPage() {
         : weeklyOutcomes.map((week) => week.weekStart),
     [grain, statsByDay, weeklyOutcomes],
   );
-  const volumeByPeriod = useMemo(
-    () => new Map(outreachVolume.map((point) => [point.periodStart, point])),
-    [outreachVolume],
-  );
+  const volumeByPeriod = useMemo(() => {
+    if (grain === 'day') {
+      return new Map(
+        statsByDay.map((day) => [
+          day.date,
+          { emailsSent: day.sent, leadsFirstContacted: day.leadsFirstContacted },
+        ]),
+      );
+    }
+    return new Map(
+      weeklyOutcomes.map((week) => [
+        week.weekStart,
+        { emailsSent: week.sent, leadsFirstContacted: week.leadsFirstContacted },
+      ]),
+    );
+  }, [grain, statsByDay, weeklyOutcomes]);
   const outcomeByPeriod = useMemo(() => {
     if (grain === 'day') {
       return new Map(
@@ -292,28 +360,36 @@ export default function AccountMetricsPage() {
     </View>
   );
 
-  const alerts =
-    error || (metrics?.smartleadImportWarning === true && !warningDismissed) ? (
-      <View className="gap-3 mb-6">
-        {error ? (
-          <Alert variant="error" message={error} actionText="Retry" onAction={load} />
-        ) : null}
-        {metrics?.smartleadImportWarning === true && !warningDismissed ? (
-          <Alert
-            variant="warning"
-            message="A Smartlead import finished on or after the start of this range. These totals only include activity from campaigns sent through Furnace, not historical Smartlead sends."
-            actionText="Dismiss"
-            onAction={() => setWarningDismissed(true)}
-          />
-        ) : null}
-      </View>
-    ) : null;
+  const alerts = (
+    <View className="gap-3 mb-6">
+      {heroError ? (
+        <Alert variant="error" message={heroError} actionText="Retry" onAction={loadHero} />
+      ) : null}
+      {trendsError ? (
+        <Alert variant="error" message={trendsError} actionText="Retry" onAction={loadTrends} />
+      ) : null}
+      {copyError ? (
+        <Alert variant="error" message={copyError} actionText="Retry" onAction={loadCopy} />
+      ) : null}
+      {metrics?.smartleadImportWarning === true && !warningDismissed ? (
+        <Alert
+          variant="warning"
+          message="A Smartlead import finished on or after the start of this range. These totals only include activity from campaigns sent through Furnace, not historical Smartlead sends."
+          actionText="Dismiss"
+          onAction={() => setWarningDismissed(true)}
+        />
+      ) : null}
+    </View>
+  );
 
   const reached = metrics?.leadsReached ?? 0;
+  const sent = metrics?.totalSent ?? 0;
+  const replied = metrics?.totalReplied ?? 0;
   const interested = metrics?.totalPositiveReply ?? 0;
   const queue = metrics?.leadsInQueue ?? 0;
   const leadsPerPositiveReply = countPerOutcome(reached, interested);
-  const emailsPerPositiveReply = countPerOutcome(totals.sent, interested);
+  const emailsPerPositiveReply = countPerOutcome(sent, interested);
+  const heroBusy = showHeroSkeleton;
 
   return (
     <PageLayout>
@@ -322,63 +398,67 @@ export default function AccountMetricsPage() {
         subtitle={isMobile ? 'Sends, replies, and queue (UTC)' : 'Furnace sends, replies, and queue for your campaigns (UTC dates)'}
         primaryAction={headerActions}
       />
-      {alerts}
+      {heroError || trendsError || copyError || (metrics?.smartleadImportWarning === true && !warningDismissed)
+        ? alerts
+        : null}
 
-      <View className="flex-row flex-wrap gap-3 mb-8">
-        <MetricCard
-          label="Leads reached"
-          value={loading ? '—' : formatInt(reached)}
-          color="#38bdf8"
-        />
-        <MetricCard
-          label="Emails sent"
-          value={loading ? '—' : formatInt(totals.sent)}
-          color={CAMPAIGN_STAT_COLORS.sent}
-        />
-        <MetricCard
-          label="Replies"
-          value={loading ? '—' : formatInt(totals.replied)}
-          hint={loading ? null : `${formatRate(totals.replied, reached, 1)} of reached`}
-          color={CAMPAIGN_STAT_COLORS.replied}
-        />
-        <MetricCard
-          label="Interested"
-          value={loading ? '—' : formatInt(interested)}
-          hint={loading ? null : `${formatRate(interested, totals.replied, 1)} of replies`}
-          color={CAMPAIGN_STAT_COLORS.positiveReply}
-        />
-        <MetricCard
-          label="Leads per positive reply"
-          value={loading ? '—' : formatCountPerOutcome(leadsPerPositiveReply)}
-          hint={
-            loading || interested <= 0
-              ? null
-              : `${formatInt(reached)} reached / ${formatInt(interested)} interested`
-          }
-          color="#38bdf8"
-        />
-        <MetricCard
-          label="Emails per positive reply"
-          value={loading ? '—' : formatCountPerOutcome(emailsPerPositiveReply)}
-          hint={
-            loading || interested <= 0
-              ? null
-              : `${formatInt(totals.sent)} sent / ${formatInt(interested)} interested`
-          }
-          color={CAMPAIGN_STAT_COLORS.positiveReply}
-        />
-        <MetricCard
-          label="Queue"
-          value={loading ? '—' : formatInt(queue)}
-          hint={
-            loading
-              ? null
-              : formatRunwayThrough(runwayEndDate) ??
-                (queue > 0 ? 'No send capacity' : 'No unsent leads')
-          }
-          color="#f59e0b"
-        />
-      </View>
+      {heroBusy ? (
+        <MetricCardsSkeleton />
+      ) : (
+        <View className="flex-row flex-wrap gap-3 mb-8">
+          <MetricCard
+            label="Leads reached"
+            value={formatInt(reached)}
+            color="#38bdf8"
+          />
+          <MetricCard
+            label="Emails sent"
+            value={formatInt(sent)}
+            color={CAMPAIGN_STAT_COLORS.sent}
+          />
+          <MetricCard
+            label="Replies"
+            value={formatInt(replied)}
+            hint={`${formatRate(replied, reached, 1)} of reached`}
+            color={CAMPAIGN_STAT_COLORS.replied}
+          />
+          <MetricCard
+            label="Interested"
+            value={formatInt(interested)}
+            hint={`${formatRate(interested, replied, 1)} of replies`}
+            color={CAMPAIGN_STAT_COLORS.positiveReply}
+          />
+          <MetricCard
+            label="Leads per positive reply"
+            value={formatCountPerOutcome(leadsPerPositiveReply)}
+            hint={
+              interested <= 0
+                ? null
+                : `${formatInt(reached)} reached / ${formatInt(interested)} interested`
+            }
+            color="#38bdf8"
+          />
+          <MetricCard
+            label="Emails per positive reply"
+            value={formatCountPerOutcome(emailsPerPositiveReply)}
+            hint={
+              interested <= 0
+                ? null
+                : `${formatInt(sent)} sent / ${formatInt(interested)} interested`
+            }
+            color={CAMPAIGN_STAT_COLORS.positiveReply}
+          />
+          <MetricCard
+            label="Queue"
+            value={formatInt(queue)}
+            hint={
+              formatRunwayThrough(runwayEndDate) ??
+              (queue > 0 ? 'No send capacity' : 'No unsent leads')
+            }
+            color="#f59e0b"
+          />
+        </View>
+      )}
 
       <Text className="text-lg font-instrument-semibold text-white mb-1">
         {grain === 'day' ? 'Daily trends' : 'Weekly trends'}
@@ -391,7 +471,7 @@ export default function AccountMetricsPage() {
           categoryKind={grain}
           categories={trendLabels}
           panels={trendPanels}
-          loading={loading}
+          loading={showTrendsSkeleton}
         />
       </View>
 
@@ -409,7 +489,7 @@ export default function AccountMetricsPage() {
         Which hooks, offers, and CTAs correlate with interested replies. Rates are per send.
       </Text>
       <View className="mb-8">
-        <CopyPerformancePanel stats={copyStats} loading={loading} />
+        <CopyPerformancePanel stats={copyStats} loading={showCopySkeleton} />
       </View>
 
       {isMobile ? (

@@ -9,9 +9,11 @@ import {
   type DuplicateCampaignOptions,
 } from './duplicate-campaign-with-client';
 import { kickCopyParseFromClient } from '../../../copy/kickCopyParse';
+import type { CampaignFlowSaveResult } from './campaign-flow-save-result';
 
 export type { CampaignFlowVersion };
 export type { DuplicateCampaignOptions };
+export type { CampaignFlowSaveResult };
 
 export interface CampaignFilters {
   ownerId?: string;
@@ -104,11 +106,6 @@ export async function updateCampaign(id: string, updates: CampaignUpdate): Promi
   }
   return data;
 }
-
-export type CampaignFlowSaveResult = {
-  campaign: Campaign;
-  reactivated_count: number;
-};
 
 function parseCampaignFlowSaveRpcResult(data: unknown): CampaignFlowSaveResult {
   if (data && typeof data === 'object' && 'campaign' in data) {

@@ -35,7 +35,7 @@ export async function callOpenRouterCopyParse(params: {
             { role: 'user', content: params.prompt.user },
           ],
           temperature: 0,
-          max_tokens: 2_048,
+          max_tokens: 8_192,
           response_format: { type: 'json_object' },
         }),
         signal: controller.signal,
@@ -49,9 +49,16 @@ export async function callOpenRouterCopyParse(params: {
         throw new Error(message || `OpenRouter HTTP ${response.status}`);
       }
       const choices = body.choices as
-        | Array<{ message?: { content?: string | null } }>
+        | Array<{
+            finish_reason?: string | null;
+            message?: { content?: string | null };
+          }>
         | undefined;
-      const content = choices?.[0]?.message?.content;
+      const choice = choices?.[0];
+      if (choice?.finish_reason === 'length') {
+        throw new Error('OpenRouter response was truncated (finish_reason=length)');
+      }
+      const content = choice?.message?.content;
       if (typeof content !== 'string' || !content.trim()) {
         throw new Error('OpenRouter returned an empty response');
       }

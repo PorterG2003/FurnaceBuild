@@ -3,6 +3,7 @@ import { supabase } from '../../client';
 /** Row from `account_outreach_metrics` RPC (Furnace-only account rollup). */
 export interface AccountOutreachMetrics {
   totalSent: number;
+  totalReplied: number;
   totalPositiveReply: number;
   leadsReached: number;
   leadsInQueue: number;
@@ -11,6 +12,7 @@ export interface AccountOutreachMetrics {
 
 type RpcRow = {
   total_sent: number | string | null;
+  total_replied?: number | string | null;
   total_positive_reply: number | string | null;
   leads_reached: number | string | null;
   leads_in_queue: number | string | null;
@@ -44,6 +46,7 @@ export async function getAccountOutreachMetrics(
   if (!row) {
     return {
       totalSent: 0,
+      totalReplied: 0,
       totalPositiveReply: 0,
       leadsReached: 0,
       leadsInQueue: 0,
@@ -52,6 +55,7 @@ export async function getAccountOutreachMetrics(
   }
   return {
     totalSent: num(row.total_sent),
+    totalReplied: num(row.total_replied),
     totalPositiveReply: num(row.total_positive_reply),
     leadsReached: num(row.leads_reached),
     leadsInQueue: num(row.leads_in_queue),

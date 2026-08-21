@@ -11,4 +11,6 @@ export { WorkbenchBulkReviewSkeleton } from './WorkbenchBulkReviewSkeleton';
 export { LeadSourceBucketSkeleton } from './LeadSourceBucketSkeleton';
 export { CampaignDetailSkeleton } from './CampaignDetailSkeleton';
 export { MissionControlSkeleton } from './MissionControlSkeleton';
+export { MetricCardsSkeleton, AccountTrendChartSkeleton } from './AccountMetricsSkeleton';
+export { CopyPerformanceSkeleton } from './CopyPerformanceSkeleton';
 export { SKELETON_DELAY_MS, SKELETON_MIN_DISPLAY_MS } from '@/components/ui/feedback/skeletonConstants';

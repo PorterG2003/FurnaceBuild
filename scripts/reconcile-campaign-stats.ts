@@ -43,6 +43,19 @@ async function main() {
   }
 
   console.log('Updated', updated, 'campaign_stats row(s).');
+
+  const healthArgs = campaignId
+    ? { p_campaign_id: campaignId }
+    : {};
+  const { data: health, error: healthError } = await supabase.rpc(
+    'campaign_stats_daily_health_report',
+    healthArgs as never,
+  );
+  if (healthError) {
+    console.error('Daily health report failed:', healthError.message);
+    process.exit(1);
+  }
+  console.log('campaign_stats_daily health:', JSON.stringify(health, null, 2));
 }
 
 main();

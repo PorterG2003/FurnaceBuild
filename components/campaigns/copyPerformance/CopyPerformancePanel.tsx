@@ -1,40 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Text, View, useWindowDimensions } from 'react-native';
-import { Alert, Skeleton } from '@/components/ui/feedback';
-import { Card } from '@/components/ui/Card';
+import { Alert } from '@/components/ui/feedback';
 import { Tabs, type Tab } from '@/components/ui/tabs';
 import { Select } from '@/components/ui/forms';
 import { LAYOUT_BREAKPOINT } from '@/components/ui/layout/constants';
 import { groupCopyStatsByKind, type CopyLeaderboardGroup } from '@/lib/metrics/copyLeaderboard';
 import type { AccountCopyStats } from '@/lib/supabase/services/campaigns/account-copy-stats-rpc-map';
+import { CopyPerformanceSkeleton } from '@/components/skeletons/CopyPerformanceSkeleton';
 import { CopyPieceRow } from './CopyPieceRow';
 
 const INTEGER_FORMATTER = new Intl.NumberFormat('en-US');
-
-function LoadingSkeleton() {
-  return (
-    <View className="gap-4">
-      {[1, 2, 3].map((i) => (
-        <Card key={i} variant="card">
-          <View className="flex-row items-center gap-4">
-            <View className="flex-1 min-w-0">
-              <Skeleton className="h-5 w-40" />
-            </View>
-            <View className="flex-row gap-6">
-              {[1, 2, 3, 4, 5].map((j) => (
-                <View key={j} className="items-center gap-1">
-                  <Skeleton className="h-4 w-4 mb-1" />
-                  <Skeleton className="h-4 w-10" />
-                  <Skeleton className="h-2.5 w-12 mt-0.5" />
-                </View>
-              ))}
-            </View>
-          </View>
-        </Card>
-      ))}
-    </View>
-  );
-}
 
 interface KindSelectItem {
   id: string;
@@ -106,7 +81,7 @@ export function CopyPerformancePanel({
       ) : null}
 
       {loading ? (
-        <LoadingSkeleton />
+        <CopyPerformanceSkeleton />
       ) : groups.length === 0 ? (
         <Text className="text-sm text-gray-400 font-instrument py-4">
           No sent emails with parsed copy in this range.

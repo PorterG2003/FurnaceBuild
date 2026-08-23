@@ -45,16 +45,29 @@ async function resolveCopyContent(params: {
   const flowNodeId = String((node as { flow_node_id?: string }).flow_node_id ?? '');
   if (!flowNodeId) return null;
 
-  const { data: mapping, error: mapError } = await db
-    .from('copy_variant_content_map')
-    .select('content_id, copy_contents!inner(subject)')
-    .eq('account_id', accountId)
-    .eq('campaign_id', campaignId)
+  const mappingSelect = () =>
+    db
+      .from('copy_variant_content_map')
+      .select('content_id, copy_contents!inner(subject)')
+      .eq('account_id', accountId)
+      .eq('campaign_id', campaignId)
+      .eq('variant_id', variantId)
+      .eq('flow_version_number', flowVersionNumber);
+
+  const { data: mappedByNode, error: mapError } = await mappingSelect()
     .eq('flow_node_id', flowNodeId)
-    .eq('variant_id', variantId)
-    .eq('flow_version_number', flowVersionNumber)
     .maybeSingle();
-  if (mapError || !mapping) return null;
+  const mappingMissingColumn =
+    Boolean(mapError?.message?.includes('flow_node_id')) || mapError?.code === '42703';
+  let mapping = !mapError ? mappedByNode : null;
+  if (!mapping && (mappingMissingColumn || !mapError)) {
+    const fallback = mappingMissingColumn
+      ? await mappingSelect().limit(1).maybeSingle()
+      : await mappingSelect().is('flow_node_id', null).limit(1).maybeSingle();
+    if (fallback.error && !mappingMissingColumn) return null;
+    mapping = fallback.data ?? null;
+  }
+  if (!mapping) return null;
 
   const contentId = String((mapping as { content_id?: string }).content_id ?? '');
   const contents = (mapping as { copy_contents?: { subject?: string } | { subject?: string }[] })

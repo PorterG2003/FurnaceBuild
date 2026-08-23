@@ -85,7 +85,7 @@ async function fetchJobPage(
   campaignIds: string[],
   from: number,
   to: number,
-  options: { unstampedOnly?: boolean; afterId?: string | null } = {},
+  options: { unstampedOnly?: boolean; afterId?: string | null; accountId?: string } = {},
 ): Promise<JobRow[]> {
   if (campaignIds.length === 0) return [];
   let query = db
@@ -94,7 +94,11 @@ async function fetchJobPage(
       'id, campaign_id, lead_id, variant_id, flow_version_number, node_id, message_type, copy_rendering_id, account_id',
     )
     .in('campaign_id', campaignIds)
+    .eq('status', 'sent')
     .order('id', { ascending: true });
+  if (options.accountId) {
+    query = query.eq('account_id', options.accountId);
+  }
   if (options.unstampedOnly) {
     query = query.is('copy_rendering_id', null);
   }
@@ -129,30 +133,58 @@ async function classifyJobs(
   const needed = mapKeys.filter((row) => row.job.variant_id && row.job.flow_version_number && row.flowNodeId);
   const contentIds = new Set<string>();
   if (needed.length > 0) {
-    const { data: maps, error: mapError } = await db
-      .from('copy_variant_content_map')
-      .select('campaign_id, flow_node_id, variant_id, flow_version_number, content_id, copy_contents!inner(id, subject, parse_status)')
-      .in(
-        'campaign_id',
-        [...new Set(needed.map((row) => row.job.campaign_id))],
-      );
-    if (mapError) throw mapError;
+    const mapSelect =
+      'campaign_id, flow_node_id, variant_id, flow_version_number, content_id, copy_contents!inner(id, subject, parse_status)';
+    const mapSelectLegacy =
+      'campaign_id, variant_id, flow_version_number, content_id, copy_contents!inner(id, subject, parse_status)';
+    let maps: unknown[] | null = null;
+    {
+      const first = await db
+        .from('copy_variant_content_map')
+        .select(mapSelect)
+        .in('campaign_id', [...new Set(needed.map((row) => row.job.campaign_id))]);
+      if (first.error && (first.error.code === '42703' || first.error.message.includes('flow_node_id'))) {
+        const fallback = await db
+          .from('copy_variant_content_map')
+          .select(mapSelectLegacy)
+          .in('campaign_id', [...new Set(needed.map((row) => row.job.campaign_id))]);
+        if (fallback.error) throw fallback.error;
+        maps = fallback.data ?? [];
+      } else if (first.error) {
+        throw first.error;
+      } else {
+        maps = first.data ?? [];
+      }
+    }
     const mapLookup = new Map<string, { contentId: string; subject: string; parseStatus: string }>();
+    const tripleLookup = new Map<string, { contentId: string; subject: string; parseStatus: string }>();
     for (const row of maps ?? []) {
       const contents = (row as { copy_contents?: { subject?: string; parse_status?: string; id?: string } | Array<{ subject?: string; parse_status?: string; id?: string }> }).copy_contents;
       const content = Array.isArray(contents) ? contents[0] : contents;
       const contentId = String((row as { content_id?: string }).content_id ?? content?.id ?? '');
-      const key = [
-        String((row as { campaign_id: string }).campaign_id),
-        String((row as { flow_node_id: string }).flow_node_id),
-        String((row as { variant_id: string }).variant_id),
-        String((row as { flow_version_number: number }).flow_version_number),
-      ].join('|');
-      mapLookup.set(key, {
+      const mapped = {
         contentId,
         subject: String(content?.subject ?? ''),
         parseStatus: String(content?.parse_status ?? ''),
-      });
+      };
+      const flowNodeId = String((row as { flow_node_id?: string | null }).flow_node_id ?? '');
+      if (flowNodeId) {
+        mapLookup.set(
+          [
+            String((row as { campaign_id: string }).campaign_id),
+            flowNodeId,
+            String((row as { variant_id: string }).variant_id),
+            String((row as { flow_version_number: number }).flow_version_number),
+          ].join('|'),
+          mapped,
+        );
+      }
+      const tripleKey = [
+        String((row as { campaign_id: string }).campaign_id),
+        String((row as { variant_id: string }).variant_id),
+        String((row as { flow_version_number: number }).flow_version_number),
+      ].join('|');
+      if (!tripleLookup.has(tripleKey)) tripleLookup.set(tripleKey, mapped);
       if (contentId) contentIds.add(contentId);
     }
     const occurrenceCount = new Map<string, number>();
@@ -174,7 +206,15 @@ async function classifyJobs(
         String(row.job.variant_id),
         String(row.job.flow_version_number),
       ].join('|');
-      const mapped = mapLookup.get(key);
+      const mapped =
+        mapLookup.get(key) ??
+        tripleLookup.get(
+          [
+            row.job.campaign_id,
+            String(row.job.variant_id),
+            String(row.job.flow_version_number),
+          ].join('|'),
+        );
       if (!mapped) continue;
       contentByJob.set(row.job.id, {
         ...mapped,
@@ -215,7 +255,9 @@ async function inventoryAccount(db: SupabaseClient, accountId: string): Promise<
   let from = 0;
   const pageSize = 1000;
   while (true) {
-    const page = await fetchJobPage(db, campaignIds, from, from + pageSize - 1);
+    const page = await fetchJobPage(db, campaignIds, from, from + pageSize - 1, {
+      accountId,
+    });
     if (page.length === 0) break;
     const classified = await classifyJobs(db, page);
     for (const row of classified) {
@@ -245,8 +287,8 @@ async function stampAccount(
   while (true) {
     if (limit != null && stamped >= limit) break;
     const page = await fetchJobPage(db, campaignIds, 0, batchSize - 1, {
-      unstampedOnly: true,
       afterId,
+      accountId,
     });
     if (page.length === 0) break;
     afterId = page[page.length - 1]!.id;
@@ -515,26 +557,53 @@ async function main() {
     return;
   }
 
-  const counts = await inventoryAccount(db, args.accountId);
+  if (args.verify) {
+    const counts = await inventoryAccount(db, args.accountId);
+    console.log(
+      JSON.stringify(
+        {
+          mode: 'verify',
+          account_id: args.accountId,
+          ...counts,
+          limit: args.limit,
+        },
+        null,
+        2,
+      ),
+    );
+    await verifyAccount(db, args.accountId);
+    return;
+  }
+
+  if (!args.live) {
+    const counts = await inventoryAccount(db, args.accountId);
+    console.log(
+      JSON.stringify(
+        {
+          mode: 'dry-run',
+          account_id: args.accountId,
+          ...counts,
+          limit: args.limit,
+        },
+        null,
+        2,
+      ),
+    );
+    return;
+  }
+
   console.log(
     JSON.stringify(
       {
-        mode: args.verify ? 'verify' : args.live ? 'live' : 'dry-run',
+        mode: 'live',
         account_id: args.accountId,
-        ...counts,
         limit: args.limit,
+        batch_size: args.batchSize,
       },
       null,
       2,
     ),
   );
-
-  if (args.verify) {
-    await verifyAccount(db, args.accountId);
-    return;
-  }
-  if (!args.live) return;
-
   const result = await stampAccount(db, args.accountId, args.limit, args.batchSize);
   console.log(JSON.stringify(result, null, 2));
 }

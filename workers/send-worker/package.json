@@ -8,7 +8,7 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",
-    "test": "npm --prefix ../../lib/mailbox run build && npm --prefix ../../lib/email run build && npm --prefix ../../lib/webhooks run build && node --import tsx --test src/email.test.ts src/worker.test.ts src/sentAttachments.test.ts src/types.test.ts src/loadThreadTimeline.test.ts"
+    "test": "npm --prefix ../../lib/mailbox run build && npm --prefix ../../lib/email run build && npm --prefix ../../lib/webhooks run build && node --import tsx --test src/email.test.ts src/worker.test.ts src/sentAttachments.test.ts src/types.test.ts src/loadThreadTimeline.test.ts src/email-sent-webhook-payload.test.ts"
   },
   "dependencies": {
     "@aws-sdk/client-sqs": "^3.0.0",

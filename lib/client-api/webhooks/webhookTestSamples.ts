@@ -196,10 +196,13 @@ export function buildWebhookTestPayload(
     case 'email.sent':
       return maybeWithTestFlag({
         campaign_id: cid,
+        campaign_name: 'Example campaign',
         lead_id: TEST_LEAD_ID,
+        email: 'lead@example.com',
         enrollment_id: TEST_ENROLLMENT_ID,
         message_job_id: TEST_MESSAGE_JOB_ID,
         mailbox_id: TEST_MAILBOX_ID,
+        mailbox_email: 'sender@example.com',
         provider_message_id: 'test-provider-message-id',
         sent_at: sampleTimestamp(),
         subject: 'Example outbound subject (test)',
@@ -209,11 +212,14 @@ export function buildWebhookTestPayload(
         thread_id: TEST_THREAD_ID,
         email_message_id: TEST_EMAIL_MESSAGE_ID,
         campaign_id: cid,
+        campaign_name: 'Example campaign',
         lead_id: TEST_LEAD_ID,
         enrollment_id: TEST_ENROLLMENT_ID,
         mailbox_id: TEST_MAILBOX_ID,
+        mailbox_email: 'sender@example.com',
         from_email: 'lead@example.com',
         subject: 'Re: Example outbound subject (test)',
+        body_text: 'Thursday works — send a hold.',
         received_at: sampleTimestamp(),
       }, includeTestFlag);
     case 'reply.categorized':

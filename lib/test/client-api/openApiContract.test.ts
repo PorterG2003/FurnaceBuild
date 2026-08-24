@@ -218,6 +218,10 @@ test('client api guide markdown includes webhook examples', () => {
   );
   assert.ok(emailActivity.includes(liveEmailSentExample));
   assert.doesNotMatch(liveEmailSentExample, /"test": true/);
+  assert.match(emailActivity, /"email": "lead@example.com"/);
+  assert.match(emailActivity, /"body_text":/);
+  assert.match(emailActivity, /"mailbox_email":/);
+  assert.match(emailActivity, /"campaign_name":/);
 });
 
 test('client api llms exports include guides and version', () => {

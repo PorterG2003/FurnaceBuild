@@ -32,9 +32,10 @@ const WEBHOOK_EVENT_DESCRIPTIONS: Record<WebhookEventType, string> = {
   'campaign.paused': 'The campaign was paused.',
   'campaign.resumed': 'The campaign was resumed.',
   'campaign.stopped': 'The campaign was stopped.',
-  'email.sent': 'An outbound campaign email was sent.',
+  'email.sent':
+    'An outbound campaign email was sent. `data.email` is the lead recipient address for CRM matching; `mailbox_email` and `campaign_name` identify the sender and campaign.',
   'reply.received':
-    'An inbound reply was received on a campaign thread (before categorization completes).',
+    'An inbound reply was received on a campaign thread (before categorization completes). `data.body_text` is the plain-text display body (quoted history stripped).',
   'reply.categorized':
     'A thread reply category was assigned, changed, or cleared (manual, AI, system, or OOO).',
   'bounce.detected': 'A hard or soft bounce was detected for a sent message.',

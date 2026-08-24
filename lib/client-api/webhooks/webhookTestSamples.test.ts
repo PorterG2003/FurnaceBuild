@@ -26,10 +26,16 @@ test('buildWebhookTestPayload marks samples as test and matches event shape', ()
   assert.equal(emailSent.test, true);
   assert.equal(emailSent.campaign_id, ctx.campaignId);
   assert.equal(typeof emailSent.subject, 'string');
+  assert.equal(emailSent.email, 'lead@example.com');
+  assert.equal(emailSent.mailbox_email, 'sender@example.com');
+  assert.equal(emailSent.campaign_name, 'Example campaign');
 
   const reply = buildWebhookTestPayload('reply.received', ctx);
   assert.equal(reply.test, true);
   assert.equal(reply.from_email, 'lead@example.com');
+  assert.equal(reply.body_text, 'Thursday works — send a hold.');
+  assert.equal(reply.mailbox_email, 'sender@example.com');
+  assert.equal(reply.campaign_name, 'Example campaign');
 
   const batch = buildWebhookTestPayload('lead.bulk_import.completed', ctx);
   assert.equal(batch.test, true);
@@ -39,6 +45,9 @@ test('buildWebhookTestPayload marks samples as test and matches event shape', ()
 test('buildWebhookSamplePreview omits test flag for live docs', () => {
   const live = buildWebhookSamplePreview('email.sent', ctx, { includeTestFlag: false });
   assert.doesNotMatch(live, /"test": true/);
+  assert.match(live, /"email": "lead@example.com"/);
+  assert.match(live, /"mailbox_email": "sender@example.com"/);
+  assert.match(live, /"campaign_name": "Example campaign"/);
 
   const testPreview = buildWebhookSamplePreview('email.sent', ctx, { includeTestFlag: true });
   assert.match(testPreview, /"test": true/);

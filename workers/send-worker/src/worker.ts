@@ -31,6 +31,7 @@ import { sendEmail, sendReplyEmail } from './email.js';
 import type { ReplyEmailOptions, SendEmailResult } from './email.js';
 import { SmtpPool } from './smtp-pool.js';
 import { emitWebhookEvent } from './emit-webhook-event.js';
+import { buildEmailSentWebhookPayload } from './email-sent-webhook-payload.js';
 import type { MessageJob, Mailbox, Lead } from './types.js';
 import { isCampaignMessageJob, isPriorityCampaignJob } from './types.js';
 import { calculateNextRunAt } from '@furnace/campaign-lib/schedule.js';
@@ -933,7 +934,7 @@ export class SendWorker {
       // 1b. Block list check — skip campaign sends to blocked addresses
       const { data: campaign } = await this.supabase
         .from('campaigns')
-        .select('account_id, status, deleted_at, schedule')
+        .select('account_id, status, deleted_at, schedule, name')
         .eq('id', messageJob.campaign_id)
         .single();
 
@@ -1412,16 +1413,19 @@ export class SendWorker {
           accountId: accountId,
           campaignId: messageJob.campaign_id,
           eventType: 'email.sent',
-          payload: {
-            campaign_id: messageJob.campaign_id,
-            lead_id: messageJob.lead_id,
-            enrollment_id: messageJob.enrollment_id,
-            message_job_id: messageJob.id,
-            mailbox_id: messageJob.mailbox_id,
-            provider_message_id: providerMessageId,
-            sent_at: eventData.sent_at,
+          payload: buildEmailSentWebhookPayload({
+            campaignId: messageJob.campaign_id,
+            campaignName: campaign.name ?? null,
+            leadId: messageJob.lead_id,
+            email: lead.email,
+            enrollmentId: messageJob.enrollment_id,
+            messageJobId: messageJob.id,
+            mailboxId: messageJob.mailbox_id,
+            mailboxEmail: mailbox.email_address,
+            providerMessageId,
+            sentAt: eventData.sent_at,
             subject,
-          },
+          }),
           dedupeKey: `email.sent:${messageJob.id}`,
         });
       } else {

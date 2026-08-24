@@ -238,6 +238,7 @@ class ProcessMessageSupabase {
           account_id: 'account-1',
           status: 'running',
           deleted_at: null,
+          name: 'Wasatch corridor',
         },
         error: null,
       };
@@ -319,6 +320,7 @@ class ReplyRetrySupabase {
           account_id: 'account-1',
           status: 'running',
           deleted_at: null,
+          name: 'Wasatch corridor',
           schedule: {
             timezone: 'America/Chicago',
             start_hour: 9,
@@ -1049,6 +1051,37 @@ test('SendWorker persists rendered text and html payloads for campaign sends', a
     sent_body_text: expected.bodyText,
   });
   assert.equal(typeof eventData.sent_at, 'string');
+});
+
+test('SendWorker email.sent webhook includes lead email, mailbox email, and campaign name', async () => {
+  const supabase = new ProcessMessageSupabase();
+  const worker = new SendWorker({
+    supabase: supabase as any,
+    databaseClient: {} as any,
+    campaignEmailSender: async () => ({
+      submittedMessageId: '<job-1@furnace.build>',
+      providerMessageId: '<provider@example.com>',
+    }),
+  });
+  const messageJob = createCampaignMessageJob({
+    message_data: {
+      node_config: { subject: 'Hi {{first_name}}', body_html: '<p>Hi</p>', body_text: 'Hi' },
+    },
+  });
+  stubCampaignSendWorker(worker, messageJob);
+
+  await (worker as any).processMessageJob(messageJob);
+
+  const webhookInsert = supabase.tableUpdates.find((row) => row.table === 'webhook_events');
+  assert.ok(webhookInsert, 'expected webhook_events insert');
+  const payload = webhookInsert.updates.payload as Record<string, unknown>;
+  assert.equal(payload.email, 'lead@example.com');
+  assert.equal(payload.mailbox_email, 'sender@example.com');
+  assert.equal(payload.campaign_name, 'Wasatch corridor');
+  assert.equal(payload.lead_id, 'lead-1');
+  assert.equal(payload.campaign_id, 'campaign-1');
+  assert.equal(payload.mailbox_id, 'mailbox-1');
+  assert.equal(payload.message_job_id, messageJob.id);
 });
 
 test('SendWorker seeded spintax is stable across retries and matches shared renderer', async () => {

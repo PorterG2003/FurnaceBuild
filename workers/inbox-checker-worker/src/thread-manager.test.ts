@@ -459,6 +459,10 @@ function createMessageJob(overrides: Partial<MessageJob> = {}): MessageJob {
       email: 'lead@example.com',
       name: 'Lead',
     },
+    campaigns: {
+      id: 'campaign-1',
+      name: 'Wasatch corridor',
+    },
     ...overrides,
   };
 }
@@ -761,6 +765,14 @@ test('handleReply routes campaign replies on categorizer flows through the park 
   const enrollUpdates = (supabase.calls.filter((c) => (c as QueryCall).table === 'enrollments') as QueryCall[])
     .filter((c) => c.insertPayloads.some((p) => p && typeof p === 'object' && 'stopped_reason' in (p as object)));
   assert.equal(enrollUpdates.length, 0);
+
+  const webhookCalls = supabase.calls.filter((c) => (c as QueryCall).table === 'webhook_events') as QueryCall[];
+  assert.equal(webhookCalls.length, 1);
+  const webhookPayload = (webhookCalls[0].insertPayloads[0] as { payload: Record<string, unknown> }).payload;
+  assert.equal(webhookPayload.from_email, 'lead@example.com');
+  assert.equal(webhookPayload.body_text, 'Reply body');
+  assert.equal(webhookPayload.mailbox_email, 'porterg@furnaceoutbound.com');
+  assert.equal(webhookPayload.campaign_name, 'Wasatch corridor');
 });
 
 test('handleReply leaves enrollment active (no hard-stop) when the park RPC fails on a categorizer campaign', async () => {

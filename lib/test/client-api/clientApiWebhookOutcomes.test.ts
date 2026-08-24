@@ -47,13 +47,29 @@ test('internal webhook test succeeds and returns envelope metadata', async (t) =
     });
     assert.equal(response.status, 200);
     const body = await response.json() as {
-      data: { success: boolean; status: number; event_type: string; request_body: { type: string; data: { test: boolean } } };
+      data: {
+        success: boolean;
+        status: number;
+        event_type: string;
+        request_body: {
+          type: string;
+          data: {
+            test: boolean;
+            email?: string;
+            mailbox_email?: string;
+            campaign_name?: string;
+          };
+        };
+      };
     };
     assert.equal(body.data.success, true);
     assert.equal(body.data.status, 200);
     assert.equal(body.data.event_type, 'email.sent');
     assert.equal(body.data.request_body.type, 'email.sent');
     assert.equal(body.data.request_body.data.test, true);
+    assert.equal(body.data.request_body.data.email, 'lead@example.com');
+    assert.equal(body.data.request_body.data.mailbox_email, 'sender@example.com');
+    assert.equal(body.data.request_body.data.campaign_name, 'Example campaign');
   } finally {
     await harness.cleanup();
   }

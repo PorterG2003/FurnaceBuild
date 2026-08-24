@@ -22,6 +22,10 @@ import { emitClassifyReplyJob } from './emit-classify-reply-job.js';
 import { emitEmailReceivedNotification } from './emit-notification-event.js';
 import { emitWebhookEvent } from './emit-webhook-event.js';
 import {
+  buildReplyReceivedWebhookPayload,
+  campaignNameFromRelation,
+} from './reply-received-webhook-payload.js';
+import {
   containsUnresolvedTemplate,
   formatReferencesHeader,
   isNoSubjectPlaceholder,
@@ -917,17 +921,20 @@ export class ThreadManager {
         accountId: thread.account_id,
         campaignId: originalJob.campaign_id,
         eventType: 'reply.received',
-        payload: {
-          thread_id: thread.id,
-          email_message_id: emailMessage.id,
-          campaign_id: originalJob.campaign_id,
-          lead_id: originalJob.lead_id,
-          enrollment_id: originalJob.enrollment_id,
-          mailbox_id: mailbox.id,
-          from_email: message.from.address,
+        payload: buildReplyReceivedWebhookPayload({
+          threadId: thread.id,
+          emailMessageId: emailMessage.id,
+          campaignId: originalJob.campaign_id,
+          campaignName: campaignNameFromRelation(originalJob.campaigns),
+          leadId: originalJob.lead_id,
+          enrollmentId: originalJob.enrollment_id,
+          mailboxId: mailbox.id,
+          mailboxEmail: mailbox.email_address,
+          fromEmail: message.from.address,
           subject: message.subject,
-          received_at: emailMessage.received_at,
-        },
+          bodyText: message.bodyText,
+          receivedAt: emailMessage.received_at,
+        }),
         dedupeKey: `reply.received:${emailMessage.id}`,
       });
     }

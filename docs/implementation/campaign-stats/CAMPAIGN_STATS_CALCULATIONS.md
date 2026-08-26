@@ -8,13 +8,15 @@ This document explains how campaign statistics (sent, replied, positive reply, b
 
 Campaign stats are **totals** (sent, replied, positive reply, bounce) plus **enrollment count** and optional **per-day series** for charts. They appear on the campaigns list, campaign detail page, and in the stats-by-day chart.
 
-Two storage layers back these numbers:
+Caches back these numbers (details never scan `message_jobs` or `events` on read):
 
-- **campaign_stats** — Cached totals, one row per campaign. Updated incrementally by workers and the inbox service. Used for list and detail totals.
+- **campaign_stats** — Cached totals, one row per campaign. Updated incrementally by workers and the inbox service. Used for list totals and the details chart’s lifetime-sent cache-miss check.
 - **campaign_stats_daily** — Cached **per UTC calendar day** counts (`sent`, `replied`, `positive_reply`, `bounce`, `leads_first_contacted`) for Furnace campaigns. Updated in the same transaction as `record_*_event_and_increment`, and rebuilt from **`events`** by `rebuild_campaign_stats_daily` / `reconcile_campaign_stats`. Used by `/metrics` and campaign-detail day charts.
-- **events** — Immutable log of `sent`, `replied`, and `bounced` events. Source of truth for the daily cache and for **leads reached** (distinct `lead_id` in a date window, which is not additive from daily distincts).
+- **campaign_variant_stats** — Cached lifetime per-`(node_id, variant_id)` counts for campaign details. Incremented in the same `record_*` RPCs; rebuilt by `rebuild_campaign_variant_stats` / `reconcile_campaign_stats`. Not a date-windowed store — `/metrics` `account_node_stats` still live-scans jobs.
+- **enrollments.has_been_contacted** — Set once on first campaign send. The details progress dial and `enrollment_progress_state` read this flag (not `EXISTS` on `message_jobs`).
+- **events** — Immutable log of `sent`, `replied`, and `bounced` events. Source of truth for daily/variant rebuilds and for **leads reached** (distinct `lead_id` in a date window, which is not additive from daily distincts).
 
-Event insert and stats increment are **atomic**: a single RPC per stat type inserts the event and updates campaign_stats in one transaction, so the two tables do not drift. List and detail totals read from **campaign_stats** (and enrollments for enrollment count). Per-day charts read from **events**. The diagram in [Who updates what](#who-updates-what) and the [Stat definitions](#stat-definitions) below spell out who writes each stat and what it means.
+Event insert and stats increment are **atomic**: a single RPC per stat type inserts the event and updates `campaign_stats`, `campaign_stats_daily`, and `campaign_variant_stats` in one transaction. Rebuilds (`rebuild_campaign_stats_daily`, `rebuild_campaign_variant_stats`) are migrate/ops only — never from the details page. The diagram in [Who updates what](#who-updates-what) and the [Stat definitions](#stat-definitions) below spell out who writes each stat and what it means.
 
 ---
 
@@ -63,13 +65,13 @@ Campaigns with `source = 'smartlead'` get totals from the Smartlead migration wo
 
 Total **enrollments** for the campaign. Not stored in `campaign_stats`; computed live from non-deleted `enrollments` rows.
 
-- **Code:** For the **campaigns list**, [lib/supabase/services/campaigns/campaign-list-summary.ts](../../../lib/supabase/services/campaigns/campaign-list-summary.ts) — `getCampaignsListSummary` calls the `campaigns_list_summary` RPC (server-side aggregates; supports search/status/tag filters and keyset pagination). For **campaign detail** and other callers, [lib/supabase/services/campaigns/campaign-stats.ts](../../../lib/supabase/services/campaigns/campaign-stats.ts) — `getCampaignStatsForCampaigns` queries `enrollments` and merges with `campaign_stats`.
+- **Code:** For the **campaigns list**, [lib/supabase/services/campaigns/campaign-list-summary.ts](../../../lib/supabase/services/campaigns/campaign-list-summary.ts) — `getCampaignsListSummary` calls the `campaigns_list_summary` RPC (server-side aggregates; supports search/status/tag filters and keyset pagination). For other callers that still need merged totals + enrollment counts, [lib/supabase/services/campaigns/campaign-stats.ts](../../../lib/supabase/services/campaigns/campaign-stats.ts) — `getCampaignStatsForCampaigns` queries `enrollments` and merges with `campaign_stats`. **Campaign details does not call this** (it would download every enrollment). The details lead-progress dial uses `get_campaign_lead_progress_buckets` (set-based `COUNT` on `leads` ⟕ `enrollments` for that campaign).
 
 ### Campaign list completion percentage
 
 The completion dial on the campaign list uses a **blended formula** combining two independent signals:
 
-- **Contacted count** — enrollments with `has_been_contacted = true`. That flag is set once on the first campaign send via `record_sent_event_and_increment`, and can be reconciled from sent campaign `message_jobs` with `backfill_enrollment_has_been_contacted_batch` / [scripts/backfill-enrollment-has-been-contacted.ts](../../../scripts/backfill-enrollment-has-been-contacted.ts). The legacy `get_campaign_contacted_counts` RPC (distinct sent jobs) remains the backfill source of truth and is still used by some non-list paths.
+- **Contacted count** — enrollments with `has_been_contacted = true`. That flag is set once on the first campaign send via `record_sent_event_and_increment`, and can be reconciled from sent campaign `message_jobs` with `backfill_enrollment_has_been_contacted_batch` / [scripts/backfill-enrollment-has-been-contacted.ts](../../../scripts/backfill-enrollment-has-been-contacted.ts). The details progress dial and `get_campaign_contacted_lead_ids` use this flag. The legacy `get_campaign_contacted_counts` RPC (distinct sent jobs) remains the backfill source of truth and is still used by some non-list paths. Until the backfill has caught up, details dials undercount `in_progress`.
 - **Terminal count** — enrollments with `state` in (`stopped`, `completed`).
 
 **Formula:** `(reachedCount + terminalCount) / (enrollmentCount × 2)`, capped at 100%, where **reachedCount = max(contactedCount, terminalCount)**. So enrollments that are terminal but have no sent campaign email (e.g. stopped before first send) still count as "reached" for the first half, and "all terminal" always shows 100%.
@@ -114,23 +116,33 @@ flowchart LR
   end
   subgraph db [Database]
     CampaignStats[campaign_stats]
+    Daily[campaign_stats_daily]
+    Variant[campaign_variant_stats]
     Events[events]
   end
   SendWorker -->|"record_sent_event_and_increment"| CampaignStats
+  SendWorker -->|"record_sent_event_and_increment"| Daily
+  SendWorker -->|"record_sent_event_and_increment"| Variant
   SendWorker -->|"record_sent_event_and_increment"| Events
   InboxChecker -->|"record_replied_event_and_increment"| CampaignStats
+  InboxChecker -->|"record_replied_event_and_increment"| Daily
+  InboxChecker -->|"record_replied_event_and_increment"| Variant
   InboxChecker -->|"record_replied_event_and_increment"| Events
   InboxChecker -->|"record_bounced_event_and_increment"| CampaignStats
+  InboxChecker -->|"record_bounced_event_and_increment"| Daily
+  InboxChecker -->|"record_bounced_event_and_increment"| Variant
   InboxChecker -->|"record_bounced_event_and_increment"| Events
   InboxService -->|"update_campaign_stats_positive_reply"| CampaignStats
   InboxService -->|"update_replied_event_is_positive"| Events
+  InboxService -->|"update_replied_event_is_positive"| Daily
+  InboxService -->|"update_replied_event_is_positive"| Variant
 ```
 
-| Writer         | Updates campaign_stats                                      | Writes events                    |
-|----------------|-------------------------------------------------------------|----------------------------------|
-| Send worker    | `record_sent_event_and_increment` (campaign jobs only) — atomic event + sent_count | `sent`                           |
-| Inbox checker  | `record_replied_event_and_increment`, `record_bounced_event_and_increment` — atomic event + count each | `replied`, `bounced`             |
-| Inbox service  | `update_campaign_stats_positive_reply` (delta)              | updates `replied` event `event_data.is_positive` |
+| Writer         | Updates caches                                      | Writes events                    |
+|----------------|-----------------------------------------------------|----------------------------------|
+| Send worker    | `record_sent_event_and_increment` (campaign jobs only) — atomic event + sent_count + daily + variant | `sent`                           |
+| Inbox checker  | `record_replied_event_and_increment`, `record_bounced_event_and_increment` — atomic event + totals/daily/variant | `replied`, `bounced`             |
+| Inbox service  | `update_campaign_stats_positive_reply` (delta); `update_replied_event_is_positive` also ± daily/variant | updates `replied` event `event_data.is_positive` |
 
 ---
 
@@ -138,9 +150,12 @@ flowchart LR
 
 - **List/card totals:** `getCampaignsListSummary(accountId)` in [lib/supabase/services/campaigns/campaign-list-summary.ts](../../../lib/supabase/services/campaigns/campaign-list-summary.ts) — one `campaigns_list_summary` RPC (enrollment aggregates, contacted counts, `campaign_stats`, `has_flow`). Used by [app/(main)/campaigns.tsx](../../../app/(main)/campaigns.tsx).
 
-- **Campaign detail summary:** `getCampaignStatsForCampaigns(campaignIds)` in [lib/supabase/services/campaigns/campaign-stats.ts](../../../lib/supabase/services/campaigns/campaign-stats.ts). Makes three queries: `enrollments` (total + terminal counts per campaign), `get_campaign_contacted_counts` RPC (contacted count per campaign), and `campaign_stats` (sent/replied/positive_reply/bounce/last_bounce_at). Used by [app/(main)/campaigns/[id].tsx](../../../app/(main)/campaigns/[id].tsx).
+- **Campaign details (cache-read):** [app/(main)/campaigns/[id].tsx](../../../app/(main)/campaigns/[id].tsx) first-paints from `getCampaignById` only. Progress, chart, and variants load in parallel afterward. Failed queries show an error (or keep last good data) — they are never coerced to zeros.
+  - **Progress dial:** `get_campaign_lead_progress_buckets` — set-based counts on `enrollments.state` + `has_been_contacted` (unenrolled / active+uncontacted → `not_started`). Filter scoping uses `get_campaign_contacted_lead_ids` (same flag).
+  - **Trend chart:** bootstrap from `campaign_stats_daily_activity_range` (min/max `stat_date` with any activity), then `campaign_stats_by_day` for that window. If the series is all zeros but `campaign_stats.sent_count > 0`, that is a **cache miss** (`isCampaignDailyStatsCacheMiss`) — show an error / retry, do not call `rebuild_campaign_stats_daily` from the client. Smartlead stays on `imported_campaign_stats_by_day`.
+  - **Variant table:** `get_campaign_variant_stats` reads `campaign_variant_stats` (plus a `nodes.flow_node_id` map in [campaign-variant-stats.ts](../../../lib/supabase/services/campaigns/campaign-variant-stats.ts)). Null `variant_id` jobs are skipped (legacy A must already be stamped with `LEGACY_EMAIL_VARIANT_ID`).
 
-- **Per-day chart:** `getCampaignStatsByDay(campaignId, start, end)` in the same service. For native campaigns it calls the **`campaign_stats_by_day`** RPC (UTC calendar-day buckets; positive replies use `event_data->>'is_positive' = 'true'`, matching prior client aggregation; **`leads_first_contacted`** is campaign-scoped first send against full send history, same semantics as `account_daily_outreach_volume`). Smartlead campaigns still read **`imported_campaign_stats_by_day`** and have no first-contact series. Used by [components/campaigns/AccountTrendChart.tsx](../../../components/campaigns/AccountTrendChart.tsx) on campaign Details (two stacked plots: Sent / Leads reached / Bounced and Replies / Positive, shared line/bar toggle; day vs ISO week via `trendChartGrain`).
+- **Per-day chart RPC:** `getCampaignStatsByDay(campaignId, start, end)` in [campaign-stats.ts](../../../lib/supabase/services/campaigns/campaign-stats.ts). For native campaigns it calls **`campaign_stats_by_day`** (UTC calendar-day buckets from `campaign_stats_daily`; **`leads_first_contacted`** is campaign-scoped first send). Smartlead campaigns still read **`imported_campaign_stats_by_day`** and have no first-contact series. Used by [components/campaigns/AccountTrendChart.tsx](../../../components/campaigns/AccountTrendChart.tsx) on campaign Details.
 
 ### Account outreach metrics (`/metrics`)
 
@@ -163,7 +178,7 @@ Per **ISO week (Monday UTC, matching Postgres `date_trunc('week')`)**: emails se
 
 ### Account sequence-step stats (`account_node_stats`)
 
-Account-scoped generalization of `get_campaign_variant_stats`: per email **node** (not variant), sent / replied / interested / bounce, optional UTC date and campaign filters. Sent and bounce use outbound message types; replied and interested use paced only. Join path is `events.message_job_id` → `message_jobs.node_id`.
+Account-scoped generalization of `get_campaign_variant_stats`: per email **node** (not variant), sent / replied / interested / bounce, optional UTC date and campaign filters. Sent and bounce use outbound message types; replied and interested use paced only. Join path is `events.message_job_id` → `message_jobs.node_id`. This still live-scans jobs; the lifetime `campaign_variant_stats` cache cannot answer “last 30 days per node.”
 
 - Code: [lib/supabase/services/campaigns/account-node-stats.ts](../../../lib/supabase/services/campaigns/account-node-stats.ts).
 
@@ -179,7 +194,7 @@ Keep SQL and TypeScript in lockstep:
 | Paced only (reply/interested variant attribution) | `is_paced_campaign_message_type(t)` | `isPacedCampaignMessageJob` |
 | Priority lane | `t IN ('campaign_priority','campaign_reply')` | `isPriorityCampaignJob` |
 
-**Variant performance (`get_campaign_variant_stats`):** `sent` and `bounce` use outbound; `replied` and `positive_reply` use paced only so post-categorizer priority nodes do not own reply/interested attribution (UI shows em dash for those columns on `node.data.priority === true`).
+**Variant performance (`get_campaign_variant_stats`):** reads `campaign_variant_stats`. Writers apply the same predicates: `sent` and `bounce` use outbound; `replied` and `positive_reply` use paced only so post-categorizer priority nodes do not own reply/interested attribution (UI shows em dash for those columns on `node.data.priority === true`). Key is `nodes.id` + `variant_id`; recreating a flow node starts a new row at zero.
 
 ## Edge cases and consistency
 
@@ -197,7 +212,7 @@ Keep SQL and TypeScript in lockstep:
 
 One-time backfill: [supabase/migrations/20260216000002_backfill_campaign_stats.sql](../../../supabase/migrations/20260216000002_backfill_campaign_stats.sql). It defines the canonical sources: **message_jobs** (sent), **email_threads** (replied + positive), **events** (bounce).
 
-**Ongoing reconciliation:** The RPC `reconcile_campaign_stats(p_campaign_id)` recomputes campaign_stats from those same sources. Pass a campaign UUID to reconcile one campaign, or `NULL` to reconcile all. Returns the number of rows updated. The script [scripts/reconcile-campaign-stats.ts](../../../scripts/reconcile-campaign-stats.ts) calls this RPC and can be run manually or on a schedule (e.g. cron):
+**Ongoing reconciliation:** The RPC `reconcile_campaign_stats(p_campaign_id)` recomputes campaign_stats from those same sources, then rebuilds `campaign_stats_daily` and `campaign_variant_stats`. Pass a campaign UUID to reconcile one campaign, or `NULL` to reconcile all. Returns the number of rows updated. If the details chart or variant table looks empty on a hot campaign after a timed-out rebuild, run reconcile for that id — do not add a client rebuild. The script [scripts/reconcile-campaign-stats.ts](../../../scripts/reconcile-campaign-stats.ts) calls this RPC and can be run manually or on a schedule (e.g. cron):
 
 - `npx tsx scripts/reconcile-campaign-stats.ts` — reconcile all campaigns
 - `CAMPAIGN_ID=<uuid> npx tsx scripts/reconcile-campaign-stats.ts` — reconcile one campaign
@@ -216,21 +231,25 @@ One-time backfill: [supabase/migrations/20260216000002_backfill_campaign_stats.s
 - `20260429190000` — `account_outreach_metrics` RPC for account-level Furnace-only outreach metrics.
 - `20260429200000` — `account_outreach_stats_by_day` RPC for account daily chart series.
 - `20260513120000` — `campaign_stats_by_day` RPC for campaign detail daily chart (native campaigns).
+- `20260821120000` — `campaign_stats_daily` table + increment-on-write from `record_*` RPCs.
+- `20260825222450` — flag-based progress RPCs; `campaign_variant_stats` increment-on-write cache; `campaign_stats_daily_activity_range`.
 
 ### RPCs
 
-- **Atomic (event + stats in one transaction):** `record_sent_event_and_increment`, `record_replied_event_and_increment`, `record_bounced_event_and_increment`.
-- **Contacted count (completion dial):** `get_campaign_contacted_counts(p_campaign_ids UUID[])` — returns per-campaign count of distinct enrollments with ≥1 sent campaign email.
+- **Atomic (event + stats in one transaction):** `record_sent_event_and_increment`, `record_replied_event_and_increment`, `record_bounced_event_and_increment` (totals + daily + variant).
+- **Contacted count (list completion dial):** `get_campaign_contacted_counts(p_campaign_ids UUID[])` — distinct enrollments with ≥1 sent campaign email (jobs scan; backfill source of truth).
+- **Details progress:** `get_campaign_lead_progress_buckets`, `get_campaign_contacted_lead_ids`, `enrollment_progress_state` — `enrollments.has_been_contacted`, not jobs.
 - **Campaigns list (aggregated row per campaign):** `campaigns_list_summary(p_account_id UUID)` — list-only columns plus enrollment/terminal/contacted aggregates and `campaign_stats` counts (same semantics as the former list client merge; avoids raw enrollment list truncation).
 - **Account outreach metrics:** `account_outreach_metrics(p_account_id, p_start_date, p_end_date, p_campaign_ids)` — Furnace-only sent/replied/positive from `campaign_stats_daily`; distinct leads reached from `events`; queue from `has_been_contacted`; Smartlead import warning.
 - **Account outreach by day:** `account_outreach_stats_by_day` — dense UTC days from `campaign_stats_daily` including `leads_first_contacted`.
-- **Campaign outreach by day:** `campaign_stats_by_day` — same daily cache, one campaign.
+- **Campaign outreach by day:** `campaign_stats_by_day` — same daily cache, one campaign. Bootstrap range: `campaign_stats_daily_activity_range`.
 - **Daily rebuild / health:** `rebuild_campaign_stats_daily(p_campaign_id)`, `campaign_stats_daily_health_report(p_account_id, p_campaign_id)`.
-- **Reconciliation:** `reconcile_campaign_stats(p_campaign_id)` — pass NULL for all campaigns; also rebuilds `campaign_stats_daily` from `events`.
+- **Variant cache:** `get_campaign_variant_stats` (read), `rebuild_campaign_variant_stats` (migrate/ops), `increment_campaign_variant_stats` / `increment_campaign_variant_stats_for_job` (writers).
+- **Reconciliation:** `reconcile_campaign_stats(p_campaign_id)` — pass NULL for all campaigns; also rebuilds `campaign_stats_daily` and `campaign_variant_stats`.
 - **Account weekly volume:** `account_weekly_outreach_volume` — thin wrapper over `campaign_stats_daily` grouped by ISO week.
 - **Account daily volume:** `account_daily_outreach_volume` — thin wrapper over `account_outreach_stats_by_day`.
-- **Account node stats:** `account_node_stats(p_account_id, p_start_date, p_end_date, p_campaign_ids)` — per email step sent/replied/interested/bounce across Furnace campaigns.
-- **Positive reply (user override):** `update_campaign_stats_positive_reply(p_campaign_id, p_delta)`, `update_replied_event_is_positive(p_campaign_id, p_message_job_id, p_is_positive)` (the latter also adjusts `campaign_stats_daily` on the replied event’s UTC day).
+- **Account node stats:** `account_node_stats(p_account_id, p_start_date, p_end_date, p_campaign_ids)` — per email step sent/replied/interested/bounce across Furnace campaigns (live scan; date-windowed).
+- **Positive reply (user override):** `update_campaign_stats_positive_reply(p_campaign_id, p_delta)`, `update_replied_event_is_positive(p_campaign_id, p_message_job_id, p_is_positive)` (the latter also adjusts `campaign_stats_daily` and `campaign_variant_stats`).
 - **Legacy (still present, used by reconciliation):** `increment_campaign_stats_sent`, `increment_campaign_stats_replied`, `increment_campaign_stats_bounce` — workers now use the atomic RPCs above.
 
 ### Scripts
@@ -239,8 +258,8 @@ One-time backfill: [supabase/migrations/20260216000002_backfill_campaign_stats.s
 
 ### Key code
 
-- **Types and reads:** [lib/supabase/services/campaigns/index.ts](../../../lib/supabase/services/campaigns/index.ts) — re-exports `CampaignStats`, `getCampaignStatsForCampaigns`, `getCampaignStatsByDay`, `getCampaignsListSummary`, `CampaignListSummary`, `getAccountOutreachMetrics`, `AccountOutreachMetrics`, `getAccountOutreachStatsByDay`.
-- **Chart gap fill (shared):** [lib/campaigns/fillMissingStatsByDay.ts](../../../lib/campaigns/fillMissingStatsByDay.ts) — `fillMissingStatsByDay` for campaign Details and `/metrics` charts.
+- **Types and reads:** [lib/supabase/services/campaigns/index.ts](../../../lib/supabase/services/campaigns/index.ts) — re-exports `CampaignStats`, `getCampaignStatsForCampaigns` (not used by details), `getCampaignLifetimeSentCount`, `getCampaignStatsDailyActivityRange`, `getCampaignStatsByDay`, `getCampaignsListSummary`, `CampaignListSummary`, `getAccountOutreachMetrics`, `AccountOutreachMetrics`, `getAccountOutreachStatsByDay`, `getCampaignLeadProgressBuckets`, `getCampaignVariantStats`.
+- **Chart gap fill / cache-miss guard:** [lib/campaigns/fillMissingStatsByDay.ts](../../../lib/campaigns/fillMissingStatsByDay.ts), [lib/campaigns/campaignDetailsStats.ts](../../../lib/campaigns/campaignDetailsStats.ts) (`isCampaignDailyStatsCacheMiss`).
 - **Positive reply (user override):** [lib/supabase/services/inbox.ts](../../../lib/supabase/services/inbox.ts) — `updateThreadCategory`.
 - **Sent:** [workers/send-worker/src/worker.ts](../../../workers/send-worker/src/worker.ts) — `record_sent_event_and_increment`.
 - **Replied, bounce:** [workers/inbox-checker-worker/src/thread-manager.ts](../../../workers/inbox-checker-worker/src/thread-manager.ts) — `record_replied_event_and_increment`, `record_bounced_event_and_increment`.

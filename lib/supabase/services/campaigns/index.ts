@@ -14,6 +14,8 @@ export {
 } from './campaigns';
 export {
   getCampaignStatsForCampaigns,
+  getCampaignLifetimeSentCount,
+  getCampaignStatsDailyActivityRange,
   getCampaignStatsByDay,
   reconcileCampaignStats,
   type CampaignStats,

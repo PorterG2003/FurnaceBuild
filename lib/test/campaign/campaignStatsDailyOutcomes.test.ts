@@ -405,3 +405,54 @@ test('reconcile repairs a drifted daily row from events', async () => {
     await harness.cleanup();
   }
 });
+
+test('campaign_stats_daily_activity_range is null without activity and spans send days after increment', async () => {
+  const harness = new CampaignDbHarness({
+    namespace: createCampaignTestNamespace('daily-range'),
+  });
+
+  try {
+    const graph = await harness.createCampaignGraph({
+      name: 'Daily Activity Range',
+      status: 'running',
+      flowKind: 'emailOnly',
+      leads: [
+        buildCampaignLead({
+          key: 'lead-a',
+          email: `daily-range-${harness.namespace}@furnace.test`,
+          enrollment: buildCampaignEnrollment({ state: 'active' }),
+          jobs: [buildCampaignJob({ key: 'sent', status: 'sent', nodeFlowNodeId: 'email-1' })],
+        }),
+      ],
+    });
+    const lead = graph.leadsByKey.get('lead-a')!;
+
+    const { data: emptyRange, error: emptyErr } = await harness.supabase.rpc(
+      'campaign_stats_daily_activity_range',
+      { p_campaign_id: graph.campaignId },
+    );
+    assert.equal(emptyErr, null, emptyErr?.message);
+    const emptyRow = (emptyRange ?? [])[0] as { start_date?: string | null; end_date?: string | null } | undefined;
+    assert.equal(emptyRow?.start_date ?? null, null);
+    assert.equal(emptyRow?.end_date ?? null, null);
+
+    await markSent(harness, {
+      campaignId: graph.campaignId,
+      leadId: lead.leadId,
+      enrollmentId: lead.enrollmentId!,
+      messageJobId: lead.messageJobIdsByKey.get('sent')!,
+    });
+
+    const today = new Date().toISOString().slice(0, 10);
+    const { data: activeRange, error: activeErr } = await harness.supabase.rpc(
+      'campaign_stats_daily_activity_range',
+      { p_campaign_id: graph.campaignId },
+    );
+    assert.equal(activeErr, null, activeErr?.message);
+    const activeRow = (activeRange ?? [])[0] as { start_date?: string | null; end_date?: string | null };
+    assert.equal(ymd(String(activeRow.start_date)), today);
+    assert.equal(ymd(String(activeRow.end_date)), today);
+  } finally {
+    await harness.cleanup();
+  }
+});

@@ -91,6 +91,58 @@ export interface CampaignStatsByDay {
   leadsFirstContacted: number;
 }
 
+export async function getCampaignLifetimeSentCount(campaignId: string): Promise<number> {
+  const { data, error } = await supabase
+    .from('campaign_stats')
+    .select('sent_count')
+    .eq('campaign_id', campaignId)
+    .maybeSingle();
+  if (error) throw new Error(`Failed to fetch campaign sent count: ${error.message}`);
+  return data?.sent_count ?? 0;
+}
+
+export async function getCampaignStatsDailyActivityRange(
+  campaignId: string,
+  source?: string | null,
+): Promise<{ startDate: string; endDate: string } | null> {
+  if (source === 'smartlead') {
+    const { data: first, error: firstError } = await supabase
+      .from('imported_campaign_stats_by_day')
+      .select('date')
+      .eq('campaign_id', campaignId)
+      .order('date', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (firstError) {
+      throw new Error(`Failed to fetch imported campaign stats range: ${firstError.message}`);
+    }
+    const { data: last, error: lastError } = await supabase
+      .from('imported_campaign_stats_by_day')
+      .select('date')
+      .eq('campaign_id', campaignId)
+      .order('date', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (lastError) {
+      throw new Error(`Failed to fetch imported campaign stats range: ${lastError.message}`);
+    }
+    if (!first?.date || !last?.date) return null;
+    const toYmd = (v: string) => (typeof v === 'string' ? v.slice(0, 10) : new Date(v).toISOString().slice(0, 10));
+    return { startDate: toYmd(first.date), endDate: toYmd(last.date) };
+  }
+
+  const { data, error } = await supabase.rpc('campaign_stats_daily_activity_range', {
+    p_campaign_id: campaignId,
+  });
+  if (error) throw new Error(`Failed to fetch campaign stats activity range: ${error.message}`);
+  const row = (data?.[0] ?? null) as { start_date?: string | null; end_date?: string | null } | null;
+  if (!row?.start_date || !row?.end_date) return null;
+  return {
+    startDate: String(row.start_date).slice(0, 10),
+    endDate: String(row.end_date).slice(0, 10),
+  };
+}
+
 export async function getCampaignStatsByDay(
   campaignId: string,
   startDate: string,

@@ -30,13 +30,12 @@ import { SmartleadRestrictedModal } from '@/components/campaigns/SmartleadRestri
 import { Tooltip } from '@/components/ui/Tooltip';
 import {
   getCampaignById,
-  getCampaignMailboxes,
+  getCampaignLifetimeSentCount,
   getCampaignStatsByDay,
-  getCampaignStatsForCampaigns,
+  getCampaignStatsDailyActivityRange,
   getCampaignLeadProgressBuckets,
   getCampaignVariantStats,
   type CampaignStatsByDay,
-  type CampaignStats,
   type CampaignVariantStatRow,
 } from '@/lib/supabase/services/campaigns';
 import {
@@ -72,6 +71,10 @@ import { LEGACY_EMAIL_VARIANT_ID, sortVariantsForRoundRobin } from '@/lib/email/
 import { CAMPAIGN_STAT_COLORS } from '@/lib/campaigns/campaignStatColors';
 import { getEmailNodesInSendOrder } from '@/lib/campaigns/emailNodeSendOrder';
 import { fillMissingStatsByDay } from '@/lib/campaigns/fillMissingStatsByDay';
+import {
+  campaignChartBootstrapEnd,
+  isCampaignDailyStatsCacheMiss,
+} from '@/lib/campaigns/campaignDetailsStats';
 import { trendChartGrain } from '@/lib/metrics/accountMetricsDateRange';
 import { formatWeekLabel, rollupDailyToIsoWeeks } from '@/lib/metrics/weeklyRollup';
 import { useCampaignStatusActions } from '@/lib/campaigns/useCampaignStatusActions';
@@ -189,13 +192,14 @@ export default function CampaignPage() {
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [mailboxCount, setMailboxCount] = useState(0);
   const [leadCount, setLeadCount] = useState(0);
   const [leadsNotStarted, setLeadsNotStarted] = useState(0);
   const [leadsInProgress, setLeadsInProgress] = useState(0);
   const [leadsCompleted, setLeadsCompleted] = useState(0);
   const [leadsStopped, setLeadsStopped] = useState(0);
   const [leadsPaused, setLeadsPaused] = useState(0);
+  const [progressLoading, setProgressLoading] = useState(false);
+  const [progressError, setProgressError] = useState<string | null>(null);
   const [leadRows, setLeadRows] = useState<Lead[]>([]);
   const [leadRowsLoading, setLeadRowsLoading] = useState(false);
   const [leadRowsError, setLeadRowsError] = useState<string | null>(null);
@@ -212,11 +216,13 @@ export default function CampaignPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [statsByDay, setStatsByDay] = useState<CampaignStatsByDay[]>([]);
   const [statsByDayLoading, setStatsByDayLoading] = useState(false);
+  const [statsByDayError, setStatsByDayError] = useState<string | null>(null);
   const [statsStartDate, setStatsStartDate] = useState<string | null>(null);
   const [statsEndDate, setStatsEndDate] = useState<string | null>(null);
-  const [campaignStats, setCampaignStats] = useState<CampaignStats | null>(null);
+  const skipNextStatsRangeFetchRef = useRef(false);
   const [variantStats, setVariantStats] = useState<CampaignVariantStatRow[]>([]);
   const [variantStatsLoading, setVariantStatsLoading] = useState(false);
+  const [variantStatsError, setVariantStatsError] = useState<string | null>(null);
   const [showSmartleadRestrictedModal, setShowSmartleadRestrictedModal] = useState(false);
   const [showRenameModal, setShowRenameModal] = useState(false);
   const [showCampaignActionsSheet, setShowCampaignActionsSheet] = useState(false);
@@ -362,46 +368,17 @@ export default function CampaignPage() {
       const campaignData = await getCampaignById(id);
       if (!campaignData) {
         setLoadError('Campaign not found');
-        setCampaignStats(null);
         return;
       }
       if (campaignData.deleted_at) {
         setCampaign(campaignData);
         setLoadError('This campaign has been deleted.');
-        setCampaignStats(null);
         return;
       }
       setCampaign(campaignData);
-
-      const [mailboxesResult, statsResult] = await Promise.all([
-        getCampaignMailboxes(id),
-        getCampaignStatsForCampaigns([id]).then((m) => m[id] ?? null),
-      ]);
-      const mailboxes = mailboxesResult;
-      setCampaignStats(statsResult);
-      setMailboxCount(mailboxes?.length ?? 0);
-
-      try {
-        const progressBuckets = await getCampaignLeadProgressBuckets(id);
-        setLeadCount(progressBuckets.totalLeads);
-        setLeadsNotStarted(progressBuckets.notStarted);
-        setLeadsInProgress(progressBuckets.inProgress);
-        setLeadsPaused(progressBuckets.paused);
-        setLeadsCompleted(progressBuckets.completed);
-        setLeadsStopped(progressBuckets.stopped);
-      } catch (progressError) {
-        console.error('Error loading campaign lead progress:', progressError);
-        setLeadCount(0);
-        setLeadsNotStarted(0);
-        setLeadsInProgress(0);
-        setLeadsPaused(0);
-        setLeadsCompleted(0);
-        setLeadsStopped(0);
-      }
     } catch (err) {
       console.error('Error loading campaign:', err);
       setLoadError(err instanceof Error ? err.message : 'Failed to load campaign');
-      setCampaignStats(null);
     } finally {
       if (!silent) setIsLoading(false);
     }
@@ -587,6 +564,36 @@ export default function CampaignPage() {
     loadCampaign();
   }, [loadCampaign]);
 
+  useEffect(() => {
+    if (!id || !campaign || campaign.deleted_at) return;
+    let cancelled = false;
+    setProgressLoading(true);
+    setProgressError(null);
+    getCampaignLeadProgressBuckets(id)
+      .then((progressBuckets) => {
+        if (cancelled) return;
+        setLeadCount(progressBuckets.totalLeads);
+        setLeadsNotStarted(progressBuckets.notStarted);
+        setLeadsInProgress(progressBuckets.inProgress);
+        setLeadsPaused(progressBuckets.paused);
+        setLeadsCompleted(progressBuckets.completed);
+        setLeadsStopped(progressBuckets.stopped);
+      })
+      .catch((progressErr: unknown) => {
+        if (cancelled) return;
+        console.error('Error loading campaign lead progress:', progressErr);
+        setProgressError(
+          progressErr instanceof Error ? progressErr.message : 'Failed to load lead progress.',
+        );
+      })
+      .finally(() => {
+        if (!cancelled) setProgressLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [id, campaign?.id, campaign?.deleted_at, refreshKey]);
+
   const {
     isPausing,
     isStarting: isResuming,
@@ -596,91 +603,96 @@ export default function CampaignPage() {
     handleStop,
   } = useCampaignStatusActions(id, loadCampaign);
 
-  const loadStatsByDay = useCallback(async (bootstrapping: boolean) => {
-    if (!id || !campaign) return;
+  useEffect(() => {
+    skipNextStatsRangeFetchRef.current = false;
+    setStatsStartDate(null);
+    setStatsEndDate(null);
+    setStatsByDay([]);
+    setStatsByDayError(null);
+  }, [id]);
+
+  useEffect(() => {
+    if (!id || !campaign || campaign.deleted_at || activeTab !== 'details') return;
+
+    if (skipNextStatsRangeFetchRef.current) {
+      skipNextStatsRangeFetchRef.current = false;
+      return;
+    }
+
+    let cancelled = false;
     setStatsByDayLoading(true);
-    try {
-      let startStr: string;
-      let endStr: string;
+    setStatsByDayError(null);
 
-      if (!bootstrapping && statsStartDate && statsEndDate) {
-        // User has set explicit dates — use them directly
-        startStr = statsStartDate;
-        endStr = statsEndDate;
-      } else {
-        // Bootstrap: fetch the widest sensible range to find the first/last entry
-        startStr =
-          campaign.source === 'smartlead' && campaign.smartlead_created_at
-            ? campaign.smartlead_created_at.slice(0, 10)
-            : campaign.created_at.slice(0, 10);
-        endStr = new Date().toISOString().slice(0, 10);
-      }
+    const load = async () => {
+      const sentCount = await getCampaignLifetimeSentCount(id);
+      if (cancelled) return;
 
-      const data = await getCampaignStatsByDay(id, startStr, endStr, campaign?.source ?? null);
+      let startStr = statsStartDate;
+      let endStr = statsEndDate;
+      let bootstrapping = false;
 
-      if (bootstrapping && data.length > 0) {
-        const toDateStr = (v: string | unknown) =>
-          typeof v === 'string' ? v.slice(0, 10) : new Date(v as string).toISOString().slice(0, 10);
-        const first = toDateStr(data[0].date);
-        const lastRow = (() => {
-          for (let i = data.length - 1; i >= 0; i--) {
-            const row = data[i];
-            const hasActivity = (row.sent + row.replied + row.positiveReply + row.bounce) > 0;
-            if (hasActivity) return row;
+      if (!startStr || !endStr) {
+        bootstrapping = true;
+        const range = await getCampaignStatsDailyActivityRange(id, campaign.source ?? null);
+        if (cancelled) return;
+        if (!range) {
+          if (isCampaignDailyStatsCacheMiss({ series: [], lifetimeSentCount: sentCount })) {
+            setStatsByDayError('Daily stats cache is empty while this campaign has sends. Reconcile campaign stats.');
+            return;
           }
-          return data[data.length - 1];
-        })();
-        const last = toDateStr(lastRow.date);
-        // Align with bootstrap endStr / service layer: UTC calendar date (YYYY-MM-DD).
-        const today = new Date().toISOString().slice(0, 10);
-        const lastPlus2 = (() => {
-          const d = new Date(last + 'T12:00:00Z');
-          d.setUTCDate(d.getUTCDate() + 2);
-          return d.toISOString().slice(0, 10);
-        })();
-        const bootstrapEnd = today <= lastPlus2 ? today : lastPlus2;
-        setStatsStartDate(first);
-        setStatsEndDate(bootstrapEnd);
-        setStatsByDay(fillMissingStatsByDay(data, first, bootstrapEnd));
-      } else {
-        setStatsByDay(fillMissingStatsByDay(data, startStr, endStr));
+          setStatsByDay([]);
+          return;
+        }
+        startStr = range.startDate;
+        endStr = campaignChartBootstrapEnd(range.endDate);
       }
-    } catch (err) {
-      console.error('Error loading campaign stats by day:', err);
-      setStatsByDay([]);
-    } finally {
-      setStatsByDayLoading(false);
-    }
-  }, [id, campaign, statsStartDate, statsEndDate]);
 
-  // Bootstrap: run once when campaign loads on the details tab or on refresh
-  useEffect(() => {
-    if (id && campaign && activeTab === 'details') {
-      loadStatsByDay(true);
-    }
-  }, [id, campaign, activeTab, refreshKey]); // eslint-disable-line react-hooks/exhaustive-deps
+      const data = await getCampaignStatsByDay(id, startStr, endStr, campaign.source ?? null);
+      if (cancelled) return;
+      const filled = fillMissingStatsByDay(data, startStr, endStr);
+      if (isCampaignDailyStatsCacheMiss({ series: filled, lifetimeSentCount: sentCount })) {
+        setStatsByDayError('Daily stats cache is empty while this campaign has sends. Reconcile campaign stats.');
+        return;
+      }
+      if (bootstrapping) {
+        skipNextStatsRangeFetchRef.current = true;
+        setStatsStartDate(startStr);
+        setStatsEndDate(endStr);
+      }
+      setStatsByDay(filled);
+    };
 
-  // Refetch when user explicitly changes dates (skip bootstrap mode)
-  useEffect(() => {
-    if (id && campaign && activeTab === 'details' && statsStartDate && statsEndDate) {
-      loadStatsByDay(false);
-    }
-  }, [statsStartDate, statsEndDate]); // eslint-disable-line react-hooks/exhaustive-deps
+    load()
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        console.error('Error loading campaign stats by day:', err);
+        setStatsByDayError(err instanceof Error ? err.message : 'Failed to load daily trends.');
+      })
+      .finally(() => {
+        if (!cancelled) setStatsByDayLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [id, campaign?.id, campaign?.source, campaign?.deleted_at, activeTab, statsStartDate, statsEndDate, refreshKey]);
 
   useEffect(() => {
     if (!id || activeTab !== 'details' || !campaign || isSmartlead) {
-      setVariantStats([]);
       return;
     }
     let cancelled = false;
     setVariantStatsLoading(true);
+    setVariantStatsError(null);
     getCampaignVariantStats(id)
       .then((rows) => {
         if (!cancelled) setVariantStats(rows);
       })
       .catch((err) => {
         console.error('Variant stats:', err);
-        if (!cancelled) setVariantStats([]);
+        if (!cancelled) {
+          setVariantStatsError(err instanceof Error ? err.message : 'Failed to load variant stats.');
+        }
       })
       .finally(() => {
         if (!cancelled) setVariantStatsLoading(false);
@@ -688,7 +700,7 @@ export default function CampaignPage() {
     return () => {
       cancelled = true;
     };
-  }, [id, campaign, activeTab, refreshKey, isSmartlead]);
+  }, [id, campaign?.id, activeTab, refreshKey, isSmartlead]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -922,7 +934,11 @@ export default function CampaignPage() {
 
                       <View style={{ flex: isMobile ? undefined : 1, minWidth: 0 }}>
                         <Text className="text-gray-400 font-instrument text-xs mb-3" style={isMobile ? { marginBottom: 8 } : undefined}>Lead Progress</Text>
-                        {leadCount === 0 ? (
+                        {progressLoading && leadCount === 0 && !progressError ? (
+                          <Text className="text-gray-500 font-instrument text-sm">Loading lead progress…</Text>
+                        ) : progressError ? (
+                          <Text className="text-red-400 font-instrument text-sm">{progressError}</Text>
+                        ) : leadCount === 0 ? (
                           <View style={{ flexDirection: 'row', alignItems: 'center', gap: isMobile ? 36 : 80, flexWrap: isMobile ? 'nowrap' : 'wrap' }}>
                             <View style={isMobile ? { width: 100, height: 100, flexShrink: 0 } : undefined}>
                               <MultiSegmentDial
@@ -981,6 +997,8 @@ export default function CampaignPage() {
                       <Text className="text-lg font-instrument-semibold text-white mb-3">Variant performance</Text>
                       {variantStatsLoading ? (
                         <Text className="text-gray-500 font-instrument text-sm">Loading variant stats…</Text>
+                      ) : variantStatsError ? (
+                        <Text className="text-red-400 font-instrument text-sm">{variantStatsError}</Text>
                       ) : (
                         <View style={{ width: '100%', alignSelf: 'stretch' }}>
                             {getEmailNodesInSendOrder(flowData as { nodes?: any[]; edges?: any[] })
@@ -1281,6 +1299,9 @@ export default function CampaignPage() {
                         />
                       </View>
                     </View>
+                    {statsByDayError ? (
+                      <Text className="text-red-400 font-instrument text-sm mb-3">{statsByDayError}</Text>
+                    ) : null}
                     <AccountTrendChart
                       categoryKind={statsGrain}
                       categories={trendLabels}

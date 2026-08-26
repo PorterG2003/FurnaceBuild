@@ -534,6 +534,41 @@ export interface Database {
           updated_at?: string;
         };
       };
+      campaign_variant_stats: {
+        Row: {
+          campaign_id: string;
+          account_id: string;
+          node_id: string;
+          variant_id: string;
+          sent_count: number;
+          replied_count: number;
+          positive_reply_count: number;
+          bounce_count: number;
+          updated_at: string;
+        };
+        Insert: {
+          campaign_id: string;
+          account_id: string;
+          node_id: string;
+          variant_id: string;
+          sent_count?: number;
+          replied_count?: number;
+          positive_reply_count?: number;
+          bounce_count?: number;
+          updated_at?: string;
+        };
+        Update: {
+          campaign_id?: string;
+          account_id?: string;
+          node_id?: string;
+          variant_id?: string;
+          sent_count?: number;
+          replied_count?: number;
+          positive_reply_count?: number;
+          bounce_count?: number;
+          updated_at?: string;
+        };
+      };
       nodes: {
         Row: {
           id: string;
@@ -3476,6 +3511,34 @@ export interface Database {
           p_campaign_id?: string | null;
         };
         Returns: number;
+      };
+      rebuild_campaign_variant_stats: {
+        Args: {
+          p_campaign_id?: string | null;
+        };
+        Returns: number;
+      };
+      campaign_stats_daily_activity_range: {
+        Args: {
+          p_campaign_id: string;
+        };
+        Returns: {
+          start_date: string | null;
+          end_date: string | null;
+        }[];
+      };
+      get_campaign_variant_stats: {
+        Args: {
+          p_campaign_id: string;
+        };
+        Returns: {
+          node_id: string;
+          variant_id: string;
+          sent_count: number;
+          replied_count: number;
+          positive_reply_count: number;
+          bounce_count: number;
+        }[];
       };
       campaign_stats_daily_health_report: {
         Args: {

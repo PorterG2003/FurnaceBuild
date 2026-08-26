@@ -96,6 +96,8 @@ export type CampaignEnrollmentSpec = {
   stoppedReason?: EnrollmentStoppedReason | null;
   stoppedAt?: string | null;
   stoppedErrorMessage?: string | null;
+  /** When true, seed enrollments.has_been_contacted (progress dial / filters). */
+  hasBeenContacted?: boolean;
   /** Outbound hold snapshot (categorizer flows): flow node id to restore to. */
   heldNodeFlowNodeId?: string | null;
   /** Outbound hold snapshot: next_run_at to restore. */
@@ -1085,6 +1087,7 @@ export async function materializeCampaignGraph(
         stopped_error_message: leadSpec.enrollment.stoppedErrorMessage ?? null,
         held_node_id: heldNodeFlowNodeId ? nodeIdsByFlowNodeId.get(heldNodeFlowNodeId) ?? null : null,
         held_next_run_at: leadSpec.enrollment.heldNextRunAt ?? null,
+        has_been_contacted: leadSpec.enrollment.hasBeenContacted ?? false,
       });
       manifest.enrollmentIds.push(enrollmentId);
     }

@@ -142,7 +142,7 @@ test('get_campaign_lead_progress_buckets splits contacted and uncontacted active
         buildCampaignLead({
           key: 'contacted',
           email: `partial-contacted-${harness.namespace}@furnace.test`,
-          enrollment: buildCampaignEnrollment({ state: 'active' }),
+          enrollment: buildCampaignEnrollment({ state: 'active', hasBeenContacted: true }),
           jobs: [buildCampaignJob({ key: 'sent-job', status: 'sent' })],
         }),
       ],
@@ -156,6 +156,44 @@ test('get_campaign_lead_progress_buckets splits contacted and uncontacted active
     const contactedLeadIds = await loadContactedLeadIds(harness, graph.campaignId);
     assert.equal(contactedLeadIds.size, 1);
     assert.equal(contactedLeadIds.has(graph.leadsByKey.get('contacted')!.leadId), true);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test('get_campaign_lead_progress_buckets ignores sent jobs when has_been_contacted is false', async () => {
+  const harness = new CampaignDbHarness({ namespace: createCampaignTestNamespace('progress-flag-source') });
+
+  try {
+    const graph = await harness.createCampaignGraph({
+      name: 'Progress Flag Source',
+      status: 'running',
+      flowKind: 'emailOnly',
+      leads: [
+        buildCampaignLead({
+          key: 'sent-no-flag',
+          email: `flag-source-${harness.namespace}@furnace.test`,
+          enrollment: buildCampaignEnrollment({ state: 'active' }),
+          jobs: [buildCampaignJob({ key: 'sent-job', status: 'sent' })],
+        }),
+      ],
+    });
+
+    const buckets = await loadProgressBuckets(harness, graph.campaignId);
+    assert.equal(buckets.total_leads, 1);
+    assert.equal(buckets.not_started, 1);
+    assert.equal(buckets.in_progress, 0);
+
+    const contactedLeadIds = await loadContactedLeadIds(harness, graph.campaignId);
+    assert.equal(contactedLeadIds.size, 0);
+
+    const enrollmentId = graph.leadsByKey.get('sent-no-flag')!.enrollmentId!;
+    const { data: progressState, error: progressStateError } = await harness.supabase.rpc(
+      'enrollment_progress_state',
+      { p_enrollment_state: 'active', p_enrollment_id: enrollmentId },
+    );
+    assert.equal(progressStateError, null, progressStateError?.message);
+    assert.equal(progressState, 'not_started');
   } finally {
     await harness.cleanup();
   }
@@ -215,7 +253,7 @@ test('campaign lead progress filters match contacted vs queued enrollments', asy
         buildCampaignLead({
           key: 'contacted',
           email: `filter-contacted-${harness.namespace}@furnace.test`,
-          enrollment: buildCampaignEnrollment({ state: 'active' }),
+          enrollment: buildCampaignEnrollment({ state: 'active', hasBeenContacted: true }),
           jobs: [buildCampaignJob({ key: 'sent-job', status: 'sent' })],
         }),
       ],
@@ -265,7 +303,7 @@ test('account_lead_people_page enrollment filters use progress semantics', async
         buildCampaignLead({
           key: 'contacted',
           email: contactedEmail,
-          enrollment: buildCampaignEnrollment({ state: 'active' }),
+          enrollment: buildCampaignEnrollment({ state: 'active', hasBeenContacted: true }),
           jobs: [buildCampaignJob({ key: 'sent-job', status: 'sent' })],
         }),
       ],

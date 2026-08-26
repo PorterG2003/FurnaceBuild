@@ -218,6 +218,54 @@ test('M2/M3/M4/M10: priority sent+bounce visible; replied/positive stay on paced
     assert.equal(n(paced!.sent_count), 1);
     assert.equal(n(paced!.replied_count), 1, 'M4 upstream replied');
     assert.equal(n(paced!.positive_reply_count), 1, 'M4 upstream positive');
+
+    const { error: clearPositiveErr } = await harness.supabase.rpc('update_replied_event_is_positive', {
+      p_campaign_id: graph.campaignId,
+      p_message_job_id: pacedJobId,
+      p_is_positive: false,
+    });
+    assert.equal(clearPositiveErr, null, clearPositiveErr?.message);
+    const afterClear = await variantStats(harness, graph.campaignId);
+    const pacedAfterClear = afterClear.find(
+      (r) => r.node_id === pacedNodeId && r.variant_id === PACED_VARIANT_ID,
+    );
+    assert.equal(n(pacedAfterClear?.positive_reply_count), 0);
+
+    const { error: restorePositiveErr } = await harness.supabase.rpc('update_replied_event_is_positive', {
+      p_campaign_id: graph.campaignId,
+      p_message_job_id: pacedJobId,
+      p_is_positive: true,
+    });
+    assert.equal(restorePositiveErr, null, restorePositiveErr?.message);
+
+    const beforeRebuild = await variantStats(harness, graph.campaignId);
+    const { error: rebuildErr } = await harness.supabase.rpc('rebuild_campaign_variant_stats', {
+      p_campaign_id: graph.campaignId,
+    });
+    assert.equal(rebuildErr, null, rebuildErr?.message);
+    const afterRebuild = await variantStats(harness, graph.campaignId);
+    assert.deepEqual(
+      afterRebuild
+        .map((r) => ({
+          node_id: r.node_id,
+          variant_id: r.variant_id,
+          sent_count: n(r.sent_count),
+          replied_count: n(r.replied_count),
+          positive_reply_count: n(r.positive_reply_count),
+          bounce_count: n(r.bounce_count),
+        }))
+        .sort((a, b) => `${a.node_id}:${a.variant_id}`.localeCompare(`${b.node_id}:${b.variant_id}`)),
+      beforeRebuild
+        .map((r) => ({
+          node_id: r.node_id,
+          variant_id: r.variant_id,
+          sent_count: n(r.sent_count),
+          replied_count: n(r.replied_count),
+          positive_reply_count: n(r.positive_reply_count),
+          bounce_count: n(r.bounce_count),
+        }))
+        .sort((a, b) => `${a.node_id}:${a.variant_id}`.localeCompare(`${b.node_id}:${b.variant_id}`)),
+    );
   } finally {
     await harness.cleanup();
   }

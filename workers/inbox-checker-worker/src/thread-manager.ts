@@ -540,7 +540,7 @@ export class ThreadManager {
             .eq('id', guessed.message_job_id)
             .maybeSingle();
           if (rootJob) {
-            originalJob = rootJob as MessageJob;
+            originalJob = rootJob as unknown as MessageJob;
             isReplyToOriginal = true;
           }
         }

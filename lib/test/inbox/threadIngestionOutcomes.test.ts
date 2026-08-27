@@ -226,6 +226,110 @@ test('exact In-Reply-To attaches once; unrelated inbound is ignored', async (t) 
   }
 });
 
+test('find_sent_jobs_by_message_ids matches provider-only and submitted-only jobs', async (t) => {
+  const harness = new CampaignDbHarness({
+    namespace: createCampaignTestNamespace('msgid-rpc-union'),
+  });
+
+  try {
+    if (await skipIfSentJobLookupRpcMissing(harness, t)) return;
+
+    const graph = await harness.createCampaignGraph({
+      name: 'Sent Job Lookup Union',
+      status: 'running',
+      flowKind: 'emailWaitEmail',
+      mailboxes: [
+        {
+          key: 'mailbox-1',
+          emailAddress: `sender-${harness.namespace}@example.com`,
+          displayName: 'Sender',
+        },
+      ],
+      leads: [
+        buildCampaignLead({
+          key: 'provider-lead',
+          email: `lead-provider-${harness.namespace}@example.com`,
+          firstName: 'Pat',
+          enrollment: buildCampaignEnrollment({
+            state: 'active',
+            currentFlowNodeId: 'email-1',
+            nextRunAt: new Date(Date.now() - 60_000).toISOString(),
+          }),
+        }),
+        buildCampaignLead({
+          key: 'submitted-lead',
+          email: `lead-submitted-${harness.namespace}@example.com`,
+          firstName: 'Sam',
+          enrollment: buildCampaignEnrollment({
+            state: 'active',
+            currentFlowNodeId: 'email-1',
+            nextRunAt: new Date(Date.now() - 60_000).toISOString(),
+          }),
+        }),
+      ],
+    });
+    const providerLead = graph.leadsByKey.get('provider-lead')!;
+    const submittedLead = graph.leadsByKey.get('submitted-lead')!;
+    const mailboxId = graph.mailboxIdsByKey.get('mailbox-1')!;
+    const providerOnlyId = `<provider-only-${harness.namespace}@furnace.build>`;
+    const submittedOnlyId = `<submitted-only-${harness.namespace}@furnace.build>`;
+
+    const providerJobId = await seedSentJob({
+      harness,
+      graph,
+      lead: providerLead,
+      mailboxId,
+      providerMessageId: providerOnlyId,
+      submittedMessageId: `<unrelated-sub-${harness.namespace}@furnace.build>`,
+    });
+    const submittedJobId = await seedSentJob({
+      harness,
+      graph,
+      lead: submittedLead,
+      mailboxId,
+      providerMessageId: `<unrelated-prov-${harness.namespace}@furnace.build>`,
+      submittedMessageId: submittedOnlyId,
+    });
+
+    const { data: byProvider, error: providerError } = await harness.supabase.rpc(
+      'find_sent_jobs_by_message_ids',
+      {
+        p_account_id: graph.accountId,
+        p_search_ids: [providerOnlyId],
+        p_limit: 40,
+      },
+    );
+    assert.equal(providerError, null, providerError?.message);
+    assert.equal(byProvider?.length, 1);
+    assert.equal(byProvider![0]!.id, providerJobId);
+
+    const { data: bySubmitted, error: submittedError } = await harness.supabase.rpc(
+      'find_sent_jobs_by_message_ids',
+      {
+        p_account_id: graph.accountId,
+        p_search_ids: [submittedOnlyId],
+        p_limit: 40,
+      },
+    );
+    assert.equal(submittedError, null, submittedError?.message);
+    assert.equal(bySubmitted?.length, 1);
+    assert.equal(bySubmitted![0]!.id, submittedJobId);
+
+    const { data: emptyIds, error: emptyError } = await harness.supabase.rpc(
+      'find_sent_jobs_by_message_ids',
+      {
+        p_account_id: graph.accountId,
+        p_search_ids: [],
+        p_limit: 40,
+      },
+    );
+    assert.equal(emptyError, null, emptyError?.message);
+    assert.equal(emptyIds?.length ?? 0, 0);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
 test('inbound reply persists multi-To and Cc on the final email_messages row', async (t) => {
   const harness = new CampaignDbHarness({
     namespace: createCampaignTestNamespace('thread-ingest-recipients'),

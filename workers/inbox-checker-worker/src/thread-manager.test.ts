@@ -612,6 +612,46 @@ test('handleReply scopes duplicate detection and job lookup to the mailbox accou
   );
 });
 
+test('handleReply logs sent-job RPC errors instead of treating them as a silent miss', async () => {
+  const errors: string[] = [];
+  const originalError = console.error;
+  console.error = (...args: unknown[]) => {
+    errors.push(args.map(String).join(' '));
+  };
+
+  try {
+    const supabase = new MockSupabase([
+      { data: [] },
+      { data: null, error: { code: '57014', message: 'canceling statement due to statement timeout' } },
+      { data: [] },
+    ]);
+    const manager = new ThreadManager(supabase as any);
+    const mailbox = createMailbox({ account_id: 'account-1' });
+    const message = createProcessedMessage({
+      messageId: '<reply@example.com>',
+      inReplyTo: '<abc@example.com>',
+    });
+
+    const handled = await manager.handleReply(mailbox, message);
+    assert.equal(handled, false);
+
+    const logged = errors.find((line) => line.includes('sent_job_message_id_lookup_failed'));
+    assert.ok(logged, `expected lookup failure log, got: ${errors.join(' | ')}`);
+    const payload = JSON.parse(logged) as {
+      account_id: string;
+      search_id_count: number;
+      code: string;
+      error: string;
+    };
+    assert.equal(payload.account_id, 'account-1');
+    assert.equal(payload.search_id_count, 1);
+    assert.equal(payload.code, '57014');
+    assert.match(payload.error, /statement timeout/);
+  } finally {
+    console.error = originalError;
+  }
+});
+
 test('handleReply re-emits notification_events when the email_message already exists', async () => {
   const prevQueue = process.env.NOTIFICATION_QUEUE_URL;
   delete process.env.NOTIFICATION_QUEUE_URL;

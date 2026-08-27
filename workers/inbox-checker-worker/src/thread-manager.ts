@@ -989,7 +989,19 @@ export class ThreadManager {
       },
     );
 
-    if (jobError || !jobs || jobs.length === 0) return [];
+    if (jobError) {
+      console.error(
+        JSON.stringify({
+          tag: 'sent_job_message_id_lookup_failed',
+          account_id: mailbox.account_id,
+          search_id_count: searchIds.length,
+          code: (jobError as { code?: string }).code ?? null,
+          error: jobError.message,
+        }),
+      );
+      return [];
+    }
+    if (!jobs || jobs.length === 0) return [];
     return jobs as MessageJob[];
   }
 

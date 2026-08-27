@@ -38,6 +38,10 @@ import {
   backfillSentMessages as backfillCampaignSentMessages,
   normalizeMessageId,
 } from './backfill-sent-messages.js';
+import {
+  FIND_SENT_JOBS_BY_MESSAGE_IDS_RPC,
+  SENT_JOB_REPLY_SELECT,
+} from './sentJobMessageIdLookup.js';
 
 type EmailThreadRow = {
   id: string;
@@ -352,11 +356,15 @@ export class ThreadManager {
     // Backfill ceiling: all campaign sends that existed by the time of this reply
     const replyCutoffTime = message.date.toISOString();
 
-    // Exact header match against outbound jobs (provider or submitted Message-ID)
+    // Exact header match against outbound jobs (provider or submitted Message-ID).
+    // One indexed equality lookup for all candidate ids; walk in confidence order.
     let foundJob: MessageJob | null = null;
-    for (const searchId of messageIdsToSearch) {
-      foundJob = await this.findSentJobByMessageId(mailbox, searchId);
-      if (foundJob) break;
+    if (messageIdsToSearch.length > 0) {
+      const sentJobs = await this.findSentJobsByMessageIds(mailbox, messageIdsToSearch);
+      for (const searchId of messageIdsToSearch) {
+        foundJob = this.selectReplyJobCandidate(sentJobs, mailbox, searchId);
+        if (foundJob) break;
+      }
     }
 
     if (foundJob) {
@@ -528,17 +536,11 @@ export class ThreadManager {
         if (guessed.message_job_id) {
           const { data: rootJob } = await this.supabase
             .from('message_jobs')
-            .select(`
-              *,
-              enrollments(*),
-              campaigns(*),
-              leads(*),
-              mailboxes(account_id, email_address)
-            `)
+            .select(SENT_JOB_REPLY_SELECT)
             .eq('id', guessed.message_job_id)
             .maybeSingle();
           if (rootJob) {
-            originalJob = rootJob as MessageJob;
+            originalJob = rootJob as unknown as MessageJob;
             isReplyToOriginal = true;
           }
         }
@@ -972,33 +974,23 @@ export class ThreadManager {
     );
   }
 
-  private async findSentJobByMessageId(
+  private async findSentJobsByMessageIds(
     mailbox: Mailbox,
-    searchId: string,
-  ): Promise<MessageJob | null> {
-    const { data: jobs, error: jobError } = await this.supabase
-      .from('message_jobs')
-      .select(`
-        *,
-        enrollments(*),
-        campaigns(*),
-        leads(*),
-        mailboxes(account_id, email_address)
-      `)
-      .eq('account_id', mailbox.account_id)
-      .eq('status', 'sent')
-      .or(
-        [
-          `provider_message_id.ilike.%${searchId}%`,
-          `provider_message_id.ilike.%<${searchId}>%`,
-          `submitted_message_id.ilike.%${searchId}%`,
-          `submitted_message_id.ilike.%<${searchId}>%`,
-        ].join(','),
-      )
-      .limit(10);
+    searchIds: string[],
+  ): Promise<MessageJob[]> {
+    if (searchIds.length === 0) return [];
 
-    if (jobError || !jobs || jobs.length === 0) return null;
-    return this.selectReplyJobCandidate(jobs as MessageJob[], mailbox, searchId);
+    const { data: jobs, error: jobError } = await this.supabase.rpc(
+      FIND_SENT_JOBS_BY_MESSAGE_IDS_RPC,
+      {
+        p_account_id: mailbox.account_id,
+        p_search_ids: searchIds,
+        p_limit: 40,
+      },
+    );
+
+    if (jobError || !jobs || jobs.length === 0) return [];
+    return jobs as MessageJob[];
   }
 
   private async stagePendingInboundReply(

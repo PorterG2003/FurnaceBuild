@@ -17,6 +17,11 @@ describe('normalizeMessageId', () => {
   it('strips brackets and whitespace', () => {
     assert.equal(normalizeMessageId('  <a@b.com>  '), 'a@b.com');
     assert.equal(normalizeMessageId('a@b.com'), 'a@b.com');
+    assert.equal(normalizeMessageId('<A@B.com>'), 'a@b.com');
+  });
+
+  it('strips only one leading < and trailing > per pass', () => {
+    assert.equal(normalizeMessageId('<<a@b.com>>'), '<a@b.com>');
   });
 
   it('returns null for empty or invalid', () => {

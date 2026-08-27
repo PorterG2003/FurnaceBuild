@@ -11,6 +11,26 @@ import { buildProcessedReply } from '../campaign/categorizer-helpers';
 import { ThreadManager } from '../../../workers/inbox-checker-worker/src/thread-manager';
 import type { Mailbox } from '../../../workers/inbox-checker-worker/src/types';
 
+function isMissingSentJobLookupRpc(message: string | undefined): boolean {
+  return !!message && /could not find|schema cache|does not exist|PGRST202/i.test(message);
+}
+
+async function skipIfSentJobLookupRpcMissing(
+  harness: CampaignDbHarness,
+  t: { skip: (reason?: string) => void },
+): Promise<boolean> {
+  const { error } = await harness.supabase.rpc('find_sent_jobs_by_message_ids', {
+    p_account_id: '00000000-0000-0000-0000-000000000000',
+    p_search_ids: ['nobody@example.com'],
+    p_limit: 1,
+  });
+  if (error && isMissingSentJobLookupRpc(error.message)) {
+    t.skip(`find_sent_jobs_by_message_ids not applied: ${error.message}`);
+    return true;
+  }
+  return false;
+}
+
 async function seedSentJob(opts: {
   harness: CampaignDbHarness;
   graph: Awaited<ReturnType<CampaignDbHarness['createCampaignGraph']>>;
@@ -81,12 +101,14 @@ function asMailbox(
   };
 }
 
-test('exact In-Reply-To attaches once; unrelated inbound is ignored', async () => {
+test('exact In-Reply-To attaches once; unrelated inbound is ignored', async (t) => {
   const harness = new CampaignDbHarness({
     namespace: createCampaignTestNamespace('thread-ingest'),
   });
 
   try {
+    if (await skipIfSentJobLookupRpcMissing(harness, t)) return;
+
     const graph = await harness.createCampaignGraph({
       name: 'Thread Ingestion Outcomes',
       status: 'running',
@@ -221,6 +243,8 @@ test('inbound reply persists multi-To and Cc on the final email_messages row', a
       t.skip(`email_messages.to_emails not applied in shared test DB: ${schemaProbeError.message}`);
       return;
     }
+
+    if (await skipIfSentJobLookupRpcMissing(harness, t)) return;
 
     const graph = await harness.createCampaignGraph({
       name: 'Thread Ingestion Recipients',

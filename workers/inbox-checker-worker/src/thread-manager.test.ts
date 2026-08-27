@@ -597,12 +597,12 @@ test('handleReply scopes duplicate detection and job lookup to the mailbox accou
     { op: 'eq', column: 'account_id', value: 'account-1' }
   );
 
-  const messageJobLookup = supabase.calls[1] as QueryCall;
-  assert.equal(messageJobLookup.table, 'message_jobs');
-  assert.deepEqual(
-    messageJobLookup.filters.find((filter) => filter.column === 'account_id'),
-    { op: 'eq', column: 'account_id', value: 'account-1' }
-  );
+  const messageJobLookup = supabase.calls[1] as RpcCall;
+  assert.equal(messageJobLookup.kind, 'rpc');
+  assert.equal(messageJobLookup.fn, 'find_sent_jobs_by_message_ids');
+  assert.equal(messageJobLookup.args.p_account_id, 'account-1');
+  assert.deepEqual(messageJobLookup.args.p_search_ids, ['abc@example.com']);
+  assert.equal(messageJobLookup.args.p_limit, 40);
 
   const parentMessageLookup = supabase.calls[2] as QueryCall;
   assert.equal(parentMessageLookup.table, 'email_messages');
@@ -756,10 +756,14 @@ test('handleReply routes campaign replies on categorizer flows through the park 
   const rpcCalls = supabase.calls.filter((c) => (c as RpcCall).kind === 'rpc') as RpcCall[];
   assert.deepEqual(
     rpcCalls.map((c) => c.fn),
-    ['park_or_advance_enrollment_on_reply', 'record_replied_event_and_increment'],
+    [
+      'find_sent_jobs_by_message_ids',
+      'park_or_advance_enrollment_on_reply',
+      'record_replied_event_and_increment',
+    ],
   );
-  assert.equal(rpcCalls[0].args.p_enrollment_id, 'enrollment-1');
-  assert.equal(rpcCalls[0].args.p_thread_id, 'thread-1');
+  assert.equal(rpcCalls[1].args.p_enrollment_id, 'enrollment-1');
+  assert.equal(rpcCalls[1].args.p_thread_id, 'thread-1');
 
   // Never hard-stop: no enrollments UPDATE with stopped_reason.
   const enrollUpdates = (supabase.calls.filter((c) => (c as QueryCall).table === 'enrollments') as QueryCall[])
@@ -808,7 +812,11 @@ test('handleReply leaves enrollment active (no hard-stop) when the park RPC fail
   const rpcCalls = supabase.calls.filter((c) => (c as RpcCall).kind === 'rpc') as RpcCall[];
   assert.deepEqual(
     rpcCalls.map((c) => c.fn),
-    ['park_or_advance_enrollment_on_reply', 'record_replied_event_and_increment'],
+    [
+      'find_sent_jobs_by_message_ids',
+      'park_or_advance_enrollment_on_reply',
+      'record_replied_event_and_increment',
+    ],
   );
 
   // Must NOT hard-stop or cancel holds on park failure.
@@ -1456,9 +1464,7 @@ test('handleReply external In-Reply-To still backfills later sends via reply cut
   });
   const supabase = new MockSupabase([
     { data: [] }, // dup check
-    { data: [] }, // Outlook IRT — no job
-    { data: [] }, // References newest (msg3) — no job
-    { data: [job1] }, // References msg1 match
+    { data: [job1] }, // one indexed lookup across In-Reply-To + References
     { data: [] }, // getOrCreateThread: no thread by message_job_id
     { data: [] }, // getOrCreateThread: no campaign+lead thread
     { data: null, error: null }, // firstSentEvent
@@ -1552,6 +1558,17 @@ test('handleReply external In-Reply-To still backfills later sends via reply cut
   );
 
   assert.equal(handled, true);
+
+  const jobLookups = supabase.calls.filter(
+    (c): c is RpcCall =>
+      c.kind === 'rpc' && c.fn === 'find_sent_jobs_by_message_ids',
+  );
+  assert.equal(jobLookups.length, 1);
+  assert.equal(jobLookups[0]!.args.p_account_id, 'account-1');
+  const searchIds = jobLookups[0]!.args.p_search_ids as string[];
+  assert.ok(searchIds.includes('pasp264mb6875@outlook.com'));
+  assert.ok(searchIds.includes('msg1@furnace.build'));
+  assert.ok(searchIds.includes('msg3@furnace.build'));
 
   const sentJobIds = supabase.calls
     .filter(

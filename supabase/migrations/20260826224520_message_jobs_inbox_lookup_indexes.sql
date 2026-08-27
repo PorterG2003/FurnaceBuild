@@ -42,6 +42,9 @@ REVOKE ALL ON FUNCTION public.normalize_rfc5322_message_id(text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.normalize_rfc5322_message_id(text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.normalize_rfc5322_message_id(text) TO service_role;
 
+-- Expression indexes on ~1M+ sent jobs exceed the default statement_timeout.
+SET statement_timeout = 0;
+
 CREATE INDEX IF NOT EXISTS idx_message_jobs_account_provider_msgid_norm_sent
   ON public.message_jobs (
     account_id,
@@ -148,3 +151,5 @@ COMMENT ON FUNCTION public.find_sent_jobs_by_message_ids(uuid, text[], integer) 
 REVOKE ALL ON FUNCTION public.find_sent_jobs_by_message_ids(uuid, text[], integer) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.find_sent_jobs_by_message_ids(uuid, text[], integer) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.find_sent_jobs_by_message_ids(uuid, text[], integer) TO service_role;
+
+SET statement_timeout = '30s';

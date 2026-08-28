@@ -3066,6 +3066,14 @@ export interface Database {
         };
         Returns: Json;
       };
+      audit_node_campaign_scope: {
+        Args: Record<PropertyKey, never>;
+        Returns: {
+          source: string;
+          mismatched: number;
+          orphaned: number;
+        }[];
+      };
       create_csv_lead_import_job: {
         Args: {
           p_account_id: string;

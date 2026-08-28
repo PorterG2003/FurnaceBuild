@@ -229,13 +229,46 @@ test('duplicateCampaign copies requested settings and leads without copying oper
       bounce_count: 0,
     });
 
+    const { data: sourceNodes, error: sourceNodesError } = await harness.supabase
+      .from('nodes')
+      .select('id, flow_node_id')
+      .eq('campaign_id', sourceGraph.campaignId)
+      .is('deleted_at', null)
+      .order('flow_node_id', { ascending: true });
+    assert.equal(sourceNodesError, null);
+
     const { data: duplicateNodes, error: duplicateNodesError } = await harness.supabase
       .from('nodes')
-      .select('id')
+      .select('id, flow_node_id')
       .eq('campaign_id', duplicatedCampaign.id)
-      .is('deleted_at', null);
+      .is('deleted_at', null)
+      .order('flow_node_id', { ascending: true });
     assert.equal(duplicateNodesError, null);
     assert.ok((duplicateNodes ?? []).length >= 2);
+    assert.deepEqual(
+      (duplicateNodes ?? []).map((row: { flow_node_id: string }) => row.flow_node_id),
+      (sourceNodes ?? []).map((row: { flow_node_id: string }) => row.flow_node_id),
+    );
+    const sourceNodeIds = new Set((sourceNodes ?? []).map((row: { id: string }) => row.id));
+    assert.equal(
+      (duplicateNodes ?? []).some((row: { id: string }) => sourceNodeIds.has(row.id)),
+      false,
+      'duplicated campaign must mint its own node rows',
+    );
+
+    const { data: sourceJobs, error: sourceJobsError } = await harness.supabase
+      .from('message_jobs')
+      .select('id, node_id')
+      .eq('campaign_id', sourceGraph.campaignId);
+    assert.equal(sourceJobsError, null);
+    assert.ok((sourceJobs ?? []).length >= 1);
+    assert.equal(
+      (sourceJobs ?? []).every((row: { node_id: string | null }) =>
+        Boolean(row.node_id && sourceNodeIds.has(row.node_id)),
+      ),
+      true,
+      'source campaign jobs must keep pointing at source nodes',
+    );
 
     const { data: duplicateFlowVersions, error: duplicateFlowVersionError } = await harness.supabase
       .from('campaign_flow_versions')

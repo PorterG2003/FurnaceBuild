@@ -16,6 +16,10 @@ import { handleWaitTimeNode } from './node-handlers/wait-time-handler.js';
 import { handleAICategorizerNode } from './node-handlers/ai-categorizer-handler.js';
 import { handlePriorityEmailNode } from './node-handlers/priority-email-handler.js';
 import { handleDataSenderNode } from './node-handlers/data-sender-handler.js';
+import {
+  GET_LATEST_MESSAGE_JOBS_FOR_PAIRS_RPC,
+  chunkMessageJobPairs,
+} from './latestMessageJobLookup.js';
 import { maintainCampaignIntervals } from './interval-management.js';
 import { batchAssignIntervalJobs } from './batch-interval-assignment.js';
 import { resolveOooResumePollIntervalMs, runOutOfOfficeResumeTick } from './ooo-resume-tick.js';
@@ -487,31 +491,21 @@ export class SchedulerWorker {
       return new Map();
     }
 
-    const pairKeys = new Set(
-      pairs.map((pair) => `${pair.enrollment_id}:${pair.node_id}`),
-    );
-    const enrollmentIds = [...new Set(pairs.map((pair) => pair.enrollment_id))];
-    const nodeIds = [...new Set(pairs.map((pair) => pair.node_id))];
-
-    const { data, error } = await this.supabase
-      .from('message_jobs')
-      .select('id, enrollment_id, node_id, sent_at, status, status_reason, error_message, created_at')
-      .in('enrollment_id', enrollmentIds)
-      .in('node_id', nodeIds)
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      throw error;
-    }
-
     const latestByPair = new Map<string, LatestMessageJobStatus>();
-    for (const row of (data ?? []) as LatestMessageJobStatus[]) {
-      const pairKey = `${row.enrollment_id}:${row.node_id}`;
-      if (!pairKeys.has(pairKey) || latestByPair.has(pairKey)) {
-        continue;
+
+    for (const chunk of chunkMessageJobPairs(pairs)) {
+      const { data, error } = await this.supabase.rpc(
+        GET_LATEST_MESSAGE_JOBS_FOR_PAIRS_RPC,
+        { p_pairs: chunk },
+      );
+
+      if (error) {
+        throw error;
       }
 
-      latestByPair.set(pairKey, row);
+      for (const row of (data ?? []) as LatestMessageJobStatus[]) {
+        latestByPair.set(`${row.enrollment_id}:${row.node_id}`, row);
+      }
     }
 
     return latestByPair;

@@ -2,6 +2,23 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { SchedulerWorker } from './worker.js';
 import type { Enrollment } from './types.js';
+import {
+  GET_LATEST_MESSAGE_JOBS_FOR_PAIRS_RPC,
+  LATEST_MESSAGE_JOB_PAIR_CHUNK_SIZE,
+} from './latestMessageJobLookup.js';
+
+function toLatestJobRow(pair: { enrollment_id: string; node_id: string }) {
+  return {
+    id: `job-${pair.enrollment_id}`,
+    enrollment_id: pair.enrollment_id,
+    node_id: pair.node_id,
+    sent_at: null,
+    status: 'queued',
+    status_reason: null,
+    error_message: null,
+    created_at: '2026-04-17T00:00:00.000Z',
+  };
+}
 
 function createWorker() {
   return new SchedulerWorker({
@@ -65,6 +82,7 @@ class MockSupabase {
     filters: Array<{ op: string; column: string; value: unknown }>;
     orderCalls: Array<{ column: string; options?: Record<string, unknown> }>;
   }> = [];
+  readonly rpcCalls: Array<{ fn: string; args: Record<string, unknown> }> = [];
 
   constructor(private readonly responses: MockResponse[]) {}
 
@@ -81,6 +99,15 @@ class MockSupabase {
     };
     this.calls.push(call);
     return new QueryStub(call, response);
+  }
+
+  rpc(fn: string, args: Record<string, unknown>) {
+    this.rpcCalls.push({ fn, args });
+    const response = this.responses.shift();
+    if (!response) {
+      throw new Error(`No mock response queued for rpc ${fn}`);
+    }
+    return Promise.resolve(response);
   }
 }
 
@@ -399,6 +426,14 @@ test('SchedulerWorker batches campaign, node, and message-job preloads per claim
             node_data: {},
             deleted_at: null,
           },
+          {
+            id: 'node-wait',
+            campaign_id: 'campaign-1',
+            flow_node_id: 'wait-1',
+            node_type: 'wait',
+            node_data: {},
+            deleted_at: null,
+          },
         ],
       },
       {
@@ -450,6 +485,17 @@ test('SchedulerWorker batches campaign, node, and message-job preloads per claim
       created_at: '2026-04-17T00:00:00.000Z',
       updated_at: '2026-04-17T00:00:00.000Z',
     },
+    {
+      id: 'enrollment-3',
+      campaign_id: 'campaign-1',
+      lead_id: 'lead-3',
+      current_node_id: 'node-wait',
+      state: 'active',
+      next_run_at: null,
+      flow_position: {},
+      created_at: '2026-04-17T00:00:00.000Z',
+      updated_at: '2026-04-17T00:00:00.000Z',
+    },
   ] as Enrollment[]);
 
   const contexts = await (worker as any).loadCampaignContexts(grouped);
@@ -463,11 +509,138 @@ test('SchedulerWorker batches campaign, node, and message-job preloads per claim
     'queued',
   );
 
-  const supabaseCalls = ((worker as any).supabase as MockSupabase).calls;
+  const supabase = (worker as any).supabase as MockSupabase;
   assert.deepEqual(
-    supabaseCalls.map((call) => call.table),
-    ['campaigns', 'nodes', 'message_jobs'],
+    supabase.calls.map((call) => call.table),
+    ['campaigns', 'nodes'],
   );
+  assert.equal(supabase.rpcCalls.length, 1);
+  assert.equal(supabase.rpcCalls[0].fn, GET_LATEST_MESSAGE_JOBS_FOR_PAIRS_RPC);
+  assert.deepEqual(supabase.rpcCalls[0].args.p_pairs, [
+    { enrollment_id: 'enrollment-1', node_id: 'node-email' },
+  ]);
+});
+
+test('SchedulerWorker throws when latest message-job pair RPC fails', async () => {
+  const worker = new SchedulerWorker({
+    supabase: new MockSupabase([
+      {
+        data: [
+          {
+            id: 'campaign-1',
+            flow_data: { edges: [] },
+            current_flow_version_number: 2,
+            schedule: null,
+            owner_id: 'owner-1',
+            account_id: 'account-1',
+            jitter_percentage: 10,
+            sending_interval_seconds: 60,
+            created_at: '2026-04-17T00:00:00.000Z',
+            status: 'running',
+            deleted_at: null,
+          },
+        ],
+      },
+      {
+        data: [
+          {
+            id: 'node-email',
+            campaign_id: 'campaign-1',
+            flow_node_id: 'email-1',
+            node_type: 'email',
+            node_data: {},
+            deleted_at: null,
+          },
+        ],
+      },
+      {
+        data: null,
+        error: { message: 'canceling statement due to statement timeout' },
+      },
+    ]) as any,
+    databaseClient: {
+      async poll() {
+        return [];
+      },
+      getPollInterval() {
+        return 1000;
+      },
+      getBatchSize() {
+        return 100;
+      },
+    } as any,
+  });
+
+  const grouped = (worker as any).groupEnrollmentsByCampaign([
+    {
+      id: 'enrollment-1',
+      campaign_id: 'campaign-1',
+      lead_id: 'lead-1',
+      current_node_id: 'node-email',
+      state: 'active',
+      next_run_at: null,
+      flow_position: {},
+      created_at: '2026-04-17T00:00:00.000Z',
+      updated_at: '2026-04-17T00:00:00.000Z',
+    },
+  ] as Enrollment[]);
+
+  await assert.rejects(
+    () => (worker as any).loadCampaignContexts(grouped),
+    (error: unknown) =>
+      error instanceof Error ||
+      (typeof error === 'object' &&
+        error !== null &&
+        'message' in error &&
+        String((error as { message: unknown }).message).includes('statement timeout')),
+  );
+});
+
+test('SchedulerWorker chunks latest message-job pairs so none are dropped by the RPC cap', async () => {
+  const pairs = Array.from({ length: LATEST_MESSAGE_JOB_PAIR_CHUNK_SIZE + 5 }, (_unused, index) => ({
+    enrollment_id: `enrollment-${index}`,
+    node_id: `node-${index}`,
+  }));
+
+  const supabase = new MockSupabase([
+    { data: pairs.slice(0, LATEST_MESSAGE_JOB_PAIR_CHUNK_SIZE).map(toLatestJobRow) },
+    { data: pairs.slice(LATEST_MESSAGE_JOB_PAIR_CHUNK_SIZE).map(toLatestJobRow) },
+  ]);
+
+  const worker = new SchedulerWorker({
+    supabase: supabase as any,
+    databaseClient: {
+      async poll() {
+        return [];
+      },
+      getPollInterval() {
+        return 1000;
+      },
+      getBatchSize() {
+        return pairs.length;
+      },
+    } as any,
+  });
+
+  const latestByPair = await (worker as any).loadLatestMessageJobs(pairs);
+
+  assert.equal(supabase.rpcCalls.length, 2);
+  assert.equal(
+    supabase.rpcCalls.every((call) => call.fn === GET_LATEST_MESSAGE_JOBS_FOR_PAIRS_RPC),
+    true,
+  );
+  assert.equal(
+    (supabase.rpcCalls[0].args.p_pairs as unknown[]).length,
+    LATEST_MESSAGE_JOB_PAIR_CHUNK_SIZE,
+  );
+  assert.equal((supabase.rpcCalls[1].args.p_pairs as unknown[]).length, 5);
+  assert.equal(latestByPair.size, pairs.length);
+  for (const pair of pairs) {
+    assert.equal(
+      latestByPair.get(`${pair.enrollment_id}:${pair.node_id}`)?.id,
+      `job-${pair.enrollment_id}`,
+    );
+  }
 });
 
 test('SchedulerWorker shapes load after a full claim batch', async () => {

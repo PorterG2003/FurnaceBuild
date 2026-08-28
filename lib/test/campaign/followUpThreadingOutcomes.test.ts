@@ -8,8 +8,8 @@ import {
   createCampaignTestNamespace,
 } from './fixtures';
 import { SendWorker } from '../../../workers/send-worker/src/worker';
-import { processSpintax } from '../../email/processSpintax';
 import { mergeTemplate } from '../../email/mergeTemplate';
+import { buildSpintaxSeed, processSpintax } from '../../email/processSpintax';
 
 const FIRST_SUBJECT_TEMPLATE = '{Alpha {{first_name}}|Beta {{first_name}}|Gamma {{first_name}}}';
 
@@ -139,18 +139,21 @@ async function loadJob(harness: CampaignDbHarness, messageJobId: string) {
   return data;
 }
 
-async function sendWithPinnedRandom(
-  sendWorker: SendWorker,
-  messageJob: unknown,
-  randomValue: number,
+async function sendJob(sendWorker: SendWorker, messageJob: unknown) {
+  await (sendWorker as any).processMessageJob(messageJob);
+}
+
+function expectedSpunSubject(
+  template: string,
+  identity: { campaignId: string; leadId: string; variantId?: string | null },
 ) {
-  const originalRandom = Math.random;
-  Math.random = () => randomValue;
-  try {
-    await (sendWorker as any).processMessageJob(messageJob);
-  } finally {
-    Math.random = originalRandom;
-  }
+  return mergeTemplate(
+    processSpintax(template, {
+      seed: buildSpintaxSeed(identity),
+      scope: 'subject',
+    }),
+    { first_name: 'Casey' },
+  );
 }
 
 async function assertFirstSentSubjectPersisted(
@@ -211,30 +214,21 @@ test('empty follow-up subject reuses exact first sent_subject and thread headers
       i === 0 ? '<first@example.com>' : '<followup@example.com>',
     );
 
-    await sendWithPinnedRandom(sendWorker, await loadJob(harness, job1Id), 0);
-    const firstJob = await assertFirstSentSubjectPersisted(harness, job1Id, 'Alpha Casey');
+    const job1 = await loadJob(harness, job1Id);
+    const expectedFirst = expectedSpunSubject(FIRST_SUBJECT_TEMPLATE, {
+      campaignId: graph.campaignId,
+      leadId: lead.leadId,
+      variantId: (job1 as { variant_id?: string | null }).variant_id,
+    });
 
-    // Would pick Beta if we re-spun the first template with this seed.
-    const originalRandom = Math.random;
-    Math.random = () => 0.5;
-    let spunAlternate: string;
-    try {
-      spunAlternate = mergeTemplate(
-        processSpintax(FIRST_SUBJECT_TEMPLATE, { deterministic: false }),
-        { first_name: 'Casey' },
-      );
-    } finally {
-      Math.random = originalRandom;
-    }
-    assert.equal(spunAlternate, 'Beta Casey');
-    assert.notEqual(firstJob.message_data.sent_subject, spunAlternate);
+    await sendJob(sendWorker, job1);
+    const firstJob = await assertFirstSentSubjectPersisted(harness, job1Id, expectedFirst);
 
-    await sendWithPinnedRandom(sendWorker, await loadJob(harness, job2Id), 0.5);
+    await sendJob(sendWorker, await loadJob(harness, job2Id));
 
     assert.equal(captures.length, 2);
     assert.equal(captures[1]!.subject, firstJob.message_data.sent_subject);
-    assert.equal(captures[1]!.subject, 'Alpha Casey');
-    assert.notEqual(captures[1]!.subject, spunAlternate);
+    assert.equal(captures[1]!.subject, expectedFirst);
     assert.equal(captures[1]!.inReplyTo, firstJob.provider_message_id);
     assert.equal(captures[1]!.references, firstJob.provider_message_id);
 
@@ -245,7 +239,7 @@ test('empty follow-up subject reuses exact first sent_subject and thread headers
       .eq('event_type', 'sent')
       .single();
     assert.equal(followUpEventError, null);
-    assert.equal((followUpEvent as any).event_data.sent_subject, 'Alpha Casey');
+    assert.equal((followUpEvent as any).event_data.sent_subject, expectedFirst);
   } finally {
     await harness.cleanup();
   }
@@ -285,10 +279,17 @@ test('(No subject) follow-up reuses exact first sent_subject', async () => {
       i === 0 ? '<first-ns@example.com>' : '<followup-ns@example.com>',
     );
 
-    await sendWithPinnedRandom(sendWorker, await loadJob(harness, job1Id), 0);
-    const firstJob = await assertFirstSentSubjectPersisted(harness, job1Id, 'Alpha Casey');
+    const job1 = await loadJob(harness, job1Id);
+    const expectedFirst = expectedSpunSubject(FIRST_SUBJECT_TEMPLATE, {
+      campaignId: graph.campaignId,
+      leadId: lead.leadId,
+      variantId: (job1 as { variant_id?: string | null }).variant_id,
+    });
 
-    await sendWithPinnedRandom(sendWorker, await loadJob(harness, job2Id), 0.99);
+    await sendJob(sendWorker, job1);
+    const firstJob = await assertFirstSentSubjectPersisted(harness, job1Id, expectedFirst);
+
+    await sendJob(sendWorker, await loadJob(harness, job2Id));
 
     assert.equal(captures.length, 2);
     assert.equal(captures[1]!.subject, firstJob.message_data.sent_subject);
@@ -333,10 +334,17 @@ test('intentional follow-up subject starts a new thread with no inherited header
       i === 0 ? '<first-int@example.com>' : '<followup-int@example.com>',
     );
 
-    await sendWithPinnedRandom(sendWorker, await loadJob(harness, job1Id), 0);
-    const firstJob = await assertFirstSentSubjectPersisted(harness, job1Id, 'Alpha Casey');
+    const job1 = await loadJob(harness, job1Id);
+    const expectedFirst = expectedSpunSubject(FIRST_SUBJECT_TEMPLATE, {
+      campaignId: graph.campaignId,
+      leadId: lead.leadId,
+      variantId: (job1 as { variant_id?: string | null }).variant_id,
+    });
 
-    await sendWithPinnedRandom(sendWorker, await loadJob(harness, job2Id), 0.5);
+    await sendJob(sendWorker, job1);
+    const firstJob = await assertFirstSentSubjectPersisted(harness, job1Id, expectedFirst);
+
+    await sendJob(sendWorker, await loadJob(harness, job2Id));
 
     assert.equal(captures.length, 2);
     assert.equal(captures[1]!.subject, 'Brand new subject');
@@ -392,19 +400,29 @@ test('empty → explicit rendered subject → blank priority continues newest ep
       i === 0 ? '<epoch-root@example.com>' : i === 1 ? '<epoch-new@example.com>' : '<epoch-blank@example.com>',
     );
 
-    await sendWithPinnedRandom(sendWorker, await loadJob(harness, job1Id), 0);
+    const job2 = await loadJob(harness, job2Id);
+    const expectedEpoch = expectedSpunSubject(
+      '{New angle {{first_name}}|Fresh take {{first_name}}}',
+      {
+        campaignId: graph.campaignId,
+        leadId: lead.leadId,
+        variantId: (job2 as { variant_id?: string | null }).variant_id,
+      },
+    );
+
+    await sendJob(sendWorker, await loadJob(harness, job1Id));
     assert.equal(captures[0]!.subject, '');
     assert.equal(captures[0]!.inReplyTo, null);
 
-    await sendWithPinnedRandom(sendWorker, await loadJob(harness, job2Id), 0);
-    assert.equal(captures[1]!.subject, 'New angle Casey');
+    await sendJob(sendWorker, job2);
+    assert.equal(captures[1]!.subject, expectedEpoch);
     assert.equal(captures[1]!.inReplyTo, null, 'explicit subject starts new thread');
     assert.equal(captures[1]!.references, null);
 
-    await sendWithPinnedRandom(sendWorker, await loadJob(harness, job3Id), 0.5);
+    await sendJob(sendWorker, await loadJob(harness, job3Id));
     assert.equal(
       captures[2]!.subject,
-      'New angle Casey',
+      expectedEpoch,
       'blank after explicit must reuse newest epoch, not empty root',
     );
     assert.equal(captures[2]!.inReplyTo, '<epoch-new@example.com>');

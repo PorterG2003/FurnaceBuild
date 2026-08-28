@@ -4,6 +4,7 @@ import {
   ClientApiDbHarness,
   createClientApiTestNamespace,
 } from './harness.js';
+import { MAX_QUEUED_ASYNC_JOBS_PER_ACCOUNT } from '../../client-api/openapi/constants.js';
 
 test('client api creates idempotent leads and persists one webhook event', async () => {
   const harness = new ClientApiDbHarness({
@@ -286,22 +287,32 @@ test('client api rejects smartlead campaign mutation and enforces async import c
       .eq('id', graph.campaignId);
     assert.equal(restoreError, null);
 
-    for (let index = 0; index < 3; index += 1) {
+    const { count, error: countError } = await harness.supabase
+      .from('api_import_jobs')
+      .select('id', { count: 'exact', head: true })
+      .eq('account_id', harness.accountId)
+      .eq('status', 'queued');
+    assert.equal(countError, null);
+    const queuedNeeded = Math.max(0, MAX_QUEUED_ASYNC_JOBS_PER_ACCOUNT - (count ?? 0));
+    if (queuedNeeded > 0) {
       const { data, error } = await harness.supabase
         .from('api_import_jobs')
-        .insert({
-          account_id: harness.accountId,
-          campaign_id: graph.campaignId,
-          created_by_api_key_id: apiKey.id,
-          status: 'queued',
-          input: { leads: [] },
-          result: {},
-          errors: [],
-        } as never)
-        .select('id')
-        .single();
+        .insert(
+          Array.from({ length: queuedNeeded }, () => ({
+            account_id: harness.accountId,
+            campaign_id: graph.campaignId,
+            created_by_api_key_id: apiKey.id,
+            status: 'queued',
+            input: { leads: [] },
+            result: {},
+            errors: [],
+          })) as never,
+        )
+        .select('id');
       assert.equal(error, null);
-      harness.trackedImportJobIds.add(data.id);
+      for (const row of data ?? []) {
+        harness.trackedImportJobIds.add(row.id);
+      }
     }
 
     const limited = await harness.request(`/v1/campaigns/${graph.campaignId}/leads/bulk/async`, {
@@ -313,7 +324,7 @@ test('client api rejects smartlead campaign mutation and enforces async import c
     });
     assert.equal(limited.status, 429);
     const limitedBody = await limited.json() as { error: { code: string } };
-    assert.equal(limitedBody.error.code, 'too_many_async_jobs');
+    assert.equal(limitedBody.error.code, 'too_many_queued_async_jobs');
   } finally {
     await harness.cleanup();
   }

@@ -10,6 +10,8 @@ import {
 import { SendWorker } from '../../../workers/send-worker/src/worker';
 import { ThreadManager } from '../../../workers/inbox-checker-worker/src/thread-manager';
 import type { ProcessedMessage } from '../../../workers/inbox-checker-worker/src/types';
+import { buildCampaignEmailContent } from '../../email/buildCampaignEmailContent';
+import { buildSpintaxSeed } from '../../email/processSpintax';
 
 function createProcessedMessage(overrides: Partial<ProcessedMessage> = {}): ProcessedMessage {
   return {
@@ -124,13 +126,22 @@ test('rendered campaign content stays aligned through sent event persistence and
       .single();
     assert.equal(messageJobLoadError, null);
 
-    const originalRandom = Math.random;
-    Math.random = () => 0;
-    try {
-      await (sendWorker as any).processMessageJob(messageJobRow);
-    } finally {
-      Math.random = originalRandom;
-    }
+    const nodeConfig = {
+      subject: '{Hi {{first_name}}|Hello {{first_name}}}',
+      body_html:
+        '<p>{Hey|Hello} {{first_name}},</p><p>{Appreciate it|Thanks} for your time.</p>',
+      body_text:
+        '{Hey|Hello} {{first_name}},\n\n{Appreciate it|Thanks} for your time.',
+    };
+    const expected = buildCampaignEmailContent(nodeConfig, { first_name: 'Casey' }, {
+      seed: buildSpintaxSeed({
+        campaignId: graph.campaignId,
+        leadId: lead.leadId,
+        variantId: (messageJobRow as { variant_id?: string | null }).variant_id,
+      }),
+    });
+
+    await (sendWorker as any).processMessageJob(messageJobRow);
 
     const { data: mailboxRow, error: mailboxError } = await harness.supabase
       .from('mailboxes')
@@ -177,13 +188,13 @@ test('rendered campaign content stays aligned through sent event persistence and
     assert.equal(sentMessageError, null);
 
     const eventData = (sentEvent as any).event_data as Record<string, string | null>;
-    assert.equal(eventData.sent_subject, 'Hi Casey');
-    assert.equal(eventData.sent_body_html, 'Hey Casey,<br>Appreciate it for your time.');
-    assert.equal(eventData.sent_body_text, 'Hey Casey, Appreciate it for your time.');
+    assert.equal(eventData.sent_subject, expected.subject);
+    assert.equal(eventData.sent_body_html, expected.bodyMerged);
+    assert.equal(eventData.sent_body_text, expected.bodyText);
 
-    assert.equal(sentMessage?.subject, 'Hi Casey');
-    assert.equal(sentMessage?.body_html, 'Hey Casey,<br>Appreciate it for your time.');
-    assert.equal(sentMessage?.body_text, 'Hey Casey, Appreciate it for your time.');
+    assert.equal(sentMessage?.subject, expected.subject);
+    assert.equal(sentMessage?.body_html, expected.bodyMerged);
+    assert.equal(sentMessage?.body_text, expected.bodyText);
   } finally {
     await harness.cleanup();
   }

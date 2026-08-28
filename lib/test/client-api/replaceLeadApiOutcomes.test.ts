@@ -247,6 +247,10 @@ test('client api replace-lead attach returns mode, target_lead_id, and retired s
           email: targetEmail,
           mailboxKey: 'mailbox-1',
           enrollment: buildCampaignEnrollment({ state: 'active', currentFlowNodeId: 'email-1' }),
+          thread: buildCampaignThread({
+            subject: 'Target already in campaign',
+            lastMessageAt: new Date().toISOString(),
+          }),
         }),
         buildCampaignLead({
           key: 'sibling',

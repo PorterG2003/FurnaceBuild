@@ -34,6 +34,8 @@ import {
   buildCampaignJob,
   buildCampaignLead,
 } from '../campaign/fixtures.js';
+import { canonicalizeEmailContentForSave } from '../../email/emailHtmlMode.js';
+import { buildCampaignEmailContent } from '../../email/buildCampaignEmailContent.js';
 
 async function setupDraftCampaign(harness: ClientApiDbHarness): Promise<{
   campaignId: string;
@@ -1069,7 +1071,7 @@ test('client api foreign account cannot read or write campaign flow', async () =
   }
 });
 
-test('client api template-only email variants persist empty body_html and still render copy', async () => {
+test('client api template-only email variants canonicalize to html on save and still render copy', async () => {
   const harness = new ClientApiDbHarness({
     namespace: createClientApiTestNamespace('flow-template-only-body'),
   });
@@ -1078,10 +1080,11 @@ test('client api template-only email variants persist empty body_html and still 
     const setup = await setupDraftCampaign(harness);
     campaignId = setup.campaignId;
 
+    const template = 'Hey {{first_name}}, figured this might help.';
     const flow = linearFlowForApi();
     const emailNode = flow.nodes.find((node) => node.id === 'email-1');
     assert.ok(emailNode && emailNode.type === 'email');
-    emailNode.data.variants[0]!.template = 'Hey {{first_name}}, figured this might help.';
+    emailNode.data.variants[0]!.template = template;
     delete (emailNode.data.variants[0] as { body_html?: string }).body_html;
     delete (emailNode.data.variants[0] as { body_text?: string }).body_text;
 
@@ -1093,10 +1096,13 @@ test('client api template-only email variants persist empty body_html and still 
     assert.ok(dbEmail && dbEmail.type === 'email');
     const variant = dbEmail.data.variants[0];
     assert.ok(variant);
-    assert.equal(variant.body_html, '');
-    assert.equal(variant.template, 'Hey {{first_name}}, figured this might help.');
+    const canonical = canonicalizeEmailContentForSave({
+      editorMode: 'richText',
+      template,
+    });
+    assert.equal(variant.body_html, canonical.bodyHtml);
+    assert.equal(variant.template, template);
 
-    const { buildCampaignEmailContent } = await import('../../email/buildCampaignEmailContent.js');
     const rendered = buildCampaignEmailContent(
       {
         subject: variant.subject,

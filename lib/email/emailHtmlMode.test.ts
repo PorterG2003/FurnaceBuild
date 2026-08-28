@@ -51,24 +51,24 @@ describe('emailHtmlMode', () => {
     assert.equal(richSeed.includes('<body'), false);
   });
 
-  it('richText save with empty bodyHtml keeps template and writes empty body_html', () => {
+  it('richText save with empty bodyHtml materializes template as body_html', () => {
     const saved = canonicalizeEmailContentForSave({
       editorMode: 'richText',
       bodyHtml: '',
       template: 'Hey {{first_name}}, figured this might help.',
     });
     assert.equal(saved.editorMode, 'richText');
-    assert.equal(saved.bodyHtml, '');
+    assert.equal(saved.bodyHtml, '<p>Hey {{first_name}}, figured this might help.</p>');
     assert.equal(saved.template, 'Hey {{first_name}}, figured this might help.');
     assert.equal(saved.bodyText, 'Hey {{first_name}}, figured this might help.');
   });
 
-  it('richText save with omitted bodyHtml keeps template and writes empty body_html', () => {
+  it('richText save with omitted bodyHtml materializes template as body_html', () => {
     const saved = canonicalizeEmailContentForSave({
       editorMode: 'richText',
       template: 'Hello {{first_name}} from {{company_name}}',
     });
-    assert.equal(saved.bodyHtml, '');
+    assert.equal(saved.bodyHtml, '<p>Hello {{first_name}} from {{company_name}}</p>');
     assert.equal(saved.template, 'Hello {{first_name}} from {{company_name}}');
     assert.equal(saved.bodyText, 'Hello {{first_name}} from {{company_name}}');
   });

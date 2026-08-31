@@ -1,0 +1,30 @@
+{
+  "name": "@furnace/wasatch-corridor",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "acquire": "tsx src/run.ts --stage acquire",
+    "admit": "tsx src/run.ts --stage admit",
+    "org-enrich": "tsx src/run.ts --stage org-enrich",
+    "enrich": "tsx src/run.ts --stage enrich",
+    "doors": "tsx src/run.ts --stage doors",
+    "export": "tsx src/run.ts --stage export",
+    "streets": "tsx src/run.ts --stage streets",
+    "contacts": "tsx src/run.ts --stage contacts",
+    "all": "tsx src/run.ts",
+    "all:fixtures": "tsx src/run.ts --fixtures",
+    "dry-run": "tsx src/run.ts --dry-run",
+    "test": "node --import tsx --test src/**/*.test.ts src/*.test.ts"
+  },
+  "dependencies": {
+    "csv-parse": "^5.6.0",
+    "dotenv": "^16.4.7",
+    "tldts": "^6.1.86"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "tsx": "^4.20.6",
+    "typescript": "^5.6.0"
+  }
+}

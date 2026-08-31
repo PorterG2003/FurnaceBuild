@@ -1,0 +1,52 @@
+{
+  "acmeindustrial.test": {
+    "b2b_type": "b2b",
+    "primary_buyer": "business",
+    "customer_geo": "us",
+    "what_they_sell": "Precision fasteners to OEM manufacturing engineers",
+    "category": "industrial manufacturing",
+    "target_audience": "OEM manufacturing engineers",
+    "is_outbound_shop": false,
+    "has_sales_motion": true
+  },
+  "wasatchce.test": {
+    "b2b_type": "b2b",
+    "primary_buyer": "business",
+    "customer_geo": "us",
+    "what_they_sell": "Continuing education courses to licensed therapists",
+    "category": "continuing education",
+    "target_audience": "licensed mental health therapists",
+    "is_outbound_shop": false,
+    "has_sales_motion": true
+  },
+  "pipelinepros.test": {
+    "b2b_type": "b2b",
+    "primary_buyer": "business",
+    "customer_geo": "us",
+    "what_they_sell": "Cold email and SDR-as-a-service to B2B teams",
+    "category": "outbound agency",
+    "target_audience": "B2B founders",
+    "is_outbound_shop": true,
+    "has_sales_motion": true
+  },
+  "midvalemachine.test": {
+    "b2b_type": "b2b",
+    "primary_buyer": "business",
+    "customer_geo": "us",
+    "what_they_sell": "CNC machining to aerospace suppliers",
+    "category": "machine shop",
+    "target_audience": "aerospace supply-chain buyers",
+    "is_outbound_shop": false,
+    "has_sales_motion": true
+  },
+  "default": {
+    "b2b_type": "b2b",
+    "primary_buyer": "business",
+    "customer_geo": "us",
+    "what_they_sell": "Unknown",
+    "category": "unknown",
+    "target_audience": "",
+    "is_outbound_shop": false,
+    "has_sales_motion": false
+  }
+}

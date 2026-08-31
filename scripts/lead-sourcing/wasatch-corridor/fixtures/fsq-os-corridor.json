@@ -1,0 +1,23 @@
+[
+  {
+    "name": "Midvale Machine Shop",
+    "address": "7700 S State St",
+    "locality": "Midvale",
+    "region": "UT",
+    "postcode": "84047",
+    "country": "US",
+    "latitude": 40.6112,
+    "longitude": -111.8901,
+    "website": "https://midvalemachine.test",
+    "fsq_category_labels": ["Manufacturing and Distribution", "Industrial"]
+  },
+  {
+    "name": "Skip This Cafe",
+    "address": "1 Main",
+    "locality": "Provo",
+    "region": "UT",
+    "latitude": 40.2338,
+    "longitude": -111.6585,
+    "fsq_category_labels": ["Restaurant", "Cafe"]
+  }
+]

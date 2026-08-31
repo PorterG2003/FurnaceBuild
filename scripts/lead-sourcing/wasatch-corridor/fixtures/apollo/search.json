@@ -1,0 +1,75 @@
+{
+  "organizations": [
+    {
+      "id": "org_acme",
+      "name": "Acme Industrial",
+      "primary_domain": "acmeindustrial.test",
+      "street_address": "123 Pioneer Rd",
+      "city": "Lehi",
+      "state": "Utah",
+      "postal_code": "84043",
+      "country": "United States",
+      "estimated_num_employees": 45,
+      "annual_revenue": 8000000,
+      "industry": "manufacturing",
+      "current_technologies": [{ "uid": "salesloft", "name": "Salesloft" }],
+      "headcount_growth_12m": 12
+    },
+    {
+      "id": "org_chain",
+      "name": "National Widgets",
+      "primary_domain": "nationalwidgets.test",
+      "street_address": "1 Main St",
+      "city": "Dallas",
+      "state": "Texas",
+      "postal_code": "75201",
+      "country": "United States",
+      "estimated_num_employees": 80
+    },
+    {
+      "id": "org_wix",
+      "name": "Cool Co",
+      "primary_domain": "coolco.wixsite.com",
+      "city": "Provo",
+      "state": "Utah",
+      "country": "United States",
+      "estimated_num_employees": 12
+    }
+  ],
+  "accounts": [
+    {
+      "id": "acct_wce",
+      "organization_id": "org_wce",
+      "domain": "wasatchce.test",
+      "name": "Wasatch CE Institute",
+      "organization": {
+        "id": "org_wce",
+        "name": "Wasatch CE Institute",
+        "primary_domain": "wasatchce.test",
+        "street_address": "50 W 300 S",
+        "city": "Salt Lake City",
+        "state": "Utah",
+        "postal_code": "84101",
+        "country": "United States",
+        "estimated_num_employees": 22,
+        "industry": "education"
+      }
+    },
+    {
+      "id": "acct_pipe",
+      "organization_id": "org_pipe",
+      "domain": "pipelinepros.test",
+      "organization": {
+        "id": "org_pipe",
+        "name": "Pipeline Pros",
+        "primary_domain": "pipelinepros.test",
+        "street_address": "200 State St",
+        "city": "Salt Lake City",
+        "state": "Utah",
+        "country": "United States",
+        "estimated_num_employees": 18
+      }
+    }
+  ],
+  "pagination": { "page": 1, "total_pages": 1 }
+}

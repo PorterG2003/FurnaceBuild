@@ -1,0 +1,8 @@
+Account Name,Account ID,Parent Account,Open Opps, Open Pipeline Total ,Most Recent Opp Stage,Most Recent Opp Created,Billing Street,Billing City,Billing State,Billing ZIP
+Del Rosa Elementary,zcrm_test_1,San Bernardino City Unified School District,1,$1.00,Quote Sent,01 Jan 2026,3395 Mountain Ave,San Bernardino,CA,92404
+Annunciation Catholic Academy,zcrm_test_2,,1,$1.00,Quote Sent,01 Jan 2026,593 Jamestown Boulevard,Altamonte Springs,FL,32714
+Alpine District,zcrm_test_3,No Parent Account,1,$1.00,Quote Sent,01 Jan 2026,575 N 100 E,American Fork,UT,84003
+JP TEST ACCOUNT,zcrm_test_4,No Parent Account,1,$1.00,Discovery,01 Jan 2026,2000 Regency Parkway,Cary,NC,27703
+Budlong Avenue Elementary,zcrm_test_5,Los Angeles Unified,1,$1.00,Quote Sent,01 Jan 2026,5940 South Budlong Ave.,Los Angeles,CA,90044
+Pinecrest Academy of Northern Nevada,zcrm_test_6,State Sponsored Charter Schools (NV),1,$1.00,Quote Sent,01 Jan 2026,1150 Silent Sparrow Dr,Sparks,NV,89441
+Encino Charter Elementary,zcrm_test_7,Los Angeles Unified,1,$1.00,Quote Sent,01 Jan 2026,16941 ADDISON ST.,San Fernando Valley,CA,91316

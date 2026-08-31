@@ -577,7 +577,7 @@ export function buildClientApiPaths() {
         tags: ['Campaigns'],
         summary: 'Launch draft campaign',
         description:
-          'Launches a draft campaign after verifying that it has a name, flow, and at least one mailbox. Furnace backfills enrollments before switching the campaign to `running`.',
+          'Launches a draft campaign after verifying that it has a name, flow, and at least one mailbox. Furnace backfills enrollments, then sets status to `running` or `scheduled` depending on `lifecycle_schedule.start_on`.',
         parameters: [parameterRef('CampaignId')],
         requestBody: {
           required: true,

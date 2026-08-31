@@ -170,7 +170,7 @@ export function buildClientApiComponents() {
         description: 'Campaign status filter.',
         schema: {
           type: 'string',
-          enum: ['draft', 'running', 'paused', 'stopped'],
+          enum: ['draft', 'scheduled', 'running', 'paused', 'stopped'],
         },
       },
       CampaignTagIds: {
@@ -569,7 +569,7 @@ export function buildClientApiComponents() {
           account_id: { type: 'string', format: 'uuid', nullable: true },
           bucket_id: { type: 'string', format: 'uuid', nullable: true },
           name: { type: 'string', nullable: true },
-          status: { type: 'string', enum: ['draft', 'running', 'paused', 'stopped'] },
+          status: { type: 'string', enum: ['draft', 'scheduled', 'running', 'paused', 'stopped'] },
           source: {
             type: 'string',
             description: 'Campaign source. `smartlead` campaigns can be read but not mutated through this API.',
@@ -582,6 +582,12 @@ export function buildClientApiComponents() {
             description: 'Send window. `null` means send 24/7.',
           },
           sending_interval_seconds: { type: 'number', nullable: true },
+          lifecycle_schedule: {
+            allOf: [schemaRef('CampaignLifecycleSchedule')],
+            nullable: true,
+            description:
+              'Optional calendar start and exclusive pause dates in `time_zone`. Null dates mean launch immediately and never auto-pause. `start_at`/`pause_at` are read-only derived UTC instants.',
+          },
           created_at: { type: 'string', format: 'date-time' },
           updated_at: { type: 'string', format: 'date-time', nullable: true },
           deleted_at: { type: 'string', format: 'date-time', nullable: true },
@@ -946,6 +952,48 @@ export function buildClientApiComponents() {
         required: ['timezone', 'start_hour', 'end_hour'],
         additionalProperties: false,
       },
+      CampaignLifecycleSchedule: {
+        type: 'object',
+        description:
+          'Campaign calendar bounds. Dates are local calendar days in `time_zone`. `start_on` is the first sending day; `pause_on` is exclusive (sending stops before that local day). Empty `start_on` launches immediately; empty `pause_on` never auto-pauses.',
+        properties: {
+          time_zone: {
+            type: 'string',
+            description: 'IANA timezone used to interpret start_on and pause_on.',
+            example: 'America/Chicago',
+          },
+          start_on: {
+            type: 'string',
+            format: 'date',
+            nullable: true,
+            description: 'First local sending date. Null means start as soon as the campaign is launched.',
+            example: '2026-09-01',
+          },
+          pause_on: {
+            type: 'string',
+            format: 'date',
+            nullable: true,
+            description: 'Exclusive local pause date. Null means the campaign never auto-pauses.',
+            example: '2026-10-01',
+          },
+          start_at: {
+            type: 'string',
+            format: 'date-time',
+            nullable: true,
+            description: 'Read-only UTC instant of local midnight on start_on. Ignored on write.',
+            example: '2026-09-01T05:00:00.000Z',
+          },
+          pause_at: {
+            type: 'string',
+            format: 'date-time',
+            nullable: true,
+            description: 'Read-only UTC instant of local midnight on pause_on. Ignored on write.',
+            example: '2026-10-01T05:00:00.000Z',
+          },
+        },
+        required: ['time_zone', 'start_on', 'pause_on'],
+        additionalProperties: false,
+      },
       CampaignCreate: {
         type: 'object',
         properties: {
@@ -960,6 +1008,12 @@ export function buildClientApiComponents() {
             type: 'number',
             description:
               'Seconds between sends per mailbox. Omit to use `1440` (24 minutes; ~20 emails per mailbox per day on the default window).',
+          },
+          lifecycle_schedule: {
+            allOf: [schemaRef('CampaignLifecycleSchedule')],
+            nullable: true,
+            description:
+              'Optional calendar start/pause dates. Omit to leave unset. `start_at`/`pause_at` are ignored on write.',
           },
           mailbox_ids: {
             type: 'array',
@@ -1036,8 +1090,9 @@ export function buildClientApiComponents() {
         type: 'object',
         properties: {
           id: { type: 'string', format: 'uuid' },
-          status: { type: 'string', enum: ['running'] },
+          status: { type: 'string', enum: ['running', 'scheduled'] },
           enrolled: { type: 'integer', description: 'Number of leads enrolled at launch.' },
+          lifecycle_schedule: schemaRef('CampaignLifecycleSchedule'),
         },
         required: ['id', 'status'],
         additionalProperties: false,
@@ -1094,6 +1149,12 @@ export function buildClientApiComponents() {
             description: 'Send window. `null` means send 24/7.',
           },
           sending_interval_seconds: { type: 'number' },
+          lifecycle_schedule: {
+            allOf: [schemaRef('CampaignLifecycleSchedule')],
+            nullable: true,
+            description:
+              'Replace the campaign calendar bounds. Omitted leaves the current dates unchanged. `null` clears start_on and pause_on. `start_at`/`pause_at` are ignored on write.',
+          },
           mailbox_ids: {
             type: 'array',
             items: { type: 'string', format: 'uuid' },

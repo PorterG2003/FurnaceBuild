@@ -10,6 +10,7 @@ import type { CampaignListFilters } from '@/components/campaigns/CampaignListFil
 
 const STATUS_OPTIONS: Array<{ value: CampaignListSummary['status']; label: string }> = [
   { value: 'draft', label: 'Draft' },
+  { value: 'scheduled', label: 'Scheduled' },
   { value: 'running', label: 'Running' },
   { value: 'paused', label: 'Paused' },
   { value: 'stopped', label: 'Stopped' },

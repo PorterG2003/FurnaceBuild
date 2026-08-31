@@ -27,6 +27,12 @@ import {
   isSmartleadCampaign,
   DEFAULT_SENDING_INTERVAL_SECONDS,
 } from '@/lib/campaigns/utils';
+import {
+  decideLaunchStatus,
+  DEFAULT_SCHEDULE_TIMEZONE,
+  parseYmd,
+  summarizeLifecycleDates,
+} from '@/lib/campaigns/lifecycleSchedule';
 import { SmartleadRestrictedModal } from '@/components/campaigns/SmartleadRestrictedModal';
 export default function MissionControlPage() {
   const router = useRouter();
@@ -85,6 +91,7 @@ export default function MissionControlPage() {
   const flowNodeCount = getFlowNodeCount(campaign);
   const mailboxesAdded = mailboxes.length >= 1;
   const isDraft = campaign?.status === 'draft';
+  const isScheduled = campaign?.status === 'scheduled';
   const isRunning = campaign?.status === 'running';
   const isPaused = campaign?.status === 'paused';
   const canStart = isDraft && nameSet && flowBuilt && mailboxesAdded;
@@ -112,10 +119,25 @@ export default function MissionControlPage() {
     setIsStarting(true);
     try {
       await backfillCampaignEnrollments(id);
-      await updateCampaign(id, { status: 'running' });
+      const tz = campaign?.schedule_timezone || schedule?.timezone || DEFAULT_SCHEDULE_TIMEZONE;
+      const nextStatus = decideLaunchStatus(parseYmd(campaign?.start_date), tz);
+      await updateCampaign(id, { status: nextStatus });
       await loadCampaign(true);
     } catch (err) {
       console.error('Error starting campaign:', err);
+    } finally {
+      setIsStarting(false);
+    }
+  };
+
+  const handleStartNow = async () => {
+    if (!id || !isScheduled) return;
+    setIsStarting(true);
+    try {
+      await updateCampaign(id, { start_date: null, status: 'running' });
+      await loadCampaign(true);
+    } catch (err) {
+      console.error('Error starting scheduled campaign:', err);
     } finally {
       setIsStarting(false);
     }
@@ -125,9 +147,10 @@ export default function MissionControlPage() {
     if (id) router.push({ pathname: '/builder', params: { campaignId: id } });
   };
 
+  const lifecycleSummary = summarizeLifecycleDates(campaign);
   const checklist = [
     { label: 'Flow', done: flowBuilt, summary: flowBuilt ? `${flowNodeCount} step${flowNodeCount !== 1 ? 's' : ''} configured` : 'No flow built' },
-    { label: 'Schedule', done: true, summary: summarizeSchedule(campaign) },
+    { label: 'Schedule', done: true, summary: [summarizeSchedule(campaign), lifecycleSummary].filter(Boolean).join(' · ') },
     { label: 'Mailboxes', done: mailboxesAdded, summary: mailboxesAdded ? `${mailboxes.length} mailbox${mailboxes.length !== 1 ? 'es' : ''} assigned` : 'No mailboxes assigned' },
   ];
 
@@ -135,9 +158,9 @@ export default function MissionControlPage() {
   const isMobile = width < LAYOUT_BREAKPOINT;
 
   const isStopped = campaign?.status === 'stopped';
-  const showStatusMenu = !isLoading && !loadError && (isRunning || isPaused || isStopped);
+  const showStatusMenu = !isLoading && !loadError && (isRunning || isPaused || isStopped || isScheduled);
   const statusMenuProps = {
-    status: (isRunning ? 'running' : isPaused ? 'paused' : 'stopped') as 'running' | 'paused' | 'stopped',
+    status: (isRunning ? 'running' : isPaused ? 'paused' : isScheduled ? 'scheduled' : 'stopped') as 'running' | 'paused' | 'stopped' | 'scheduled',
     campaignName: campaign?.name ?? undefined,
     isPausing,
     isStarting: isResuming,
@@ -277,7 +300,7 @@ export default function MissionControlPage() {
             >
               <View
                 className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-5"
-                style={{ height: 200, justifyContent: 'space-between' }}
+                style={{ minHeight: 200, justifyContent: 'space-between' }}
               >
                 <View>
                   <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
@@ -291,6 +314,11 @@ export default function MissionControlPage() {
                   <Text className="text-gray-300 font-instrument text-sm mb-2">
                     {summarizeSchedule(campaign)}
                   </Text>
+                  {lifecycleSummary ? (
+                    <Text className="text-gray-400 font-instrument text-sm mb-2">
+                      {lifecycleSummary}
+                    </Text>
+                  ) : null}
                   <Text className="text-gray-400 font-instrument text-sm font-instrument-medium">
                     {throughputText}
                   </Text>
@@ -379,6 +407,23 @@ export default function MissionControlPage() {
               <Button onPress={handleStartCampaign} disabled={!canStart || isStarting}>
                 {isStarting ? 'Launching...' : 'Launch campaign'}
               </Button>
+            </View>
+          ) : null}
+
+          {isScheduled ? (
+            <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-6">
+              <Text className="text-lg font-instrument-semibold text-white mb-2">Scheduled</Text>
+              <Text className="text-gray-400 font-instrument text-sm mb-4">
+                {lifecycleSummary || 'This campaign will start on its start date.'}
+              </Text>
+              <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+                <Button onPress={handleStartNow} disabled={isStarting}>
+                  {isStarting ? 'Starting...' : 'Start now'}
+                </Button>
+                <Button variant="secondary" onPress={() => setShowScheduleModal(true)}>
+                  Edit dates
+                </Button>
+              </View>
             </View>
           ) : null}
         </ScrollView>

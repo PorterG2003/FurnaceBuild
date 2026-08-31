@@ -13,6 +13,7 @@ import {
 test('getFlowEditPolicy allows content while running and structural while paused', () => {
   assert.equal(assertFlowEditAllowed('draft', 'structural').allowed, true);
   assert.equal(assertFlowEditAllowed('paused', 'structural').allowed, true);
+  assert.equal(assertFlowEditAllowed('scheduled', 'structural').allowed, true);
   assert.equal(assertFlowEditAllowed('running', 'content').allowed, true);
   assert.equal(assertFlowEditAllowed('running', 'none').allowed, true);
 
@@ -32,11 +33,13 @@ test('status helpers reflect live edit policy', () => {
   assert.equal(isContentEditAllowed('running'), true);
   assert.equal(isContentEditAllowed('stopped'), false);
   assert.equal(isStructuralEditAllowed('paused'), true);
+  assert.equal(isStructuralEditAllowed('scheduled'), true);
   assert.equal(isStructuralEditAllowed('running'), false);
 });
 
 test('getFlowBadgeConfig returns status-aware labels', () => {
   assert.equal(getFlowBadgeConfig('draft'), null);
+  assert.equal(getFlowBadgeConfig('scheduled')?.secondaryLabel, 'Scheduled');
   assert.equal(getFlowBadgeConfig('running')?.secondaryLabel, 'Content only');
   assert.equal(getFlowBadgeConfig('running')?.showLockIcon, true);
   assert.equal(getFlowBadgeConfig('paused')?.secondaryLabel, 'Editable');

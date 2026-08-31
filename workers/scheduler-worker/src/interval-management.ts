@@ -5,6 +5,7 @@ import {
 import { SupabaseClient } from '@supabase/supabase-js';
 import type { CampaignSchedule } from './types.js';
 import { isWithinSchedule, calculateNextAllowedTime } from './scheduling.js';
+import { isLifecycleSendEligibleCampaign } from './campaign-send-eligible.js';
 
 export interface CampaignInterval {
   id: string;
@@ -26,7 +27,7 @@ export async function maintainCampaignIntervals(
   // Also get last_completed_interval_time for sequential processing
   const { data: campaigns, error } = await supabase
     .from('campaigns')
-    .select('id, account_id, sending_interval_seconds, created_at, schedule, last_completed_interval_time')
+    .select('id, account_id, sending_interval_seconds, created_at, schedule, last_completed_interval_time, status, deleted_at, start_at, pause_at')
     .eq('status', 'running')
     .not('sending_interval_seconds', 'is', null);
   
@@ -50,10 +51,15 @@ export async function maintainCampaignIntervals(
   if (!campaigns || campaigns.length === 0) {
     return;
   }
+
+  const eligibleCampaigns = campaigns.filter((campaign) => isLifecycleSendEligibleCampaign(campaign));
+  if (eligibleCampaigns.length === 0) {
+    return;
+  }
   
-  console.log(`[INTERVAL MAINTENANCE] Maintaining intervals for ${campaigns.length} campaign(s)`);
+  console.log(`[INTERVAL MAINTENANCE] Maintaining intervals for ${eligibleCampaigns.length} campaign(s)`);
   
-  for (const campaign of campaigns) {
+  for (const campaign of eligibleCampaigns) {
     try {
       console.log(`[INTERVAL MAINTENANCE] Processing campaign ${campaign.id.substring(0, 8)} (last_completed: ${campaign.last_completed_interval_time || 'NULL'})`);
       await ensureCampaignIntervals(

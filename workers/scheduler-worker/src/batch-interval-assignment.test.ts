@@ -163,6 +163,10 @@ function createCampaign(overrides: Record<string, unknown> = {}) {
     jitter_percentage: 12,
     account_id: 'account-1',
     accounts: { jitter_percentage: 7 },
+    status: 'running',
+    deleted_at: null,
+    start_at: null,
+    pause_at: null,
     ...overrides,
   };
 }
@@ -452,4 +456,27 @@ test('batchAssignIntervalJobs does not issue a second nodes query', async () => 
     (call): call is QueryCall => call.kind === 'query' && call.table === 'nodes',
   );
   assert.equal(nodesQueries.length, 1, 'node_data must be reused from the initial email-nodes load');
+});
+
+test('batchAssignIntervalJobs skips campaigns outside lifecycle bounds', async () => {
+  const supabase = new MockSupabase([
+    {
+      data: [
+        createCampaign({
+          pause_at: '2020-01-01T00:00:00.000Z',
+          status: 'running',
+          deleted_at: null,
+        }),
+      ],
+    },
+  ]);
+
+  await batchAssignIntervalJobs(supabase as any, 0);
+
+  const rpcCalls = supabase.calls.filter((call): call is RpcCall => call.kind === 'rpc');
+  assert.deepEqual(rpcCalls, []);
+  const intervalQueries = supabase.calls.filter(
+    (call): call is QueryCall => call.kind === 'query' && call.table === 'campaign_intervals',
+  );
+  assert.equal(intervalQueries.length, 0);
 });

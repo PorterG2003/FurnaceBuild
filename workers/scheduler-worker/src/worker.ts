@@ -23,6 +23,11 @@ import {
 import { maintainCampaignIntervals } from './interval-management.js';
 import { batchAssignIntervalJobs } from './batch-interval-assignment.js';
 import { resolveOooResumePollIntervalMs, runOutOfOfficeResumeTick } from './ooo-resume-tick.js';
+import {
+  resolveCampaignSchedulePollIntervalMs,
+  runCampaignScheduleTick,
+} from './campaign-schedule-tick.js';
+import { isLifecycleSendEligibleCampaign } from './campaign-send-eligible.js';
 import type { CategorizerLlmTransport } from './categorizer/classify.js';
 import type { CampaignSchedule, Enrollment } from './types.js';
 import { logger } from './logger.js';
@@ -58,6 +63,8 @@ type SchedulerCampaignRecord = {
   created_at: string;
   status: string;
   deleted_at?: string | null;
+  start_at?: string | null;
+  pause_at?: string | null;
   accounts?: CampaignAccountRelation;
 };
 
@@ -105,6 +112,7 @@ export class SchedulerWorker {
   private staleLockCleanupTimer?: ReturnType<typeof setInterval>;
   private batchIntervalAssignmentTimer?: ReturnType<typeof setInterval>;
   private oooResumeTimer?: ReturnType<typeof setInterval>;
+  private campaignScheduleTimer?: ReturnType<typeof setInterval>;
   private staleReservedReclaimTimer?: ReturnType<typeof setInterval>;
   private selfRecoveryAuditTimer?: ReturnType<typeof setInterval>;
   private categorizerSweepTimer?: ReturnType<typeof setInterval>;
@@ -136,6 +144,7 @@ export class SchedulerWorker {
     this.startBatchIntervalAssignment();
 
     this.startOutOfOfficeResumeProcessing();
+    this.startCampaignScheduleProcessing();
     this.startStaleReservedReclaim();
     this.startSelfRecoveryAudit();
     this.startCategorizerSweep();
@@ -315,6 +324,10 @@ export class SchedulerWorker {
       clearInterval(this.oooResumeTimer);
       this.oooResumeTimer = undefined;
     }
+    if (this.campaignScheduleTimer) {
+      clearInterval(this.campaignScheduleTimer);
+      this.campaignScheduleTimer = undefined;
+    }
     if (this.staleReservedReclaimTimer) {
       clearInterval(this.staleReservedReclaimTimer);
       this.staleReservedReclaimTimer = undefined;
@@ -407,7 +420,7 @@ export class SchedulerWorker {
     const { data: campaigns, error: campaignsError } = await this.supabase
       .from('campaigns')
       .select(
-        'id, flow_data, current_flow_version_number, schedule, owner_id, account_id, jitter_percentage, sending_interval_seconds, created_at, status, deleted_at, accounts(jitter_percentage)',
+        'id, flow_data, current_flow_version_number, schedule, owner_id, account_id, jitter_percentage, sending_interval_seconds, created_at, status, deleted_at, start_at, pause_at, accounts(jitter_percentage)',
       )
       .in('id', campaignIds);
 
@@ -628,6 +641,47 @@ export class SchedulerWorker {
       },
     });
     logger.info(`[OOO RESUME] Poll interval ${Math.round(intervalMs / 1000)}s`);
+  }
+
+  /**
+   * Start/pause campaigns whose calendar bounds have elapsed.
+   * Interval from CAMPAIGN_SCHEDULE_POLL_INTERVAL_MS (default 60s).
+   */
+  private startCampaignScheduleProcessing(): void {
+    const intervalMs = resolveCampaignSchedulePollIntervalMs(
+      process.env.CAMPAIGN_SCHEDULE_POLL_INTERVAL_MS,
+    );
+
+    this.campaignScheduleTimer = this.startSingleFlightInterval({
+      taskName: 'CAMPAIGN SCHEDULE',
+      intervalMs,
+      runImmediately: false,
+      task: async () => {
+        const result = await runCampaignScheduleTick(this.supabase);
+        if (result.processed > 0) {
+          logger.info(
+            `[CAMPAIGN SCHEDULE] Processed ${result.processed} transition(s) across ${result.batches} batch(es)`,
+          );
+        }
+      },
+      onError: (err) => {
+        logger.error('[CAMPAIGN SCHEDULE] Error:', err);
+        const msg = err instanceof Error ? err.message : String(err);
+        reportErrorToSlack('Scheduler: process_due_campaign_schedule_transitions failed', {
+          severity: isRetryableSupabaseReadError(msg) ? 'warning' : 'critical',
+          error: msg,
+          alertPolicy: isRetryableSupabaseReadError(msg)
+            ? 'transient_retryable_warning'
+            : 'persistent_config_warning',
+          aggregationKey: 'scheduler-campaign-schedule',
+          summaryFields: {
+            worker: 'scheduler',
+            operation: 'process_due_campaign_schedule_transitions',
+          },
+        });
+      },
+    });
+    logger.info(`[CAMPAIGN SCHEDULE] Poll interval ${Math.round(intervalMs / 1000)}s`);
   }
 
   private startBatchIntervalAssignment(): void {
@@ -1026,8 +1080,11 @@ export class SchedulerWorker {
         return 'campaign_deleted';
       }
 
-      if (campaign.status !== 'running') {
-        logger.debugSampled(enrollment.id, `[ENROLLMENT ${enrollmentId}] Campaign status is '${campaign.status}'. Deferring.`);
+      if (!isLifecycleSendEligibleCampaign(campaign)) {
+        logger.debugSampled(
+          enrollment.id,
+          `[ENROLLMENT ${enrollmentId}] Campaign is not send-eligible (status '${campaign.status}'). Deferring.`,
+        );
         await this.supabase
           .from('enrollments')
           .update({ next_run_at: new Date().toISOString() })

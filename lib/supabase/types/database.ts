@@ -343,8 +343,13 @@ export interface Database {
           locked: boolean;
           flow_data: Json | null;
           schedule: Json | null;
+          schedule_timezone: string;
+          start_date: string | null;
+          pause_date: string | null;
+          start_at: string | null;
+          pause_at: string | null;
           bucket_id: string;
-          status: 'draft' | 'running' | 'paused' | 'stopped';
+          status: 'draft' | 'scheduled' | 'running' | 'paused' | 'stopped';
           sending_interval_seconds: number;
           source: string | null;
           smartlead_campaign_id: number | null;
@@ -367,8 +372,13 @@ export interface Database {
           locked?: boolean;
           flow_data?: Json | null;
           schedule?: Json | null;
+          schedule_timezone?: string;
+          start_date?: string | null;
+          pause_date?: string | null;
+          start_at?: string | null;
+          pause_at?: string | null;
           bucket_id?: string;
-          status?: 'draft' | 'running' | 'paused' | 'stopped';
+          status?: 'draft' | 'scheduled' | 'running' | 'paused' | 'stopped';
           sending_interval_seconds?: number;
           source?: string | null;
           smartlead_campaign_id?: number | null;
@@ -391,8 +401,13 @@ export interface Database {
           locked?: boolean;
           flow_data?: Json | null;
           schedule?: Json | null;
+          schedule_timezone?: string;
+          start_date?: string | null;
+          pause_date?: string | null;
+          start_at?: string | null;
+          pause_at?: string | null;
           bucket_id?: string;
-          status?: 'draft' | 'running' | 'paused' | 'stopped';
+          status?: 'draft' | 'scheduled' | 'running' | 'paused' | 'stopped';
           sending_interval_seconds?: number;
           source?: string | null;
           smartlead_campaign_id?: number | null;
@@ -2845,6 +2860,30 @@ export interface Database {
           p_batch_size?: number;
         };
         Returns: number;
+      };
+      process_due_campaign_schedule_transitions: {
+        Args: {
+          p_batch_size?: number;
+        };
+        Returns: number;
+      };
+      try_mark_campaign_message_job_sending: {
+        Args: {
+          p_message_job_id: string;
+        };
+        Returns: boolean;
+      };
+      explain_due_campaign_schedule_starts: {
+        Args: Record<PropertyKey, never>;
+        Returns: {
+          plan: string;
+        }[];
+      };
+      explain_due_campaign_schedule_pauses: {
+        Args: Record<PropertyKey, never>;
+        Returns: {
+          plan: string;
+        }[];
       };
       replace_lead_with_new_contact: {
         Args: {

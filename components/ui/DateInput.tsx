@@ -1,9 +1,10 @@
 import { useState, useRef, useCallback, useLayoutEffect } from 'react';
 import { View, Text, Pressable, Platform, useWindowDimensions, type StyleProp, type ViewStyle } from 'react-native';
-import { ChevronLeftIcon, ChevronRightIcon, CalendarDaysIcon } from 'react-native-heroicons/outline';
+import { ChevronLeftIcon, ChevronRightIcon, CalendarDaysIcon, XMarkIcon } from 'react-native-heroicons/outline';
 import { PopupPortal } from '@/components/ui/PopupPortal';
 import { LAYOUT_BREAKPOINT } from '@/components/ui/layout';
 import { BottomSheet, useBottomSheetTakeover, usePickerInsideBottomSheet } from '@/components/ui/modals';
+import { FORM_FIELD_VARIANTS, type FormFieldVariant } from '@/components/ui/forms/formFieldStyles';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -272,6 +273,10 @@ interface DateInputProps {
   triggerSize?: 'compact' | 'comfortable';
   /** Merged onto the calendar trigger `Pressable` after default styles. */
   triggerStyle?: StyleProp<ViewStyle>;
+  /** Matches `Select` / `FormTextField`. Default `glass` for toolbars. */
+  variant?: FormFieldVariant;
+  /** When set, an X appears on the right while the field has a value and is not disabled. */
+  onClear?: () => void;
 }
 
 export function DateInput({
@@ -284,6 +289,8 @@ export function DateInput({
   placeholder = 'Pick a date',
   triggerSize = 'compact',
   triggerStyle,
+  variant = 'glass',
+  onClear,
 }: DateInputProps) {
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const isCompactLayout = screenWidth < LAYOUT_BREAKPOINT;
@@ -292,11 +299,16 @@ export function DateInput({
   const insideSheet = usePickerInsideBottomSheet();
   const { presentTakeover, dismissTakeover } = useBottomSheetTakeover();
   const [open, setOpen] = useState(false);
+  const [triggerHovered, setTriggerHovered] = useState(false);
   const triggerRef = useRef<View>(null);
 
   const displayValue = formatDisplay(value);
   const close = useCallback(() => setOpen(false), []);
   const comfortableTrigger = triggerSize === 'comfortable';
+  const fieldVariant = FORM_FIELD_VARIANTS[variant];
+  const triggerBorderRadius = comfortableTrigger
+    ? fieldVariant.triggerBorderRadius.default
+    : fieldVariant.triggerBorderRadius.compact;
 
   const openCalendar = useCallback(() => {
     if (disabled) return;
@@ -347,24 +359,37 @@ export function DateInput({
   return (
     <View style={{ position: 'relative' }}>
       {label ? (
-        <Text selectable={false} className="text-xs font-instrument-medium mb-2 text-gray-400">
+        <Text selectable={false} className={fieldVariant.labelClassName}>
           {label}
         </Text>
       ) : null}
+      <View
+        {...(Platform.OS === 'web'
+          ? {
+              onMouseEnter: () => setTriggerHovered(true),
+              onMouseLeave: () => setTriggerHovered(false),
+            }
+          : {})}
+      >
       <Pressable
         ref={triggerRef}
         onPress={openCalendar}
         disabled={disabled}
-        style={({ pressed, hovered }: any) => {
-          const interacted = pressed || hovered;
-          let backgroundColor = '#FFFFFF0D';
-          let borderColor = '#FFFFFF4D';
-          if (open) {
-            backgroundColor = 'rgba(255, 255, 255, 0.16)';
-            borderColor = 'rgba(255, 255, 255, 0.32)';
-          } else if (interacted) {
-            backgroundColor = 'rgba(255, 255, 255, 0.1)';
-            borderColor = 'rgba(255, 255, 255, 0.26)';
+        style={({ pressed }: any) => {
+          const interacted = pressed || triggerHovered;
+          const chrome = fieldVariant.trigger;
+          let backgroundColor = chrome.backgroundColor;
+          let borderColor = chrome.borderColor;
+          if (variant === 'glass') {
+            if (open) {
+              backgroundColor = 'rgba(255, 255, 255, 0.16)';
+              borderColor = 'rgba(255, 255, 255, 0.32)';
+            } else if (interacted) {
+              backgroundColor = 'rgba(255, 255, 255, 0.1)';
+              borderColor = 'rgba(255, 255, 255, 0.26)';
+            }
+          } else if (open || interacted) {
+            borderColor = '#4A4A4A';
           }
           return [
             {
@@ -372,9 +397,9 @@ export function DateInput({
               alignItems: 'center',
               gap: comfortableTrigger ? 8 : 6,
               backgroundColor,
-              borderWidth: 1,
+              borderWidth: chrome.borderWidth,
               borderColor,
-              borderRadius: comfortableTrigger ? 12 : 8,
+              borderRadius: triggerBorderRadius,
               paddingHorizontal: comfortableTrigger ? 14 : 10,
               paddingVertical: comfortableTrigger ? 12 : 6,
               minHeight: comfortableTrigger ? 44 : DATE_INPUT_TRIGGER_MIN_HEIGHT,
@@ -387,20 +412,40 @@ export function DateInput({
       >
         <CalendarDaysIcon
           size={comfortableTrigger ? 18 : 14}
-          color={displayValue ? '#9CA3AF' : '#4B5563'}
+          color={displayValue ? '#9CA3AF' : fieldVariant.triggerPlaceholderColor}
         />
         <Text
           selectable={false}
           className={`${comfortableTrigger ? 'text-sm' : 'text-xs'} font-instrument flex-1`}
           style={{
-            color: displayValue ? '#FFFFFF' : '#666666',
+            color: displayValue ? fieldVariant.triggerTextColor : fieldVariant.triggerPlaceholderColor,
             fontFamily: 'Instrument Sans, system-ui',
           }}
           numberOfLines={1}
         >
           {displayValue || placeholder}
         </Text>
+        {onClear && displayValue && !disabled ? (
+          <Pressable
+            onPress={(event) => {
+              event.stopPropagation();
+              onClear();
+              close();
+            }}
+            hitSlop={8}
+            accessibilityLabel="Clear date"
+            style={({ pressed, hovered }: any) => ({
+              padding: 2,
+              borderRadius: 4,
+              backgroundColor: pressed || hovered ? 'rgba(255,255,255,0.08)' : 'transparent',
+              ...(Platform.OS === 'web' ? { cursor: 'pointer' } : {}),
+            })}
+          >
+            <XMarkIcon size={comfortableTrigger ? 16 : 14} color="#9CA3AF" />
+          </Pressable>
+        ) : null}
       </Pressable>
+      </View>
 
       {!isCompactLayout ? (
         <PopupPortal

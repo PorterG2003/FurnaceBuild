@@ -6,7 +6,7 @@ import type { ReplacementReason } from '../../supabase/types';
 type DbClient = SupabaseClient;
 
 export type CampaignFlowKind = 'emailOnly' | 'emailWaitEmail' | 'emailWaitEmailCategorizer';
-export type CampaignStatus = 'draft' | 'running' | 'paused' | 'stopped';
+export type CampaignStatus = 'draft' | 'scheduled' | 'running' | 'paused' | 'stopped';
 export type EnrollmentState = 'active' | 'paused' | 'stopped' | 'completed';
 export type EnrollmentStoppedReason = 'replied' | 'bounced' | 'unsubscribed' | 'error';
 export type MessageJobStatus =
@@ -141,6 +141,9 @@ export type CampaignGraphSpec = {
   leadSourceCustomFieldKeys?: string[];
   sendingIntervalSeconds?: number;
   schedule?: Json;
+  scheduleTimezone?: string;
+  startDate?: string | null;
+  pauseDate?: string | null;
   mailboxes?: CampaignMailboxSpec[];
   leads: CampaignLeadSpec[];
   replacements?: CampaignLeadReplacementSpec[];
@@ -817,6 +820,17 @@ async function upsertCampaign(params: {
   const { supabase, accountId, ownerUserId, spec } = params;
   const campaignId = spec.campaignId ?? randomId();
   const timestamp = nowIso();
+  const schedule = spec.schedule === undefined ? buildAlwaysOnSchedule() : spec.schedule;
+  const scheduleTzFromJson =
+    schedule && typeof schedule === 'object' && !Array.isArray(schedule)
+      ? String((schedule as { timezone?: unknown }).timezone ?? '').trim()
+      : '';
+  const scheduleTimezone =
+    spec.scheduleTimezone?.trim() || scheduleTzFromJson || 'America/Chicago';
+  const syncedSchedule =
+    schedule && typeof schedule === 'object' && !Array.isArray(schedule)
+      ? { ...(schedule as Record<string, unknown>), timezone: scheduleTimezone }
+      : schedule;
   const payload = {
     id: campaignId,
     name: spec.name,
@@ -828,7 +842,10 @@ async function upsertCampaign(params: {
       categorizerUseAi: spec.categorizerUseAi,
       leadSourceCustomFieldKeys: spec.leadSourceCustomFieldKeys,
     }),
-    schedule: (spec.schedule ?? buildAlwaysOnSchedule()) as any,
+    schedule: syncedSchedule as any,
+    schedule_timezone: scheduleTimezone,
+    start_date: spec.startDate ?? null,
+    pause_date: spec.pauseDate ?? null,
     sending_interval_seconds: spec.sendingIntervalSeconds ?? DEFAULT_SENDING_INTERVAL_SECONDS,
     deleted_at: null,
     updated_at: timestamp,

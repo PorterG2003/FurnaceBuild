@@ -356,7 +356,7 @@ interface CampaignCardProps {
 }
 
 function toStatusMenuStatus(status: string): CampaignStatusMenuStatus {
-  if (status === 'running' || status === 'paused' || status === 'stopped' || status === 'draft') {
+  if (status === 'running' || status === 'paused' || status === 'stopped' || status === 'draft' || status === 'scheduled') {
     return status;
   }
   return 'draft';

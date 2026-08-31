@@ -977,11 +977,18 @@ export default function BuilderPage() {
 
   const campaignStatus = campaign?.status;
   const showStatusMenu =
-    (campaignStatus === 'running' || campaignStatus === 'paused' || campaignStatus === 'stopped') &&
+    (campaignStatus === 'running' ||
+      campaignStatus === 'paused' ||
+      campaignStatus === 'stopped' ||
+      campaignStatus === 'scheduled') &&
     !isLoading;
-  const showFlowEditBadge = campaignStatus === 'running' || campaignStatus === 'paused';
+  const showFlowEditBadge =
+    campaignStatus === 'running' || campaignStatus === 'paused' || campaignStatus === 'scheduled';
   const statusMenuStatus =
-    campaignStatus === 'running' || campaignStatus === 'paused' || campaignStatus === 'stopped'
+    campaignStatus === 'running' ||
+    campaignStatus === 'paused' ||
+    campaignStatus === 'stopped' ||
+    campaignStatus === 'scheduled'
       ? campaignStatus
       : 'running';
 

@@ -85,6 +85,18 @@ export function CampaignStatusActionsSheet({
         },
       ];
     }
+    if (status === 'scheduled') {
+      return [
+        {
+          key: 'stop',
+          label: isStopping ? 'Stopping...' : 'Stop campaign',
+          onPress: openStopConfirm,
+          disabled: busy,
+          tone: 'destructive',
+          icon: StopIcon,
+        },
+      ];
+    }
     if (status === 'paused') {
       return [
         {

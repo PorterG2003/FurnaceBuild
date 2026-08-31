@@ -1,0 +1,114 @@
+revenue_weight: 0.5
+logo_weight: 0.5
+min_wins_for_full_lift: 15
+nearby_miles: 50
+holdout_fraction: 0.2
+holdout_seed: 42
+
+enrollment_bands:
+  - id: under_1k
+    label: under 1k enrollment
+    max: 999
+  - id: 1k_5k
+    label: 1–5k enrollment
+    min: 1000
+    max: 4999
+  - id: 5k_15k
+    label: 5–15k enrollment
+    min: 5000
+    max: 14999
+  - id: 15k_50k
+    label: 15–50k enrollment
+    min: 15000
+    max: 49999
+  - id: 50k_plus
+    label: 50k+ enrollment
+    min: 50000
+
+ell_share_bands:
+  - id: low
+    label: low ELL (<5%)
+    max: 0.049999
+  - id: moderate
+    label: moderate ELL (5–15%)
+    min: 0.05
+    max: 0.149999
+  - id: high
+    label: high ELL (15–30%)
+    min: 0.15
+    max: 0.299999
+  - id: very_high
+    label: very high ELL (30%+)
+    min: 0.3
+
+spec_ed_share_bands:
+  - id: low
+    label: low special ed (<10%)
+    max: 0.099999
+  - id: typical
+    label: typical special ed (10–18%)
+    min: 0.1
+    max: 0.179999
+  - id: high
+    label: high special ed (18%+)
+    min: 0.18
+
+poverty_share_bands:
+  - id: low
+    label: low child poverty (<10%)
+    max: 0.099999
+  - id: moderate
+    label: moderate child poverty (10–20%)
+    min: 0.1
+    max: 0.199999
+  - id: high
+    label: high child poverty (20–35%)
+    min: 0.2
+    max: 0.349999
+  - id: very_high
+    label: very high child poverty (35%+)
+    min: 0.35
+
+str_bands:
+  - id: low
+    label: low student-teacher ratio (<14)
+    max: 13.999
+  - id: typical
+    label: typical student-teacher ratio (14–18)
+    min: 14
+    max: 17.999
+  - id: high
+    label: high student-teacher ratio (18+)
+    min: 18
+
+geo_same_county_bands:
+  - id: none
+    label: no wins in county
+    max: 0
+  - id: one
+    label: 1 win in county
+    min: 1
+    max: 1
+  - id: few
+    label: 2–4 wins in county
+    min: 2
+    max: 4
+  - id: many
+    label: 5+ wins in county
+    min: 5
+
+geo_nearby_bands:
+  - id: none
+    label: no nearby wins
+    max: 0
+  - id: few
+    label: 1–2 nearby wins
+    min: 1
+    max: 2
+  - id: some
+    label: 3–6 nearby wins
+    min: 3
+    max: 6
+  - id: many
+    label: 7+ nearby wins
+    min: 7

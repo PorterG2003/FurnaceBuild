@@ -1,0 +1,22 @@
+{
+  "people": [
+    {
+      "id": "apollo-principal-1",
+      "first_name": "Dana",
+      "last_name": "West",
+      "title": "Principal",
+      "email": "dana.west@nmusd.us",
+      "linkedin_url": "https://linkedin.com/in/danawest",
+      "organization": { "name": "Newport Elementary" }
+    },
+    {
+      "id": "apollo-principal-2",
+      "first_name": "Chris",
+      "last_name": "Hale",
+      "title": "Principal",
+      "email": "chris.hale@palmdalesd.org",
+      "linkedin_url": "https://linkedin.com/in/chrishale",
+      "organization": { "name": "Tumbleweed Elementary" }
+    }
+  ]
+}

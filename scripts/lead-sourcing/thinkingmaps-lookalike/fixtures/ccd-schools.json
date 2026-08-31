@@ -1,0 +1,122 @@
+[
+  {
+    "ncessch": "062721000001",
+    "leaid": "0627210",
+    "school_name": "Newport Elementary",
+    "state_location": "CA",
+    "city_location": "Costa Mesa",
+    "zip_location": "92626"
+  },
+  {
+    "ncessch": "062721000002",
+    "leaid": "0627210",
+    "school_name": "Corona del Mar High",
+    "state_location": "CA",
+    "city_location": "Newport Beach",
+    "zip_location": "92625"
+  },
+  {
+    "ncessch": "062547000001",
+    "leaid": "0625470",
+    "school_name": "Montebello High",
+    "state_location": "CA",
+    "city_location": "Montebello",
+    "zip_location": "90640"
+  },
+  {
+    "ncessch": "062547000002",
+    "leaid": "0625470",
+    "school_name": "Bella Vista Elementary",
+    "state_location": "CA",
+    "city_location": "Monterey Park",
+    "zip_location": "91754"
+  },
+  {
+    "ncessch": "062964000001",
+    "leaid": "0629640",
+    "school_name": "Palm Tree Elementary",
+    "state_location": "CA",
+    "city_location": "Palmdale",
+    "zip_location": "93550"
+  },
+  {
+    "ncessch": "062964000002",
+    "leaid": "0629640",
+    "school_name": "Palmdale High",
+    "state_location": "CA",
+    "city_location": "Palmdale",
+    "zip_location": "93550"
+  },
+  {
+    "ncessch": "062964000003",
+    "leaid": "0629640",
+    "school_name": "Tumbleweed Elementary",
+    "state_location": "CA",
+    "city_location": "Palmdale",
+    "zip_location": "93551"
+  },
+  {
+    "ncessch": "062964000004",
+    "leaid": "0629640",
+    "school_name": "Lincoln Elementary",
+    "state_location": "CA",
+    "city_location": "Palmdale",
+    "zip_location": "93550"
+  },
+  {
+    "ncessch": "062964000005",
+    "leaid": "0629640",
+    "school_name": "Lincoln Elementary",
+    "state_location": "CA",
+    "city_location": "Lancaster",
+    "zip_location": "93535"
+  },
+  {
+    "ncessch": "061077000001",
+    "leaid": "0610770",
+    "school_name": "Delano Elementary",
+    "state_location": "CA",
+    "city_location": "Delano",
+    "zip_location": "93215"
+  },
+  {
+    "ncessch": "060159000001",
+    "leaid": "0601590",
+    "school_name": "Heartland Charter School",
+    "state_location": "CA",
+    "city_location": "Bakersfield",
+    "zip_location": "93309"
+  },
+  {
+    "ncessch": "040187000001",
+    "leaid": "0401870",
+    "school_name": "Chandler High School",
+    "state_location": "AZ",
+    "city_location": "Chandler",
+    "zip_location": "85224"
+  },
+  {
+    "ncessch": "210186000001",
+    "leaid": "2101860",
+    "school_name": "Lafayette High School",
+    "state_location": "KY",
+    "city_location": "Lexington",
+    "zip_location": "40503"
+  },
+  {
+    "ncessch": "362058000001",
+    "leaid": "3620580",
+    "school_name": "PS 10",
+    "state_location": "NY",
+    "city_location": "Bronx",
+    "zip_location": "10458"
+  },
+  {
+    "ncessch": "061710000001",
+    "leaid": "0617100",
+    "school_name": "Garden Grove Elementary",
+    "state_location": "CA",
+    "city_location": "Garden Grove",
+    "zip_location": "92840"
+  }
+]

@@ -1,0 +1,3 @@
+CDSCode	NCESDist	NCESSchool	StatusType	District	School	City	Zip	AdmFName	AdmLName
+19647336012345	0622710	00123	Active	Los Angeles Unified	Suder Elementary	Los Angeles	90001	Jane	Doe
+19647330000000	0622710		Active	Los Angeles Unified		Los Angeles	90001	Bob	Superintendent

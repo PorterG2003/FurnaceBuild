@@ -9,6 +9,7 @@ import {
   type CampaignMailboxRow,
 } from './mailbox-selection.js';
 import { isLifecycleSendEligibleCampaign } from './campaign-send-eligible.js';
+import { resolveEmailStepNumber } from './email-step-number.js';
 
 type LiveCampaignJobMailbox = {
   id: string;
@@ -194,7 +195,7 @@ export async function batchAssignIntervalJobs(
   // Get all campaigns with available/scheduled intervals
   const { data: campaigns, error: campaignsError } = await supabase
     .from('campaigns')
-    .select('id, jitter_percentage, account_id, accounts(jitter_percentage), status, deleted_at, start_at, pause_at')
+    .select('id, jitter_percentage, account_id, accounts(jitter_percentage), status, deleted_at, start_at, pause_at, flow_data')
     .eq('status', 'running')
     .is('deleted_at', null)
     .not('sending_interval_seconds', 'is', null);
@@ -276,7 +277,7 @@ export async function batchAssignIntervalJobs(
       // No message_job should exist for this enrollment+node combination
       const { data: emailNodes, error: nodesError } = await supabase
         .from('nodes')
-        .select('id, node_data')
+        .select('id, node_data, flow_node_id')
         .eq('campaign_id', campaign.id)
         .is('deleted_at', null)
         .eq('node_type', 'email');
@@ -425,7 +426,10 @@ export async function batchAssignIntervalJobs(
           continue;
         }
         
-        // Prepare message_data
+        const stepNumber = resolveEmailStepNumber(
+          (campaign as { flow_data?: Parameters<typeof resolveEmailStepNumber>[0] }).flow_data,
+          node.flow_node_id,
+        );
         const messageData = {
           node_config: node.node_data || {},
           lead_data: {
@@ -434,6 +438,7 @@ export async function batchAssignIntervalJobs(
             first_name: lead.first_name,
             last_name: lead.last_name,
           },
+          ...(stepNumber != null ? { step_number: stepNumber } : {}),
         };
         
         if (jobDataByMailbox.has(mailboxId)) {

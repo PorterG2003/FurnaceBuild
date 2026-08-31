@@ -140,6 +140,22 @@ class MockSupabase {
   constructor(private readonly responses: Response[]) {}
 
   from(table: string) {
+    // Campaign name is only used to enrich webhook payloads.
+    if (table === 'campaigns') {
+      const call: QueryCall = {
+        kind: 'query',
+        table,
+        filters: [],
+        orders: [],
+        limits: [],
+        selects: [],
+        insertPayloads: [],
+        singleMode: null,
+      };
+      this.calls.push(call);
+      return new MockQueryBuilder(call, { data: { name: 'Wasatch corridor' }, error: null });
+    }
+
     let response = this.responses.shift();
     // New optional tables / best-effort cleanup should not force every fixture to grow.
     if (!response) {
@@ -150,7 +166,8 @@ class MockSupabase {
         table === 'email_messages' ||
         table === 'enrollments' ||
         table === 'notification_events' ||
-        table === 'webhook_events'
+        table === 'webhook_events' ||
+        table === 'leads'
       ) {
         response = { data: null, error: null };
       } else {
@@ -368,6 +385,8 @@ class StatefulBounceSupabase {
         return { data: this.config.jobs, error: null };
       case 'leads':
         return { data: this.config.leads, error: null };
+      case 'campaigns':
+        return { data: { name: 'Wasatch corridor' }, error: null };
       case 'accounts':
         return {
           data: { suppress_bounced_emails: this.config.suppressBouncedEmails },
@@ -786,6 +805,7 @@ test('handleReply routes campaign replies on categorizer flows through the park 
     { data: 'held', error: null }, // rpc park_or_advance_enrollment_on_reply
     { data: true, error: null }, // rpc record_replied_event_and_increment
     { data: { id: 'notification-event-1' }, error: null }, // notification_events
+    { data: { id: 'lead-1', email: 'lead@example.com', first_name: 'Casey' }, error: null }, // leads identity
     { data: { id: 'webhook-event-1' }, error: null }, // webhook_events
   ]);
   const manager = new ThreadManager(supabase as any);
@@ -842,6 +862,7 @@ test('handleReply leaves enrollment active (no hard-stop) when the park RPC fail
     { data: null, error: { message: 'park exploded' } }, // rpc park (FAILS)
     { data: true, error: null }, // rpc record_replied_event_and_increment
     { data: { id: 'notification-event-1' }, error: null }, // notification_events
+    { data: { id: 'lead-1', email: 'lead@example.com' }, error: null }, // leads identity
     { data: { id: 'webhook-event-1' }, error: null }, // webhook_events
   ]);
   const manager = new ThreadManager(supabase as any);

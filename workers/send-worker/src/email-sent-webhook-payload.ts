@@ -1,7 +1,15 @@
-export type EmailSentWebhookPayload = {
-  campaign_id: string;
+import {
+  leadWebhookIdentityFromRow,
+  truncateWebhookBodyText,
+  type LeadIdentityRow,
+  type LeadWebhookIdentity,
+} from '@furnace/webhooks-lib';
+
+export type EmailSentWebhookPayload = Omit<
+  LeadWebhookIdentity,
+  'campaign_name' | 'email' | 'mailbox_id' | 'mailbox_email'
+> & {
   campaign_name: string | null;
-  lead_id: string;
   email: string;
   enrollment_id: string;
   message_job_id: string;
@@ -10,6 +18,10 @@ export type EmailSentWebhookPayload = {
   provider_message_id: string | null;
   sent_at: string;
   subject: string;
+  body_text?: string;
+  step_number?: number;
+  node_id?: string;
+  flow_node_id?: string;
 };
 
 export function buildEmailSentWebhookPayload(input: {
@@ -24,11 +36,26 @@ export function buildEmailSentWebhookPayload(input: {
   providerMessageId?: string | null;
   sentAt: string;
   subject: string;
+  bodyText?: string | null;
+  stepNumber?: number | null;
+  nodeId?: string | null;
+  flowNodeId?: string | null;
+  lead?: LeadIdentityRow | null;
 }): EmailSentWebhookPayload {
-  return {
-    campaign_id: input.campaignId,
+  const identity = leadWebhookIdentityFromRow({
+    campaignId: input.campaignId,
+    campaignName: input.campaignName,
+    lead: input.lead ?? {
+      id: input.leadId,
+      email: input.email,
+    },
+    mailboxId: input.mailboxId,
+    mailboxEmail: input.mailboxEmail,
+  });
+
+  const payload: EmailSentWebhookPayload = {
+    ...identity,
     campaign_name: input.campaignName?.trim() ? input.campaignName : null,
-    lead_id: input.leadId,
     email: input.email,
     enrollment_id: input.enrollmentId,
     message_job_id: input.messageJobId,
@@ -38,4 +65,16 @@ export function buildEmailSentWebhookPayload(input: {
     sent_at: input.sentAt,
     subject: input.subject,
   };
+
+  const bodyText = input.bodyText?.trim()
+    ? truncateWebhookBodyText(input.bodyText)
+    : undefined;
+  if (bodyText) payload.body_text = bodyText;
+  if (typeof input.stepNumber === 'number' && Number.isFinite(input.stepNumber)) {
+    payload.step_number = input.stepNumber;
+  }
+  if (input.nodeId?.trim()) payload.node_id = input.nodeId;
+  if (input.flowNodeId?.trim()) payload.flow_node_id = input.flowNodeId;
+
+  return payload;
 }

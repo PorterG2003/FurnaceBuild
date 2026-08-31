@@ -255,6 +255,78 @@ test('processWebhookEvent skips reply.categorized when not enabled', async (t) =
   }
 });
 
+test('processWebhookEvent signs and delivers a truncated custom_fields payload', async (t) => {
+  const bodies: string[] = [];
+  const signatures: string[] = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    if (url.startsWith('https://webhook-delivery.test/')) {
+      bodies.push(typeof init?.body === 'string' ? init.body : String(init?.body ?? ''));
+      signatures.push(String((init?.headers as Record<string, string> | undefined)?.['X-Furnace-Signature'] ?? ''));
+      return new Response('ok', { status: 200 });
+    }
+    return originalFetch(input, init);
+  };
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  const harness = new ClientApiDbHarness({
+    namespace: createClientApiTestNamespace('webhook-deliver-enriched'),
+  });
+
+  try {
+    const { error: accountError } = await harness.supabase
+      .from('accounts')
+      .update({
+        webhook_url: 'https://webhook-delivery.test/enriched',
+        webhook_signing_secret: 'whsec_test',
+        webhook_enabled_events: ['email.sent'],
+      } as never)
+      .eq('id', harness.accountId);
+    assert.equal(accountError, null);
+
+    const customFields: Record<string, string> = {};
+    for (let i = 0; i < 20; i += 1) {
+      customFields[`field_${i}`] = 'x'.repeat(200);
+    }
+
+    const { data: event, error: eventError } = await harness.supabase
+      .from('webhook_events')
+      .insert({
+        account_id: harness.accountId,
+        campaign_id: null,
+        event_type: 'email.sent',
+        payload: {
+          campaign_id: '00000000-0000-4000-8000-000000000099',
+          email: 'lead@example.com',
+          mailbox_email: 'sender@example.com',
+          campaign_name: 'Example',
+          custom_fields: customFields,
+          custom_fields_truncated: true,
+          body_text: 'Hi',
+        },
+        dedupe_key: `${harness.namespace}-enriched`,
+      } as never)
+      .select('id')
+      .single();
+    assert.equal(eventError, null);
+    harness.trackedWebhookEventIds.add(event!.id as string);
+
+    await processWebhookEventById(event!.id as string);
+
+    assert.equal(bodies.length, 1);
+    const parsed = JSON.parse(bodies[0]) as { data: { custom_fields_truncated?: boolean } };
+    assert.equal(parsed.data.custom_fields_truncated, true);
+    const { createHmac } = await import('node:crypto');
+    const expected = `sha256=${createHmac('sha256', 'whsec_test').update(bodies[0]).digest('hex')}`;
+    assert.equal(signatures[0], expected);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
 test('processWebhookEvent does not duplicate delivered customer POSTs', async (t) => {
   let postCount = 0;
   const originalFetch = globalThis.fetch;

@@ -4,7 +4,7 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 
 # Copy and build @furnace/email-lib (worker depends on file:../../lib/email)
-RUN mkdir -p /app/lib/email /app/lib/mailbox /app/lib/slack /app/workers/inbox-checker-worker
+RUN mkdir -p /app/lib/email /app/lib/mailbox /app/lib/slack /app/lib/webhooks /app/workers/inbox-checker-worker
 COPY lib/email/package*.json lib/email/tsconfig.build.json ./lib/email/
 COPY lib/email/*.ts ./lib/email/
 COPY lib/email/threading ./lib/email/threading
@@ -22,6 +22,12 @@ RUN npm install && npm run build
 WORKDIR /app
 COPY lib/slack/package.json lib/slack/package-lock.json lib/slack/tsconfig.build.json lib/slack/*.ts ./lib/slack/
 WORKDIR /app/lib/slack
+RUN npm install && npm run build
+
+# Copy and build @furnace/webhooks-lib (worker depends on file:../../lib/webhooks)
+WORKDIR /app
+COPY lib/webhooks/package*.json lib/webhooks/tsconfig.build.json lib/webhooks/*.ts ./lib/webhooks/
+WORKDIR /app/lib/webhooks
 RUN npm install && npm run build
 
 # Worker: package files and install (file:../../lib/* resolve)
@@ -48,6 +54,8 @@ COPY --from=builder /app/lib/mailbox/package.json ./lib/mailbox/
 COPY --from=builder /app/lib/mailbox/dist ./lib/mailbox/dist
 COPY --from=builder /app/lib/slack/package.json ./lib/slack/
 COPY --from=builder /app/lib/slack/dist ./lib/slack/dist
+COPY --from=builder /app/lib/webhooks/package.json ./lib/webhooks/
+COPY --from=builder /app/lib/webhooks/dist ./lib/webhooks/dist
 
 # Copy worker package and built output
 COPY workers/inbox-checker-worker/package*.json ./workers/inbox-checker-worker/

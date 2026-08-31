@@ -1,13 +1,21 @@
 import { getDisplayBody } from '@furnace/email-lib';
+import {
+  leadWebhookIdentityFromRow,
+  truncateWebhookBodyText,
+  WEBHOOK_BODY_TEXT_MAX_CHARS,
+  type LeadIdentityRow,
+  type LeadWebhookIdentity,
+} from '@furnace/webhooks-lib';
 
-export const REPLY_WEBHOOK_BODY_TEXT_MAX_CHARS = 16_000;
+export const REPLY_WEBHOOK_BODY_TEXT_MAX_CHARS = WEBHOOK_BODY_TEXT_MAX_CHARS;
 
-export type ReplyReceivedWebhookPayload = {
+export type ReplyReceivedWebhookPayload = Omit<
+  LeadWebhookIdentity,
+  'campaign_name' | 'mailbox_id' | 'mailbox_email'
+> & {
   thread_id: string;
   email_message_id: string;
-  campaign_id: string;
   campaign_name: string | null;
-  lead_id: string;
   enrollment_id: string;
   mailbox_id: string;
   mailbox_email: string;
@@ -27,8 +35,7 @@ export function campaignNameFromRelation(campaigns: unknown): string | null {
 export function buildReplyWebhookBodyText(bodyText: string | null | undefined): string {
   const display = getDisplayBody(bodyText ?? '');
   const source = display.trim() ? display : (bodyText ?? '');
-  if (source.length <= REPLY_WEBHOOK_BODY_TEXT_MAX_CHARS) return source;
-  return source.slice(0, REPLY_WEBHOOK_BODY_TEXT_MAX_CHARS);
+  return truncateWebhookBodyText(source);
 }
 
 export function buildReplyReceivedWebhookPayload(input: {
@@ -44,13 +51,24 @@ export function buildReplyReceivedWebhookPayload(input: {
   subject: string;
   bodyText?: string | null;
   receivedAt: string;
+  lead?: LeadIdentityRow | null;
 }): ReplyReceivedWebhookPayload {
+  const identity = leadWebhookIdentityFromRow({
+    campaignId: input.campaignId,
+    campaignName: input.campaignName,
+    lead: input.lead ?? {
+      id: input.leadId,
+      email: input.fromEmail,
+    },
+    mailboxId: input.mailboxId,
+    mailboxEmail: input.mailboxEmail,
+  });
+
   return {
+    ...identity,
     thread_id: input.threadId,
     email_message_id: input.emailMessageId,
-    campaign_id: input.campaignId,
     campaign_name: input.campaignName?.trim() ? input.campaignName : null,
-    lead_id: input.leadId,
     enrollment_id: input.enrollmentId,
     mailbox_id: input.mailboxId,
     mailbox_email: input.mailboxEmail,

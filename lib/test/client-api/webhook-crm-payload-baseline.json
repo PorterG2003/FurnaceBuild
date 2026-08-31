@@ -1,0 +1,89 @@
+{
+  "captured_at": "2026-08-31T23:20:00Z",
+  "project": "lrfonoslwzodzijzdyiy",
+  "window": "7 days",
+  "identity_coverage": [
+    {
+      "event_type": "bounce.detected",
+      "events": 102,
+      "with_lead_email": 0,
+      "with_from_email": 0,
+      "with_campaign_name": 0,
+      "with_mailbox_email": 0,
+      "with_custom_fields": 0,
+      "truncated": 0,
+      "max_payload_bytes": 744,
+      "p99_payload_bytes": 684
+    },
+    {
+      "event_type": "email.sent",
+      "events": 18054,
+      "with_lead_email": 18054,
+      "with_from_email": 0,
+      "with_campaign_name": 18054,
+      "with_mailbox_email": 18054,
+      "with_custom_fields": 0,
+      "truncated": 0,
+      "max_payload_bytes": 593,
+      "p99_payload_bytes": 581
+    },
+    {
+      "event_type": "reply.categorized",
+      "events": 851,
+      "with_lead_email": 0,
+      "with_from_email": 850,
+      "with_campaign_name": 0,
+      "with_mailbox_email": 0,
+      "with_custom_fields": 0,
+      "truncated": 0,
+      "max_payload_bytes": 497,
+      "p99_payload_bytes": 453
+    },
+    {
+      "event_type": "reply.received",
+      "events": 206,
+      "with_lead_email": 0,
+      "with_from_email": 206,
+      "with_campaign_name": 206,
+      "with_mailbox_email": 206,
+      "with_custom_fields": 0,
+      "truncated": 0,
+      "max_payload_bytes": 2633,
+      "p99_payload_bytes": 1641
+    }
+  ],
+  "delivery_health": [
+    {
+      "event_type": "bounce.detected",
+      "deliveries": 15,
+      "delivered": 15,
+      "failed": 0,
+      "success_pct": 100.0,
+      "p95_latency_seconds": 1.418633
+    },
+    {
+      "event_type": "email.sent",
+      "deliveries": 2166,
+      "delivered": 2166,
+      "failed": 0,
+      "success_pct": 100.0,
+      "p95_latency_seconds": 1.64232
+    },
+    {
+      "event_type": "reply.categorized",
+      "deliveries": 433,
+      "delivered": 433,
+      "failed": 0,
+      "success_pct": 100.0,
+      "p95_latency_seconds": 0.601914
+    },
+    {
+      "event_type": "reply.received",
+      "deliveries": 28,
+      "delivered": 28,
+      "failed": 0,
+      "success_pct": 100.0,
+      "p95_latency_seconds": 13.593823
+    }
+  ]
+}

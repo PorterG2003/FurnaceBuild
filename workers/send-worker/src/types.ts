@@ -93,6 +93,8 @@ export interface MessageJob {
     /** Wire Message-ID of the first message in this send's subject epoch. */
     conversation_root_message_id?: string;
     attachments?: Array<{ filename: string; contentType?: string; content: string }>;
+    /** 1-based email step, persisted by the scheduler from flow_data send order. */
+    step_number?: number;
     /** Test harness flag: skip SMTP and still finalize as sent. */
     skip_smtp?: boolean;
   };
@@ -128,9 +130,15 @@ export interface Lead {
   email: string;
   first_name?: string;
   last_name?: string;
+  name?: string | null;
+  company_name?: string | null;
+  website?: string | null;
+  linkedin_url?: string | null;
+  company_linkedin_url?: string | null;
+  phone_number?: string | null;
+  custom_lead_data?: unknown;
   mailbox_id?: string | null;
   deleted_at?: string | null;
-  // ... other fields
 }
 
 // SQSMessage interface removed - no longer using SQS queue

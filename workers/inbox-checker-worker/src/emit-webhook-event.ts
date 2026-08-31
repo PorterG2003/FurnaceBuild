@@ -1,6 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-const WORKER_WEBHOOK_EVENT_TYPES = new Set(['reply.received', 'bounce.detected']);
+const WORKER_WEBHOOK_EVENT_TYPES = new Set([
+  'reply.received',
+  'bounce.detected',
+  'unsubscribe.detected',
+]);
 
 export async function emitWebhookEvent(
   supabase: SupabaseClient,

@@ -37,6 +37,7 @@ export const WEBHOOK_EVENT_LABELS: Record<WebhookEventType, string> = {
   'reply.received': 'Reply received',
   'reply.categorized': 'Reply categorized',
   'bounce.detected': 'Bounce detected',
+  'unsubscribe.detected': 'Unsubscribe detected',
 };
 
 export const WEBHOOK_EVENT_GROUPS: readonly WebhookEventGroup[] = [
@@ -86,8 +87,8 @@ export const WEBHOOK_EVENT_GROUPS: readonly WebhookEventGroup[] = [
   {
     id: 'email_activity',
     label: 'Email activity',
-    description: 'Sends, replies, categorization, and bounces.',
-    events: ['email.sent', 'reply.received', 'reply.categorized', 'bounce.detected'],
+    description: 'Sends, replies, categorization, bounces, and unsubscribes.',
+    events: ['email.sent', 'reply.received', 'reply.categorized', 'bounce.detected', 'unsubscribe.detected'],
   },
 ] as const;
 

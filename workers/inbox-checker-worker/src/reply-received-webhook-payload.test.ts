@@ -61,3 +61,32 @@ test('buildReplyReceivedWebhookPayload includes body and identity fields', () =>
   assert.equal(payload.mailbox_email, 'sender@example.com');
   assert.equal(payload.campaign_name, 'Wasatch corridor');
 });
+
+test('buildReplyReceivedWebhookPayload merges identity and keeps from_email', () => {
+  const payload = buildReplyReceivedWebhookPayload({
+    threadId: 'thread-1',
+    emailMessageId: 'msg-1',
+    campaignId: 'campaign-1',
+    campaignName: 'Wasatch corridor',
+    leadId: 'lead-1',
+    enrollmentId: 'enrollment-1',
+    mailboxId: 'mailbox-1',
+    mailboxEmail: 'sender@example.com',
+    fromEmail: 'lead@example.com',
+    subject: 'Re: Quick check-in',
+    bodyText: QUOTED_REPLY,
+    receivedAt: '2026-08-23T12:00:00.000Z',
+    lead: {
+      id: 'lead-1',
+      email: 'lead@example.com',
+      first_name: 'Casey',
+      company_name: 'Wasatch',
+      custom_lead_data: { title: 'VP Sales' },
+    },
+  });
+
+  assert.equal(payload.from_email, 'lead@example.com');
+  assert.equal(payload.email, 'lead@example.com');
+  assert.equal(payload.first_name, 'Casey');
+  assert.equal(payload.title, 'VP Sales');
+});

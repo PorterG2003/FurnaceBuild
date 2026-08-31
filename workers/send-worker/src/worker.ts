@@ -969,7 +969,7 @@ export class SendWorker {
         messageJob.node_id
           ? this.supabase
               .from('nodes')
-              .select('deleted_at')
+              .select('deleted_at, flow_node_id')
               .eq('id', messageJob.node_id)
               .maybeSingle()
           : Promise.resolve({ data: null, error: null } as any),
@@ -1419,6 +1419,11 @@ export class SendWorker {
             providerMessageId,
             sentAt: eventData.sent_at,
             subject,
+            bodyText: emailBodyText,
+            stepNumber: messageJob.message_data?.step_number,
+            nodeId: messageJob.node_id,
+            flowNodeId: (nodeResult.data as { flow_node_id?: string | null } | null)?.flow_node_id,
+            lead,
           }),
           dedupeKey: `email.sent:${messageJob.id}`,
         });

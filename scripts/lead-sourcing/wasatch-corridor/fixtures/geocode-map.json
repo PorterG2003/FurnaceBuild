@@ -1,0 +1,90 @@
+{
+  "123 Pioneer Rd, Lehi, Utah, 84043": {
+    "lat": 40.3916,
+    "lng": -111.8508,
+    "fips": "49049",
+    "placeName": "Lehi",
+    "county": "Utah County",
+    "matched": true
+  },
+  "50 W 300 S, Salt Lake City, Utah, 84101": {
+    "lat": 40.762,
+    "lng": -111.891,
+    "fips": "49035",
+    "placeName": "Salt Lake City",
+    "county": "Salt Lake County",
+    "matched": true
+  },
+  "200 State St, Salt Lake City, Utah": {
+    "lat": 40.76,
+    "lng": -111.89,
+    "fips": "49035",
+    "placeName": "Salt Lake City",
+    "county": "Salt Lake County",
+    "matched": true
+  },
+  "7700 S State St, Midvale, UT, 84047": {
+    "lat": 40.6112,
+    "lng": -111.8901,
+    "fips": "49035",
+    "placeName": "Midvale",
+    "county": "Salt Lake County",
+    "matched": true
+  },
+  "800 S Main St, Payson, UT, 84651": {
+    "lat": 40.0445,
+    "lng": -111.732,
+    "fips": "49049",
+    "placeName": "Payson",
+    "county": "Utah County",
+    "matched": true
+  },
+  "40.6112,-111.8901": {
+    "lat": 40.6112,
+    "lng": -111.8901,
+    "fips": "49035",
+    "placeName": "Midvale",
+    "county": "Salt Lake County",
+    "matched": true
+  },
+  "40.0445,-111.732": {
+    "lat": 40.0445,
+    "lng": -111.732,
+    "fips": "49049",
+    "placeName": "Payson",
+    "county": "Utah County",
+    "matched": true
+  },
+  "1577 N Technology Way, Orem, UT": {
+    "lat": 40.2969,
+    "lng": -111.6946,
+    "fips": "49049",
+    "placeName": "Orem",
+    "county": "Utah County",
+    "matched": true
+  },
+  "100 W Center St, Provo, UT": {
+    "lat": 40.2338,
+    "lng": -111.6585,
+    "fips": "49049",
+    "placeName": "Provo",
+    "county": "Utah County",
+    "matched": true
+  },
+  "123 Pioneer Rd, Lehi, UT": {
+    "lat": 40.3916,
+    "lng": -111.8508,
+    "fips": "49049",
+    "placeName": "Lehi",
+    "county": "Utah County",
+    "matched": true
+  },
+  "580 E 1400 N, Orem, UT": {
+    "lat": 40.312,
+    "lng": -111.684,
+    "fips": "49049",
+    "placeName": "Orem",
+    "county": "Utah County",
+    "matched": true
+  }
+}

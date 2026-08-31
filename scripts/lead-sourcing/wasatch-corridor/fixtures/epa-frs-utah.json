@@ -1,0 +1,23 @@
+[
+  {
+    "FacilityName": "Payson Plating",
+    "LocationAddress": "800 S Main St",
+    "CityName": "Payson",
+    "CountyName": "Utah",
+    "StateAbbr": "UT",
+    "PostalCode": "84651",
+    "Latitude83": 40.0445,
+    "Longitude83": -111.732,
+    "NAICSCode": "332813"
+  },
+  {
+    "FacilityName": "Santaquin Superfund Site",
+    "LocationAddress": "1 Dump Rd",
+    "CityName": "Santaquin",
+    "CountyName": "Utah",
+    "StateAbbr": "UT",
+    "Latitude83": 39.975,
+    "Longitude83": -111.785,
+    "NAICSCode": "562212"
+  }
+]

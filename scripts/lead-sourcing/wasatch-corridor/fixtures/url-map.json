@@ -1,0 +1,11 @@
+{
+  "https://acmeindustrial.test": "html/acme.html",
+  "https://acmeindustrial.test/about": "html/acme.html",
+  "https://acmeindustrial.test/contact": "html/acme-contact.html",
+  "https://wasatchce.test": "html/wasatchce.html",
+  "https://wasatchce.test/about": "html/wasatchce.html",
+  "https://wasatchce.test/webinars": "html/wasatchce-webinar.html",
+  "https://pipelinepros.test": "html/pipelinepros.html",
+  "https://midvalemachine.test": "html/midvale.html",
+  "https://midvalemachine.test/about": "html/midvale.html"
+}

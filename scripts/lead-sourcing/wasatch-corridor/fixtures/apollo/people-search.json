@@ -1,0 +1,19 @@
+{
+  "org_acme": [
+    { "title": "SDR", "seniority": "entry" },
+    { "title": "Founder & CEO", "seniority": "founder" }
+  ],
+  "acmeindustrial.test": [
+    { "title": "SDR", "seniority": "entry" },
+    { "title": "Founder & CEO", "seniority": "founder" }
+  ],
+  "wasatchce.test": [{ "title": "CEO", "seniority": "c_suite" }],
+  "org_wce": [{ "title": "CEO", "seniority": "c_suite" }],
+  "pipelinepros.test": [
+    { "title": "Demand Generation Manager", "headline": "Paid ads and SEO" }
+  ],
+  "org_pipe": [
+    { "title": "Demand Generation Manager", "headline": "Paid ads and SEO" }
+  ],
+  "default": []
+}

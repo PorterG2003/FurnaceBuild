@@ -1,0 +1,39 @@
+{
+  "name": "@furnace/thinkingmaps-lookalike",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "prep": "tsx src/prep.ts",
+    "fetch-ccd": "tsx src/fetchCcd.ts",
+    "match": "tsx src/match.ts",
+    "profile": "tsx src/profile.ts",
+    "score": "tsx src/score.ts",
+    "validate": "tsx src/validate.ts",
+    "all": "tsx src/run.ts",
+    "all:fixtures": "tsx src/run.ts --fixtures",
+    "phase2": "tsx src/phase2.ts",
+    "schools": "tsx src/wonSchoolContacts.ts --stage schools",
+    "schools:fixtures": "tsx src/wonSchoolContacts.ts --stage all --fixtures --quickenrich-result fixtures/quickenrich-result.csv",
+    "schools:directories": "tsx src/wonSchoolContacts.ts --stage directories",
+    "schools:resolve-sites": "tsx src/wonSchoolContacts.ts --stage resolve-sites",
+    "schools:quickenrich-import": "tsx src/wonSchoolContacts.ts --stage quickenrich-import",
+    "schools:moltsets": "tsx src/wonSchoolContacts.ts --stage moltsets",
+    "schools:apollo": "tsx src/wonSchoolContacts.ts --stage apollo",
+    "schools:pattern-emails": "tsx src/wonSchoolContacts.ts --stage pattern-emails",
+    "schools:state-directories": "tsx src/wonSchoolContacts.ts --stage state-directories",
+    "test": "node --import tsx --test src/*.test.ts src/**/*.test.ts"
+  },
+  "dependencies": {
+    "csv-parse": "^5.6.0",
+    "dotenv": "^16.4.7",
+    "exceljs": "^4.4.0",
+    "playwright": "^1.58.2",
+    "yaml": "^2.7.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "tsx": "^4.20.6",
+    "typescript": "^5.6.0"
+  }
+}

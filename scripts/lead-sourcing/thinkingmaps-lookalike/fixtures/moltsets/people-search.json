@@ -1,0 +1,15 @@
+{
+  "results": {
+    "results": [
+      {
+        "first_name": "Elena",
+        "last_name": "Brooks",
+        "title": "Assistant Principal",
+        "business_email": "elena.brooks@palmdalesd.org",
+        "business_email_risk_score": "A",
+        "linkedin_url": "https://linkedin.com/in/elenabrooks",
+        "company": { "name": "Tumbleweed Elementary" }
+      }
+    ]
+  }
+}

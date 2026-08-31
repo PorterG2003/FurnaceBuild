@@ -1,0 +1,29 @@
+{
+  "name": "@furnace/ce-vendor-providers",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "directories": "tsx src/ingest-directories.ts",
+    "directories:nbcc": "tsx src/ingest-directories.ts --directory nbcc --run-dir output/runs/ce-hosts-1",
+    "classify": "tsx src/classify-entries.ts",
+    "fit": "tsx src/resolve-fit.ts",
+    "harvest:host": "tsx src/harvest-search.ts --mode host",
+    "harvest:grant": "tsx src/harvest-search.ts --mode grant",
+    "aggregate": "tsx src/aggregate/run.ts",
+    "all": "tsx src/run.ts",
+    "all:fixtures": "tsx src/run.ts --fixtures",
+    "test": "node --import tsx --test src/**/*.test.ts"
+  },
+  "dependencies": {
+    "csv-parse": "^5.6.0",
+    "dotenv": "^16.4.7",
+    "playwright": "^1.58.2",
+    "yaml": "^2.7.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "tsx": "^4.20.6",
+    "typescript": "^5.6.0"
+  }
+}

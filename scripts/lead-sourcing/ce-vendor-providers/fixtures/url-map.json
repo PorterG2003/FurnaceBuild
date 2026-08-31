@@ -1,0 +1,19 @@
+{
+  "https://ledgersoft.example/": "homepages/ledgersoft.html",
+  "https://ledgersoft.example/cpe": "homepages/ledgersoft-cpe.html",
+  "https://cpe-institute.example/": "homepages/cpe-institute.html",
+  "https://therapymatch.example/": "homepages/therapymatch.html",
+  "https://therapymatch.example/ce": "homepages/therapymatch-ce.html",
+  "https://counseling-society.example/": "homepages/counseling-society.html",
+  "https://carebridge.example/": "homepages/carebridge.html",
+  "https://carebridge.example/ce": "homepages/carebridge-ce.html",
+  "https://countygeneral.example/": "homepages/county-general.html",
+  "https://acmewindows.example/": "homepages/acme-windows.html",
+  "https://acmewindows.example/ce": "homepages/acme-windows-ce.html",
+  "https://greence-academy.example/": "homepages/greence-academy.html",
+  "https://novo.example/grants": "pages/novo-grant-portal.html",
+  "https://granted.example/obesity-cme": "pages/grant-novo-activity.html",
+  "https://granted.example/poc-testing": "pages/grant-midmarket-activity.html",
+  "https://coi.example/grand-rounds": "pages/faculty-coi.html",
+  "https://host.example/counselor-webinar": "pages/host-therapymatch.html"
+}

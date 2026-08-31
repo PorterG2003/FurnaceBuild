@@ -1,0 +1,22 @@
+{
+  "organic": [
+    {
+      "title": "Advances in obesity care | Accredited CME",
+      "link": "https://granted.example/obesity-cme",
+      "snippet": "This activity is supported by an educational grant from Novo Nordisk Inc.",
+      "position": 1
+    },
+    {
+      "title": "Point-of-care testing update",
+      "link": "https://granted.example/poc-testing",
+      "snippet": "This activity is supported by an educational grant from MidMarket Diagnostics.",
+      "position": 2
+    },
+    {
+      "title": "Novo Nordisk Independent Medical Education grants",
+      "link": "https://novo.example/grants",
+      "snippet": "Apply for an educational grant. IME grant portal.",
+      "position": 3
+    }
+  ]
+}

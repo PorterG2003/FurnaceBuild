@@ -1,0 +1,31 @@
+# PARS-style commercial supporter spellings. Alias dictionary only — not a fit signal.
+# Keep parent and subsidiary separate.
+merges:
+  "novo nordisk": "Novo Nordisk"
+  "novo nordisk inc": "Novo Nordisk"
+  "eli lilly": "Eli Lilly"
+  "eli lilly and company": "Eli Lilly"
+  "lilly usa": "Eli Lilly"
+  "bristol myers squibb": "Bristol Myers Squibb"
+  "johnson johnson": "Johnson & Johnson"
+
+# Presence here does not mean prospect. Used only when clustering grant-disclosure names.
+known_pharma:
+  - Novo Nordisk
+  - Genentech
+  - Roche
+  - AstraZeneca
+  - Pfizer
+  - Eli Lilly
+  - Bristol Myers Squibb
+  - AbbVie
+  - Merck
+  - Amgen
+  - Johnson & Johnson
+  - Sanofi
+  - GSK
+  - Novartis
+  - Bayer
+  - Takeda
+  - Biogen
+  - Gilead

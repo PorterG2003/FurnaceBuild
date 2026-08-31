@@ -1,0 +1,16 @@
+{
+  "organic": [
+    {
+      "title": "Free CE webinar for counselors",
+      "link": "https://host.example/counselor-webinar",
+      "snippet": "Earn CE credit. This webinar is hosted by TherapyMatch.",
+      "position": 1
+    },
+    {
+      "title": "Faculty disclosures | Oncology grand rounds",
+      "link": "https://coi.example/grand-rounds",
+      "snippet": "Dr. Smith, consultant for Novo Nordisk, Pfizer, and AstraZeneca.",
+      "position": 2
+    }
+  ]
+}

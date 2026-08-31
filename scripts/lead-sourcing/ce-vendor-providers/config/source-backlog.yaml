@@ -1,0 +1,54 @@
+# Sources and ingest follow-ons.
+
+pilot:
+  - id: nasba
+    why: Public CPE-sponsor census. Mix of CE shops, firms, associations, government. Host list keeps shops + public-webinar firms.
+  - id: aswb
+    why: Social-work ACE JSON dump. Mostly education companies.
+  - id: nbcc
+    why: All ACEPs dump at search.nbcc.org/Search/ACEP. Counselor CE shops. Skip Home Study list.
+  - id: apa
+    why: APA CESA public sponsor table.
+  - id: aota
+    why: AOTA approved-provider PDF (~350).
+  - id: acpe
+    why: ACPE accredited providers by name.
+  - id: pace
+    why: FCLB PACE renewal schedule (chiropractic CE shops).
+  - id: ce_platform
+    why: Seed GreenCE, Ron Blank, AEC Daily, CE Strong, BNP, ARCAT as platform companies that fill live webinars. Do not scrape their manufacturer indexes.
+
+parked:
+  - id: ada_cerp
+    profession: dentist
+    url: https://ccepr.ada.org/view-ce-providers
+    why_parked: Landing page is a Coveo search box, not an all-orgs dump.
+  - id: cope
+    profession: optometrist
+    url: https://www.arbo.org/orgs/adminlist
+    why_parked: Administrator table is a JS DataTable. Parser exists; live_parse false until a static dump exists.
+  - id: insurance
+    profession: insurance_agent
+    why_parked: No national list — 50 state DOI/SBS systems.
+  - id: accme_providers
+    profession: physician
+    why_parked: Hospitals, societies, and med-ed companies. Wrong mix for training hosts.
+  - id: aia_course_catalog
+    profession: architect
+    url: https://www.aia.org/coursecatalog
+    why_parked: Search UI; mix of chapters, universities, platforms.
+  - id: apta
+    profession: physical_therapist
+    why_parked: No national provider list. State chapters only.
+  - id: hanley_wood
+    profession: architect
+    url: https://www.hanleywooduniversity.com/
+    why_parked: Dead; BNP CE Center is the successor. BNP the company is seeded as ce_platform.
+  - id: bluevolt
+    profession: mixed
+    url: https://bluevolt.com/
+    why_parked: Channel LMS, not a public provider list.
+
+follow_on:
+  - id: recover_listed_website
+    why_parked: Off-site URL is not required on the directory list. Recover company/CE URLs after classify is useful on rows that already have one.

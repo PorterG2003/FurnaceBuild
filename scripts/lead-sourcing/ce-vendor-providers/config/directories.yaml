@@ -1,0 +1,123 @@
+fetch:
+  rate_ms: 1500
+  timeout_ms: 15000
+  max_pages_per_directory: 80
+  user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+# Host list: approved-to-issue-credit dumps. Manufacturer sponsor indexes stay
+# in this file but enabled: false (sponsor campaign / fixtures still parse them).
+directories:
+  - id: nasba
+    audience_profession: cpa
+    accreditor: NASBA National Registry
+    start_url: "https://www.nasbaregistry.org/sponsor-list"
+    enabled: true
+  - id: aswb
+    audience_profession: social_worker
+    accreditor: ASWB ACE
+    start_url: "https://www.aswb.org/licenses/ace-approved-continuing-education/ace-provider-verification/"
+    json_url: "https://aswb.webauthor.com/lib/com/xm/fx.cfc?returnFormat=JSON&method=WebSiteEmbedSearch&type=Providers"
+    enabled: true
+  - id: nbcc
+    audience_profession: counselor
+    accreditor: NBCC ACEP
+    start_url: "https://www.nbcc.org/search/acepdirectory"
+    enabled: true
+    live_parse: true
+    browser: true
+  - id: apa
+    audience_profession: psychologist
+    accreditor: APA CESA
+    start_url: "https://apacesasearch.azurewebsites.net/"
+    follow_pagination: false
+    enabled: true
+  - id: aota
+    audience_profession: occupational_therapist
+    accreditor: AOTA APP
+    start_url: "https://www.aota.org/-/media/corporate/files/careers/approved-provider-list.pdf"
+    extra_urls:
+      - "https://app.aota.org/appproviders.aspx"
+    follow_pagination: false
+    enabled: true
+  - id: acpe
+    audience_profession: pharmacist
+    accreditor: ACPE
+    start_url: "https://www.acpe-accredit.org/program-lookup/?_insitution-program=cpe&_institution-type=providers"
+    json_url: "https://www.acpe-accredit.org/wp-json/wp/v2/institution?per_page=100&page=1"
+    fetch_start_with_json: true
+    extra_urls:
+      - "https://www.acpe-accredit.org/wp-json/wp/v2/institution?per_page=100&page=2"
+      - "https://www.acpe-accredit.org/wp-json/wp/v2/institution?per_page=100&page=3"
+      - "https://www.acpe-accredit.org/wp-json/wp/v2/institution?per_page=100&page=4"
+      - "https://www.acpe-accredit.org/wp-json/wp/v2/institution?per_page=100&page=5"
+      - "https://www.acpe-accredit.org/wp-json/wp/v2/institution?per_page=100&page=6"
+      - "https://www.acpe-accredit.org/wp-json/wp/v2/institution?per_page=100&page=7"
+      - "https://www.acpe-accredit.org/wp-json/wp/v2/institution?per_page=100&page=8"
+      - "https://www.acpe-accredit.org/program-lookup/?_insitution-program=cpe&_institution-type=jointly-accredited-providers"
+    follow_pagination: false
+    enabled: true
+  - id: pace
+    audience_profession: chiropractor
+    accreditor: FCLB PACE
+    start_url: "https://pacex.fclb.org/pages/ProviderRenewalSchedule.php"
+    follow_pagination: false
+    enabled: true
+  - id: ada_cerp
+    audience_profession: dentist
+    accreditor: ADA CERP
+    start_url: "https://ccepr.ada.org/view-ce-providers"
+    enabled: false
+  - id: cope
+    audience_profession: optometrist
+    accreditor: COPE
+    start_url: "https://www.arbo.org/orgs/adminlist"
+    json_url: "https://www.arbo.org/orgs/adminlist/ajax"
+    json_method: POST
+    json_body: "draw=1&start=0&length=5000"
+    enabled: true
+    live_parse: true
+    follow_pagination: false
+  - id: arcat
+    audience_profession: architect
+    accreditor: AIA CES (ARCAT manufacturer list)
+    start_url: "https://www.arcat.com/ces"
+    enabled: false
+  - id: greence
+    audience_profession: architect
+    accreditor: AIA CES (GreenCE manufacturer sponsors)
+    start_url: "https://www.greence.com/Course_Sponsors"
+    extra_urls:
+      - "https://www.greence.com/Webinars/Sponsors"
+      - "https://www.greence.com/Webinar_Courses/Sponsors"
+      - "https://www.greence.com/Lunch_And_Learn_Courses/Providers"
+    enabled: false
+  - id: ronblank
+    audience_profession: architect
+    accreditor: AIA CES (Ron Blank manufacturer sponsors)
+    start_url: "https://www.ronblank.com/Online_Courses/Course_Sponsors/A-Z"
+    extra_urls:
+      - "https://www.ronblank.com/Webinar_Courses/Sponsors/A-Z"
+      - "https://www.ronblank.com/Lunch_And_Learn_Courses/Providers/A-Z"
+    enabled: false
+  - id: aecdaily
+    audience_profession: architect
+    accreditor: AIA CES (AEC Daily manufacturer pages)
+    start_url: "https://www.aecdaily.com/olc.php?parent_id=236763&tabidx=featured"
+    extra_urls:
+      - "https://www.aecdaily.com/"
+      - "https://www.aecdaily.com/olc.php?parent_id=236763&tabidx=livecourse&subtabidx=sessions"
+      - "https://www.aecdaily.com/olc.php?parent_id=236763&tabidx=latest"
+    follow_pagination: false
+    enabled: false
+  - id: cestrong
+    audience_profession: architect
+    accreditor: AIA CES (CE Strong partners)
+    start_url: "https://www.cestrong.com/courses/"
+    json_url: "https://www.cestrong.com/wp-json/wp/v2/partners?per_page=100"
+    enabled: false
+  - id: bnp
+    audience_profession: architect
+    accreditor: AIA CES (BNP Media CE Center sponsors)
+    start_url: "https://continuingeducation.bnpmedia.com/sitemaps/sitemap_architect.xml"
+    follow_pagination: false
+    enabled: false

@@ -1,0 +1,21 @@
+# CE platform companies that host live webinars. Seed as prospects.
+# Do not scrape their manufacturer sponsor indexes.
+hosts:
+  - name: GreenCE
+    website: https://www.greence.com/
+    audience_profession: architect
+  - name: Ron Blank & Associates
+    website: https://www.ronblank.com/
+    audience_profession: architect
+  - name: AEC Daily
+    website: https://www.aecdaily.com/
+    audience_profession: architect
+  - name: CE Strong
+    website: https://www.cestrong.com/
+    audience_profession: architect
+  - name: BNP Media CE Center
+    website: https://continuingeducation.bnpmedia.com/
+    audience_profession: architect
+  - name: ARCAT
+    website: https://www.arcat.com/ces
+    audience_profession: architect

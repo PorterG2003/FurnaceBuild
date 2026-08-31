@@ -1,0 +1,30 @@
+[
+  {
+    "provider_name": "Iris Training Collective",
+    "website": "https://iristrainingcollective.com",
+    "home_study_only": false,
+    "former": false,
+    "source": "table"
+  },
+  {
+    "provider_name": "PESI, Inc.",
+    "website": "www.pesi.com",
+    "home_study_only": false,
+    "former": false,
+    "source": "table"
+  },
+  {
+    "provider_name": "Quiet Counsel Home Study LLC",
+    "website": "https://quietcounsel.example",
+    "home_study_only": true,
+    "former": false,
+    "source": "table"
+  },
+  {
+    "provider_name": "Former ACEP Counseling Group",
+    "website": "https://former.example",
+    "home_study_only": false,
+    "former": true,
+    "source": "table"
+  }
+]

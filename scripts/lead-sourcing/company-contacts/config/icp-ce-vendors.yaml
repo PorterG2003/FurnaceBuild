@@ -1,0 +1,122 @@
+contact_search:
+  max_contacts_per_company: 2
+  per_page: 15
+  fill_order:
+    - executive
+    - program
+    - marketing
+  person_titles:
+    executive:
+      - CEO
+      - Chief Executive Officer
+      - Founder
+      - Co-Founder
+      - Cofounder
+      - Owner
+      - President
+    program_and_marketing:
+      - CMO
+      - Chief Marketing Officer
+      - VP of Marketing
+      - Vice President of Marketing
+      - VP Marketing
+      - Head of Marketing
+      - Director of Marketing
+      - VP of Growth
+      - Head of Growth
+      - Demand Generation
+      - Head of Demand Gen
+      - Director of Demand Generation
+      - Director of Education
+      - Head of Education
+      - VP of Education
+      - Vice President of Education
+      - Continuing Education
+      - Director of Events
+      - Head of Events
+      - VP of Events
+      - Lunch and Learn
+  contact_tiers:
+    executive:
+      - founder
+      - co-founder
+      - ceo
+      - chief executive officer
+      - president
+      - owner
+    revops_function:
+      - revenue operations
+      - revops
+      - rev ops
+    revops_seniority:
+      - chief
+      - vp
+      - vice president
+      - head of
+    program_function:
+      - education
+      - continuing education
+      - specifier
+      - events
+      - event
+      - webinar
+      - lunch and learn
+      - lunch-and-learn
+    program_seniority:
+      - chief
+      - vp
+      - vice president
+      - head of
+      - director
+    marketing_function:
+      - marketing
+      - demand gen
+      - demand generation
+      - growth
+      - go-to-market
+      - gtm
+      - chief marketing officer
+      - cmo
+    marketing_seniority:
+      - chief
+      - vp
+      - vice president
+      - head of
+      - director
+    exclude:
+      - account executive
+      - account exec
+      - ae
+      - sdr
+      - bdr
+      - sales development
+      - business development representative
+      - customer success
+      - customer support
+      - customer partnerships
+      - support
+      - engineer
+      - legal
+      - hr
+      - finance
+      - board member
+      - franchise owner
+      - product owner
+      - chief risk officer
+      - sales enablement
+      - customer education
+      - higher education
+      - education sales
+      - vp of sales
+      - vice president of sales
+      - vp sales
+      - sales growth
+      - marketing coordinator
+      - marketing specialist
+      - sales coordinator
+      - inside sales
+      - sales rep
+      - sales representative
+      - director of revenue operations
+      - revops manager
+      - revenue operations manager

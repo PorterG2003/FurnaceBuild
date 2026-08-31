@@ -1,0 +1,50 @@
+serper_rate_ms: 500
+yield_stop:
+  zero_new_pages: 1
+  low_yield_threshold: 1
+  low_yield_streak: 2
+
+credit_terms:
+  - CE
+  - CEU
+  - CPE
+  - PDH
+  - "contact hours"
+  - "credit hours"
+  - "AIA LU"
+  - HSW
+
+# Own calendar / register — not manufacturer “sponsored by”.
+host_phrases:
+  - '"upcoming webinar"'
+  - '"live webinar" register'
+  - '"training calendar"'
+  - '"event calendar" webinar'
+  - '"register now" webinar'
+  - '"earn CE credit" webinar'
+  - '"live online" "continuing education"'
+
+grant_phrases:
+  - '"supported by an educational grant from"'
+  - '"supported by an independent educational grant from"'
+  - '"supported by educational grants from"'
+  - '"supported by an unrestricted educational grant from"'
+  - '"This activity is supported by an educational grant from"'
+  - '"commercial support" "educational grant"'
+  - '"supported by an ineligible company"'
+  - '"commercial support provided by"'
+
+host_modifiers:
+  specialties:
+    - counseling
+    - "social work"
+    - psychology
+    - "occupational therapy"
+    - pharmacy
+    - chiropractic
+    - accounting
+    - therapy
+  years:
+    - "2024"
+    - "2025"
+    - "2026"

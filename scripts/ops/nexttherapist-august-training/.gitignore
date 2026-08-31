@@ -1,0 +1,8 @@
+# Local run artifacts — repo is public
+*.csv
+*_result.json
+*_payload.json
+summary.json
+mailbox_ids.json
+included_global_lead_ids.json
+lead_list_seed_ids.json

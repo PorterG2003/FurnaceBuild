@@ -1,0 +1,9 @@
+{
+  "\"Acme Widgets\" official website": "acme-website.json",
+  "site:speakeasy.com": "soc2-empty.json",
+  "site:acmewidgets.example": "soc2-empty.json",
+  "site:dashcomplyops.com": "soc2-empty.json",
+  "site:managedriskpartners.com": "soc2-empty.json",
+  "site:finepointcpa.com": "soc2-empty.json",
+  "site:shiphero.com": "shiphero-soc2.json"
+}

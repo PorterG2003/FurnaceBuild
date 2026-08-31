@@ -1,0 +1,15 @@
+{
+  "knowledgeGraph": {
+    "website": "https://acmewidgets.example",
+    "title": "Acme Widgets",
+    "description": "Official site of Acme Widgets"
+  },
+  "organic": [
+    {
+      "title": "Acme Widgets — Home",
+      "link": "https://acmewidgets.example/",
+      "snippet": "Acme Widgets makes industrial widgets.",
+      "position": 1
+    }
+  ]
+}

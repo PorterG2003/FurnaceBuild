@@ -1,0 +1,100 @@
+{
+  "https://www.linkedin.com/company/shiphero": {
+    "organization": {
+      "id": "org_shiphero",
+      "name": "ShipHero",
+      "primary_domain": "shiphero.com",
+      "linkedin_url": "https://www.linkedin.com/company/shiphero",
+      "total_funding": 25000000,
+      "total_funding_printed": "25M",
+      "latest_funding_stage": "Series B",
+      "latest_funding_round_date": "2021-06-15T00:00:00.000+00:00",
+      "funding_events": [
+        {
+          "id": "evt_sh_b",
+          "date": "2021-06-15T00:00:00.000+00:00",
+          "type": "Series B",
+          "investors": "Riverwood Capital",
+          "amount": "17.5M",
+          "currency": "$"
+        },
+        {
+          "id": "evt_sh_a",
+          "date": "2019-03-01T00:00:00.000+00:00",
+          "type": "Series A",
+          "investors": "Iron Pillar",
+          "amount": "7.5M",
+          "currency": "$"
+        }
+      ]
+    }
+  },
+  "https://www.linkedin.com/company/dash-health-systems": {
+    "organization": {
+      "id": "org_dash",
+      "name": "Dash ComplyOps",
+      "primary_domain": "dashcomplyops.com",
+      "linkedin_url": "https://www.linkedin.com/company/dash-health-systems"
+    }
+  },
+  "https://www.linkedin.com/company/managed-risk-partners": {
+    "organization": {
+      "id": "org_mrp",
+      "name": "Managed Risk Partners",
+      "primary_domain": "managedriskpartners.com",
+      "linkedin_url": "https://www.linkedin.com/company/managed-risk-partners"
+    }
+  },
+  "https://www.linkedin.com/company/fine-point-cpa": {
+    "organization": {
+      "id": "org_fp",
+      "name": "Fine Point CPA",
+      "primary_domain": "finepointcpa.com",
+      "linkedin_url": "https://www.linkedin.com/company/fine-point-cpa"
+    }
+  },
+  "https://www.linkedin.com/company/speakeasyapi": {
+    "organization": {
+      "id": "org_speak",
+      "name": "Speakeasy",
+      "primary_domain": "speakeasy.com",
+      "linkedin_url": "https://www.linkedin.com/company/speakeasyapi",
+      "total_funding": 68000000,
+      "total_funding_printed": "68M",
+      "latest_funding_stage": "Series B",
+      "latest_funding_round_date": "2024-01-10T00:00:00.000+00:00",
+      "funding_events": [
+        {
+          "id": "evt_sp_b",
+          "date": "2024-01-10T00:00:00.000+00:00",
+          "type": "Series B",
+          "investors": "GV, Insight Partners",
+          "amount": "50M",
+          "currency": "$"
+        },
+        {
+          "id": "evt_sp_a",
+          "date": "2022-09-20T00:00:00.000+00:00",
+          "type": "Series A",
+          "investors": "Insight Partners",
+          "amount": "18M",
+          "currency": "$"
+        }
+      ]
+    }
+  },
+  "acmewidgets.example": {
+    "organization": {
+      "id": "org_acme",
+      "name": "Acme Widgets",
+      "primary_domain": "acmewidgets.example"
+    }
+  },
+  "acme widgets": {
+    "organization": {
+      "id": "org_acme",
+      "name": "Acme Widgets",
+      "primary_domain": "acmewidgets.example"
+    }
+  }
+}

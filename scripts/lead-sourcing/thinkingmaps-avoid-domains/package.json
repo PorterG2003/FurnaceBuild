@@ -1,0 +1,25 @@
+{
+  "name": "@furnace/thinkingmaps-avoid-domains",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "prep": "tsx src/prep.ts",
+    "resolve": "tsx src/resolve.ts",
+    "all": "tsx src/run.ts",
+    "all:fixtures": "tsx src/run.ts --fixtures",
+    "audit:evidence": "tsx src/auditEvidence.ts",
+    "collect:raleigh": "tsx src/collectRaleighEmails.ts",
+    "finalize:verified": "tsx src/finalizeVerified.ts",
+    "test": "node --import tsx --test src/*.test.ts src/**/*.test.ts"
+  },
+  "dependencies": {
+    "csv-parse": "^5.6.0",
+    "dotenv": "^16.4.7"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "tsx": "^4.20.6",
+    "typescript": "^5.6.0"
+  }
+}

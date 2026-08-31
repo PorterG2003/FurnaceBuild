@@ -8,6 +8,7 @@ import {
   selectMailboxFromPool,
   type CampaignMailboxRow,
 } from './mailbox-selection.js';
+import { isLifecycleSendEligibleCampaign } from './campaign-send-eligible.js';
 
 type LiveCampaignJobMailbox = {
   id: string;
@@ -193,7 +194,7 @@ export async function batchAssignIntervalJobs(
   // Get all campaigns with available/scheduled intervals
   const { data: campaigns, error: campaignsError } = await supabase
     .from('campaigns')
-    .select('id, jitter_percentage, account_id, accounts(jitter_percentage)')
+    .select('id, jitter_percentage, account_id, accounts(jitter_percentage), status, deleted_at, start_at, pause_at')
     .eq('status', 'running')
     .is('deleted_at', null)
     .not('sending_interval_seconds', 'is', null);
@@ -220,12 +221,17 @@ export async function batchAssignIntervalJobs(
   if (!campaigns || campaigns.length === 0) {
     return;
   }
+
+  const eligibleCampaigns = campaigns.filter((campaign) => isLifecycleSendEligibleCampaign(campaign));
+  if (eligibleCampaigns.length === 0) {
+    return;
+  }
   
-  console.log(`[BATCH INTERVAL] Processing ${campaigns.length} campaign(s)`);
+  console.log(`[BATCH INTERVAL] Processing ${eligibleCampaigns.length} campaign(s)`);
   
   let globalRotationIndex = rotationIndexBase;
   
-  for (const campaign of campaigns) {
+  for (const campaign of eligibleCampaigns) {
     try {
       // Load the earliest future incomplete interval. If the earliest one is locked,
       // later intervals are blocked anyway, so we can skip this campaign.

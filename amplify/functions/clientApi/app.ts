@@ -130,6 +130,19 @@ import {
   toCampaignListItem,
 } from '../../../lib/client-api/campaign-document.js';
 import {
+  canResumeWithLifecycleSchedule,
+  decideLaunchStatus,
+  DEFAULT_SCHEDULE_TIMEZONE,
+  lifecycleScheduleFromRow,
+  nextStatusAfterLifecycleEdit,
+  parseLifecycleScheduleBody,
+  presentCampaignLifecycle,
+  timezoneFromScheduleJson,
+  validateLifecycleSchedule,
+  validateLifecycleScheduleForStatus,
+  withScheduleTimezone,
+} from '../../../lib/campaigns/lifecycleSchedule.js';
+import {
   buildFlowDryRunResponse,
   buildFlowSaveResponse,
   prepareCampaignFlowForApi,
@@ -463,6 +476,62 @@ async function saveCampaignFlow(
   return { prepared: { ...prepared, flow: flowWithBucket }, reactivated_count: saveResult.reactivated_count };
 }
 
+function throwLifecycleError(error: { code: string; message: string; param: string }): never {
+  invalidRequest(error.code, error.message, error.param);
+}
+
+function parseOptionalLifecycleSchedule(body: Record<string, unknown>) {
+  if (!Object.prototype.hasOwnProperty.call(body, 'lifecycle_schedule')) {
+    return { present: false as const };
+  }
+  const parsed = parseLifecycleScheduleBody(body.lifecycle_schedule);
+  if (!parsed.ok) throwLifecycleError(parsed.error);
+  return { present: true as const, value: parsed.value };
+}
+
+function resolveCreateLifecycleColumns(body: Record<string, unknown>): {
+  schedule: unknown;
+  schedule_timezone: string;
+  start_date: string | null;
+  pause_date: string | null;
+} {
+  const schedule = 'schedule' in body ? (body.schedule ?? null) : DEFAULT_CAMPAIGN_SCHEDULE;
+  const scheduleTz = timezoneFromScheduleJson(schedule, DEFAULT_SCHEDULE_TIMEZONE);
+  const parsed = parseOptionalLifecycleSchedule(body);
+  if (!parsed.present) {
+    return {
+      schedule,
+      schedule_timezone: scheduleTz,
+      start_date: null,
+      pause_date: null,
+    };
+  }
+  if (parsed.value === null) {
+    return {
+      schedule,
+      schedule_timezone: scheduleTz,
+      start_date: null,
+      pause_date: null,
+    };
+  }
+  const shapeError = validateLifecycleSchedule(parsed.value);
+  if (shapeError) throwLifecycleError(shapeError);
+  const recurringTz = timezoneFromScheduleJson(schedule, parsed.value.time_zone);
+  if (schedule && typeof schedule === 'object' && recurringTz !== parsed.value.time_zone) {
+    invalidRequest(
+      'timezone_conflict',
+      'schedule.timezone must match lifecycle_schedule.time_zone',
+      'lifecycle_schedule.time_zone',
+    );
+  }
+  return {
+    schedule: withScheduleTimezone(schedule, parsed.value.time_zone),
+    schedule_timezone: parsed.value.time_zone,
+    start_date: parsed.value.start_on,
+    pause_date: parsed.value.pause_on,
+  };
+}
+
 async function applyCampaignStatusChange(
   supabase: Supabase,
   campaign: Database['public']['Tables']['campaigns']['Row'],
@@ -478,7 +547,21 @@ async function applyCampaignStatusChange(
   if (requestedStatus === 'running' && current === 'stopped') {
     invalidRequest('invalid_status_transition', 'Stopped campaigns cannot be resumed to running');
   }
+  if (requestedStatus === 'running' && current === 'scheduled') {
+    invalidRequest('campaign_use_launch', 'Clear start_on or wait for the start date to begin sending');
+  }
+  if (requestedStatus === 'paused' && current === 'scheduled') {
+    invalidRequest('invalid_status_transition', 'Scheduled campaigns cannot be paused; stop them or wait for start');
+  }
   if (requestedStatus === 'running' && current === 'paused') {
+    const lifecycle = lifecycleScheduleFromRow(campaign);
+    if (!canResumeWithLifecycleSchedule(lifecycle.pause_on, lifecycle.time_zone)) {
+      invalidRequest(
+        'pause_date_elapsed',
+        'Clear or move pause_on before resuming; the automatic pause date has already passed',
+        'lifecycle_schedule.pause_on',
+      );
+    }
     const { error } = await supabase.rpc('resume_campaign_and_reschedule_jobs', {
       p_campaign_id: campaign.id,
       p_pause_reason: 'Campaign paused',
@@ -491,7 +574,7 @@ async function applyCampaignStatusChange(
     if (error) throw new Error(`Failed to pause campaign: ${error.message}`);
     return { id: campaign.id, status: 'paused' };
   }
-  if (requestedStatus === 'stopped' && (current === 'running' || current === 'paused')) {
+  if (requestedStatus === 'stopped' && (current === 'running' || current === 'paused' || current === 'scheduled')) {
     const { error } = await supabase.rpc('stop_campaign_and_stop_enrollments', { p_campaign_id: campaign.id });
     if (error) throw new Error(`Failed to stop campaign: ${error.message}`);
     return { id: campaign.id, status: 'stopped' };
@@ -519,10 +602,10 @@ async function buildCampaignDetailResponse(
   const tagsMap = await getTagsForCampaignIds(supabase, [campaign.id]);
   const mailboxes = await listCampaignMailboxes(supabase, campaign.id);
   const base = await attachFlowRevision(attachTagsToCampaignRow(campaign, tagsMap), flow);
-  const data: Record<string, unknown> = {
+  const data: Record<string, unknown> = presentCampaignLifecycle({
     ...base,
     mailbox_ids: mailboxes.map((mailbox) => mailbox.id),
-  };
+  });
 
   if (include.has('launch_state')) {
     const leadsResult = await supabase
@@ -892,10 +975,10 @@ app.get('/v1/campaigns', async (c) => {
   const includeDeleted = c.req.query('include_deleted') === 'true';
   const q = c.req.query('q')?.trim();
   const status = c.req.query('status')?.trim();
-  if (status && !['draft', 'running', 'paused', 'stopped'].includes(status)) {
+  if (status && !['draft', 'scheduled', 'running', 'paused', 'stopped'].includes(status)) {
     invalidRequest(
       'invalid_status',
-      'status must be draft, running, paused, or stopped',
+      'status must be draft, scheduled, running, paused, or stopped',
       'status',
     );
   }
@@ -928,7 +1011,9 @@ app.get('/v1/campaigns', async (c) => {
     supabase,
     rows.map((row) => row.id),
   );
-  const enriched = rows.map((row) => attachTagsToCampaignRow(row, tagsMap)).map((row) => toCampaignListItem(row));
+  const enriched = rows
+    .map((row) => presentCampaignLifecycle(attachTagsToCampaignRow(row, tagsMap)))
+    .map((row) => toCampaignListItem(row));
   return jsonResponse(c, buildListPayload(enriched, limit, offset, count ?? 0), 200, c.get('rateLimitHeaders'));
 });
 
@@ -973,6 +1058,7 @@ app.post('/v1/campaigns', async (c) => {
       phase: 'draft',
     })).flow;
   const ownerId = await loadAccountOwnerUserIdOrThrow(supabase, auth.accountId);
+  const lifecycleColumns = resolveCreateLifecycleColumns(body);
   const { data: created, error } = await supabase
     .from('campaigns')
     .insert({
@@ -982,7 +1068,10 @@ app.post('/v1/campaigns', async (c) => {
       name,
       status: 'draft',
       source: 'manual',
-      schedule: 'schedule' in body ? (body.schedule ?? null) : DEFAULT_CAMPAIGN_SCHEDULE,
+      schedule: lifecycleColumns.schedule,
+      schedule_timezone: lifecycleColumns.schedule_timezone,
+      start_date: lifecycleColumns.start_date,
+      pause_date: lifecycleColumns.pause_date,
       sending_interval_seconds:
         typeof body.sending_interval_seconds === 'number' && Number.isFinite(body.sending_interval_seconds)
           ? body.sending_interval_seconds
@@ -1284,10 +1373,12 @@ app.post('/v1/campaigns/:id/launch', async (c) => {
 
   const leadIds = (leads ?? []).map((lead) => lead.id).filter(Boolean);
   await ensureCampaignEnrollmentsForLeadIds(supabase, campaign, leadIds);
+  const lifecycle = lifecycleScheduleFromRow(campaign);
+  const nextStatus = decideLaunchStatus(lifecycle.start_on, lifecycle.time_zone);
   const { error } = await supabase
     .from('campaigns')
     .update({
-      status: 'running',
+      status: nextStatus,
       updated_at: nowIso(),
     } as never)
     .eq('id', campaign.id)
@@ -1295,9 +1386,17 @@ app.post('/v1/campaigns/:id/launch', async (c) => {
   if (error) {
     throw new Error(`Failed to launch campaign: ${error.message}`);
   }
+  const launched = await loadCampaignOrThrow(supabase, auth.accountId, campaign.id);
   return jsonResponse(
     c,
-    { data: { id: campaign.id, status: 'running', enrolled: leadIds.length } },
+    {
+      data: {
+        id: campaign.id,
+        status: nextStatus,
+        enrolled: leadIds.length,
+        lifecycle_schedule: presentCampaignLifecycle(launched).lifecycle_schedule,
+      },
+    },
     200,
     c.get('rateLimitHeaders'),
   );
@@ -1320,6 +1419,61 @@ app.patch('/v1/campaigns/:id', async (c) => {
   if ('schedule' in body) patch.schedule = body.schedule ?? null;
   if (typeof body.sending_interval_seconds === 'number') {
     patch.sending_interval_seconds = body.sending_interval_seconds;
+  }
+
+  const currentLifecycle = lifecycleScheduleFromRow(campaign);
+  const parsedLifecycle = parseOptionalLifecycleSchedule(body);
+  let nextLifecycle = currentLifecycle;
+  if (parsedLifecycle.present) {
+    nextLifecycle = parsedLifecycle.value === null
+      ? { time_zone: currentLifecycle.time_zone, start_on: null, pause_on: null }
+      : parsedLifecycle.value;
+  } else if ('schedule' in body && body.schedule && typeof body.schedule === 'object') {
+    const scheduleTz = timezoneFromScheduleJson(body.schedule, currentLifecycle.time_zone);
+    nextLifecycle = { ...currentLifecycle, time_zone: scheduleTz };
+  }
+
+  if (parsedLifecycle.present || 'schedule' in body) {
+    const statusError = validateLifecycleScheduleForStatus({
+      status: campaign.status as CampaignStatus,
+      current: {
+        time_zone: currentLifecycle.time_zone,
+        start_on: currentLifecycle.start_on,
+        pause_on: currentLifecycle.pause_on,
+      },
+      next: {
+        time_zone: nextLifecycle.time_zone,
+        start_on: nextLifecycle.start_on,
+        pause_on: nextLifecycle.pause_on,
+      },
+    });
+    if (statusError) throwLifecycleError(statusError);
+    const shapeError = validateLifecycleSchedule({
+      time_zone: nextLifecycle.time_zone,
+      start_on: nextLifecycle.start_on,
+      pause_on: nextLifecycle.pause_on,
+    });
+    if (shapeError) throwLifecycleError(shapeError);
+    if ('schedule' in body && patch.schedule && typeof patch.schedule === 'object') {
+      const scheduleTz = timezoneFromScheduleJson(patch.schedule, nextLifecycle.time_zone);
+      if (scheduleTz !== nextLifecycle.time_zone) {
+        invalidRequest(
+          'timezone_conflict',
+          'schedule.timezone must match lifecycle_schedule.time_zone',
+          'lifecycle_schedule.time_zone',
+        );
+      }
+      patch.schedule = withScheduleTimezone(patch.schedule, nextLifecycle.time_zone);
+    }
+    patch.schedule_timezone = nextLifecycle.time_zone;
+    patch.start_date = nextLifecycle.start_on;
+    patch.pause_date = nextLifecycle.pause_on;
+    const statusChange = nextStatusAfterLifecycleEdit(
+      campaign.status as CampaignStatus,
+      nextLifecycle.start_on,
+      nextLifecycle.time_zone,
+    );
+    if (statusChange) patch.status = statusChange;
   }
   const addMailboxIds = Array.isArray(body.add_mailbox_ids) ? body.add_mailbox_ids.filter((value): value is string => typeof value === 'string') : [];
   const removeMailboxIds = Array.isArray(body.remove_mailbox_ids) ? body.remove_mailbox_ids.filter((value): value is string => typeof value === 'string') : [];
@@ -1355,7 +1509,7 @@ app.patch('/v1/campaigns/:id', async (c) => {
   }
   const refreshed = await loadCampaignOrThrow(supabase, auth.accountId, campaign.id);
   const tagsMap = await getTagsForCampaignIds(supabase, [refreshed.id]);
-  return jsonResponse(c, { data: attachTagsToCampaignRow(refreshed, tagsMap) }, 200, c.get('rateLimitHeaders'));
+  return jsonResponse(c, { data: presentCampaignLifecycle(attachTagsToCampaignRow(refreshed, tagsMap)) }, 200, c.get('rateLimitHeaders'));
 });
 
 app.delete('/v1/campaigns/:id', async (c) => {

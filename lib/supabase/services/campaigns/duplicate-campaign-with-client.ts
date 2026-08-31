@@ -89,11 +89,27 @@ async function updateCampaignSettingsWithClient(
   campaignId: string,
   sourceCampaign: Campaign,
 ): Promise<void> {
+  const scheduleTimezone =
+    sourceCampaign.schedule_timezone?.trim() ||
+    (sourceCampaign.schedule &&
+    typeof sourceCampaign.schedule === 'object' &&
+    !Array.isArray(sourceCampaign.schedule)
+      ? String((sourceCampaign.schedule as { timezone?: unknown }).timezone ?? '').trim()
+      : '') ||
+    'America/Chicago';
+  const schedule =
+    sourceCampaign.schedule &&
+    typeof sourceCampaign.schedule === 'object' &&
+    !Array.isArray(sourceCampaign.schedule)
+      ? { ...(sourceCampaign.schedule as Record<string, unknown>), timezone: scheduleTimezone }
+      : sourceCampaign.schedule;
+
   const { error } = await db
     .from('campaigns')
     .update({
       jitter_percentage: sourceCampaign.jitter_percentage,
-      schedule: sourceCampaign.schedule,
+      schedule,
+      schedule_timezone: scheduleTimezone,
       sending_interval_seconds: sourceCampaign.sending_interval_seconds,
       webhook_url_override: sourceCampaign.webhook_url_override,
       webhook_signing_secret_override: sourceCampaign.webhook_signing_secret_override,

@@ -1,7 +1,7 @@
 export interface CampaignListSummary {
   id: string;
   name: string;
-  status: 'draft' | 'running' | 'paused' | 'stopped';
+  status: 'draft' | 'scheduled' | 'running' | 'paused' | 'stopped';
   createdAt: string;
   source: string | null;
   hasFlow: boolean;

@@ -222,7 +222,7 @@ export interface EmailNodeModalProps {
     customFieldKeys?: string[];
     mappedStandardFieldKeys?: string[];
     /** Campaign lifecycle: draft = pre-start */
-    campaignStatus?: 'draft' | 'running' | 'paused' | 'stopped';
+    campaignStatus?: 'draft' | 'scheduled' | 'running' | 'paused' | 'stopped';
   };
 }
 
@@ -252,7 +252,10 @@ function emailNodeDraftEquals(a: EmailNodeDraftSnapshot, b: EmailNodeDraftSnapsh
 }
 
 function EmailNodeModal({ visible, onClose, onSave, initialData }: EmailNodeModalProps) {
-  const isPostStart = initialData?.campaignStatus != null && initialData.campaignStatus !== 'draft';
+  const isPostStart =
+    initialData?.campaignStatus != null &&
+    initialData.campaignStatus !== 'draft' &&
+    initialData.campaignStatus !== 'scheduled';
 
   const [label, setLabel] = useState(initialData?.label || 'Send Email');
   const [variants, setVariants] = useState<EmailNodeVariant[]>([]);

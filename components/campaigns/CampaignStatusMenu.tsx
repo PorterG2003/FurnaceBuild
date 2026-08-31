@@ -19,7 +19,7 @@ import { usePickerInsideBottomSheet } from '@/components/ui/modals/PickerInsideB
 import { getFormDropdownPanelStyle } from '@/components/ui/forms/formDropdownPopup';
 import { CampaignStopConfirmModal } from './CampaignStopConfirmModal';
 
-export type CampaignStatusMenuStatus = 'draft' | 'running' | 'paused' | 'stopped';
+export type CampaignStatusMenuStatus = 'draft' | 'scheduled' | 'running' | 'paused' | 'stopped';
 
 export const STATUS_TRIGGER_THEME: Record<
   CampaignStatusMenuStatus,
@@ -30,6 +30,12 @@ export const STATUS_TRIGGER_THEME: Record<
     borderColor: '#9CA3AF35',
     textColor: '#9CA3AF',
     label: 'Draft',
+  },
+  scheduled: {
+    backgroundColor: '#1E3A8A25',
+    borderColor: '#60A5FA35',
+    textColor: '#60A5FA',
+    label: 'Scheduled',
   },
   running: {
     backgroundColor: '#065F4625',
@@ -167,7 +173,7 @@ export function CampaignStatusMenu({
   const [stopConfirmOpen, setStopConfirmOpen] = useState(false);
 
   const hasActions =
-    !readOnly && (status === 'running' || status === 'paused') && onStop != null;
+    !readOnly && (status === 'running' || status === 'paused' || status === 'scheduled') && onStop != null;
   const busy = isPausing || isStarting || isStopping;
 
   const close = useCallback(() => setOpen(false), []);
@@ -199,6 +205,18 @@ export function CampaignStatusMenu({
           disabled: busy || !onPause,
           icon: PauseIcon,
         },
+        {
+          key: 'stop',
+          label: isStopping ? 'Stopping...' : 'Stop campaign',
+          onPress: openStopConfirm,
+          disabled: busy,
+          tone: 'destructive',
+          icon: StopIcon,
+        },
+      ];
+    }
+    if (status === 'scheduled') {
+      return [
         {
           key: 'stop',
           label: isStopping ? 'Stopping...' : 'Stop campaign',

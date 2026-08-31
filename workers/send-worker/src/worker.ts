@@ -36,6 +36,7 @@ import type { MessageJob, Mailbox, Lead } from './types.js';
 import { isCampaignMessageJob, isPriorityCampaignJob } from './types.js';
 import { calculateNextRunAt } from '@furnace/campaign-lib/schedule.js';
 import type { CampaignSchedule } from '@furnace/campaign-lib/schedule.js';
+import { shouldDeferReservedCampaignJob } from './campaign-send-eligible.js';
 import {
   buildSentAttachmentMetadata,
   markAttachmentUploadsSent,
@@ -335,25 +336,15 @@ export class SendWorker {
   }
 
   private async markMessageJobSendingIfReserved(messageJobId: string): Promise<boolean> {
-    const now = new Date().toISOString();
-    const { data, error } = await this.supabase
-      .from('message_jobs')
-      .update({
-        status: 'sending',
-        status_reason: null,
-        sending_started_at: now,
-        updated_at: now,
-      })
-      .eq('id', messageJobId)
-      .eq('status', 'reserved')
-      .select('id')
-      .maybeSingle();
+    const { data, error } = await this.supabase.rpc('try_mark_campaign_message_job_sending', {
+      p_message_job_id: messageJobId,
+    });
 
     if (error) {
       throw new Error(`Failed to mark message job ${messageJobId} as sending: ${error.message}`);
     }
 
-    return !!data?.id;
+    return data === true;
   }
 
   private async failCampaignMessageJob(
@@ -934,7 +925,7 @@ export class SendWorker {
       // 1b. Block list check — skip campaign sends to blocked addresses
       const { data: campaign } = await this.supabase
         .from('campaigns')
-        .select('account_id, status, deleted_at, schedule, name')
+        .select('account_id, status, deleted_at, schedule, name, start_at, pause_at')
         .eq('id', messageJob.campaign_id)
         .single();
 
@@ -943,7 +934,10 @@ export class SendWorker {
       const canFinishClaimedJob =
         campaign &&
         !campaign.deleted_at &&
-        (campaign.status === 'running' || campaign.status === 'paused' || campaign.status === 'stopped');
+        (campaign.status === 'running' ||
+          campaign.status === 'paused' ||
+          campaign.status === 'stopped' ||
+          campaign.status === 'scheduled');
 
       if (!canFinishClaimedJob) {
         const reason = campaign?.deleted_at
@@ -953,9 +947,9 @@ export class SendWorker {
         await this.cancelCampaignMessageJob(messageJob, reason);
         return;
       }
-      if (campaign.status === 'paused') {
+      if (shouldDeferReservedCampaignJob(campaign)) {
         console.log(
-          `[SEND WORKER] Campaign ${messageJob.campaign_id} is paused. Deferring reserved attempt ${message_job_id} back to scheduler ownership.`,
+          `[SEND WORKER] Campaign ${messageJob.campaign_id} is not send-eligible (${campaign.status}). Deferring reserved attempt ${message_job_id} back to scheduler ownership.`,
         );
         await this.deferCampaignMessageJobForPause(messageJob);
         return;
@@ -1069,7 +1063,7 @@ export class SendWorker {
 
       const { data: currentCampaign, error: currentCampaignError } = await this.supabase
         .from('campaigns')
-        .select('status')
+        .select('status, deleted_at, start_at, pause_at')
         .eq('id', messageJob.campaign_id)
         .single();
 
@@ -1080,9 +1074,9 @@ export class SendWorker {
         );
       }
 
-      if (currentCampaign?.status === 'paused') {
+      if (currentCampaign && shouldDeferReservedCampaignJob(currentCampaign)) {
         console.log(
-          `[SEND WORKER] Campaign ${messageJob.campaign_id} paused before SMTP send. Deferring reserved attempt ${message_job_id}.`,
+          `[SEND WORKER] Campaign ${messageJob.campaign_id} is not send-eligible before SMTP send. Deferring reserved attempt ${message_job_id}.`,
         );
         await this.deferCampaignMessageJobForPause(messageJob);
         return;

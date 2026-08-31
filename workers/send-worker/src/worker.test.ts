@@ -215,6 +215,11 @@ class ProcessMessageRpcStub {
 class ProcessMessageSupabase {
   readonly rpcCalls: Array<{ fn: string; args: Record<string, unknown> }> = [];
   readonly tableUpdates: Array<{ table: string; updates: Record<string, unknown> }> = [];
+  private readonly campaignOverrides: Record<string, unknown>;
+
+  constructor(campaignOverrides: Record<string, unknown> = {}) {
+    this.campaignOverrides = campaignOverrides;
+  }
 
   from(table: string) {
     return new ProcessMessageMutationStub(table, this);
@@ -239,6 +244,9 @@ class ProcessMessageSupabase {
           status: 'running',
           deleted_at: null,
           name: 'Wasatch corridor',
+          start_at: null,
+          pause_at: null,
+          ...this.campaignOverrides,
         },
         error: null,
       };
@@ -273,6 +281,12 @@ class ProcessMessageSupabase {
         error: null,
       };
     }
+    if (fn === 'try_mark_campaign_message_job_sending') {
+      return {
+        data: true,
+        error: null,
+      };
+    }
     return { data: null, error: null };
   }
 }
@@ -299,18 +313,20 @@ class ReplyRetrySupabase {
 
   rpc(fn: string, args: Record<string, unknown>) {
     this.rpcCalls.push({ fn, args });
-    return {
-      single: async () =>
-        fn === 'check_mailbox_throttle_and_reserve'
-          ? {
-              data: {
-                success: false,
-                failure_reason: 'Minimum gap between sends not met',
-              },
-              error: null,
-            }
-          : { data: null, error: null },
-    };
+    const payload =
+      fn === 'check_mailbox_throttle_and_reserve'
+        ? {
+            data: {
+              success: false,
+              failure_reason: 'Minimum gap between sends not met',
+            },
+            error: null,
+          }
+        : fn === 'try_mark_campaign_message_job_sending'
+          ? { data: true, error: null }
+          : { data: null, error: null };
+    const promise = Promise.resolve(payload);
+    return Object.assign(promise, { single: () => promise });
   }
 
   private resolveTableResult(call: RecordedCall) {
@@ -442,18 +458,20 @@ class InboxForwardSupabase {
 
   rpc(fn: string, args: Record<string, unknown>) {
     this.rpcCalls.push({ fn, args });
-    return {
-      single: async () =>
-        fn === 'check_mailbox_throttle_and_reserve'
-          ? {
-              data: {
-                success: true,
-                failure_reason: null,
-              },
-              error: null,
-            }
-          : { data: null, error: null },
-    };
+    const payload =
+      fn === 'check_mailbox_throttle_and_reserve'
+        ? {
+            data: {
+              success: true,
+              failure_reason: null,
+            },
+            error: null,
+          }
+        : fn === 'try_mark_campaign_message_job_sending'
+          ? { data: true, error: null }
+          : { data: null, error: null };
+    const promise = Promise.resolve(payload);
+    return Object.assign(promise, { single: () => promise });
   }
 
   private resolveTableResult(call: RecordedCall) {
@@ -1732,4 +1750,58 @@ test('SendWorker.stop wakes sleep and does not leave running=true', async () => 
   await startPromise;
   assert.ok(before >= 1);
   assert.equal(pollCount, before);
+});
+
+test('SendWorker defers reserved campaign jobs outside lifecycle bounds', async () => {
+  const supabase = new ProcessMessageSupabase({
+    pause_at: '2020-01-01T00:00:00.000Z',
+  });
+  const worker = new SendWorker({
+    supabase: supabase as any,
+    databaseClient: {} as any,
+    campaignEmailSender: async () => {
+      throw new Error('must not send');
+    },
+  });
+  const messageJob = createCampaignMessageJob();
+  stubCampaignSendWorker(worker, messageJob);
+
+  await (worker as any).processMessageJob(messageJob);
+
+  const deferred = supabase.tableUpdates.find(
+    (row) => row.table === 'message_jobs' && row.updates.status === 'deferred',
+  );
+  assert.ok(deferred);
+  assert.equal(deferred.updates.status_reason, 'campaign_paused');
+  assert.equal(
+    supabase.rpcCalls.some((call) => call.fn === 'try_mark_campaign_message_job_sending'),
+    false,
+  );
+});
+
+test('SendWorker uses try_mark_campaign_message_job_sending before SMTP', async () => {
+  const supabase = new ProcessMessageSupabase();
+  const worker = new SendWorker({
+    supabase: supabase as any,
+    databaseClient: {} as any,
+    campaignEmailSender: async () => ({
+      submittedMessageId: '<job-1@furnace.build>',
+      providerMessageId: '<provider@example.com>',
+    }),
+  });
+  const messageJob = createCampaignMessageJob({
+    message_data: {
+      node_config: {
+        subject: 'Hello',
+        body_html: '<p>Hi</p>',
+        body_text: 'Hi',
+      },
+      skip_smtp: true,
+    },
+  });
+  stubCampaignSendWorker(worker, messageJob, { firstSent: null });
+  await (worker as any).processMessageJob(messageJob);
+  assert.ok(
+    supabase.rpcCalls.some((call) => call.fn === 'try_mark_campaign_message_job_sending'),
+  );
 });

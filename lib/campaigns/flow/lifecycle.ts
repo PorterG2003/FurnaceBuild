@@ -53,6 +53,8 @@ export type FlowBadgeConfig = {
   showLockIcon: boolean;
 };
 
+export const FLOW_BADGE_SECONDARY_SCHEDULED = 'Scheduled';
+
 export function isDraftCampaignStatus(status: CampaignStatus | null | undefined): boolean {
   return status === 'draft';
 }
@@ -62,11 +64,11 @@ export function isFlowReadOnly(status: CampaignStatus | null | undefined): boole
 }
 
 export function isContentEditAllowed(status: CampaignStatus | null | undefined): boolean {
-  return status === 'draft' || status === 'running' || status === 'paused';
+  return status === 'draft' || status === 'scheduled' || status === 'running' || status === 'paused';
 }
 
 export function isStructuralEditAllowed(status: CampaignStatus | null | undefined): boolean {
-  return status === 'draft' || status === 'paused';
+  return status === 'draft' || status === 'scheduled' || status === 'paused';
 }
 
 /** @deprecated Use isStructuralEditAllowed / isFlowReadOnly instead */
@@ -78,6 +80,12 @@ export function getFlowBadgeConfig(status: CampaignStatus | null | undefined): F
   if (!status || status === 'draft') return null;
 
   switch (status) {
+    case 'scheduled':
+      return {
+        secondaryLabel: FLOW_BADGE_SECONDARY_SCHEDULED,
+        tooltip: null,
+        showLockIcon: false,
+      };
     case 'running':
       return {
         secondaryLabel: FLOW_BADGE_SECONDARY_RUNNING,
@@ -112,7 +120,7 @@ export function getFlowEditPolicy(
       message: FLOW_TOAST_STOPPED,
     };
   }
-  if (status === 'draft' || status === 'paused') {
+  if (status === 'draft' || status === 'paused' || status === 'scheduled') {
     return { allowed: true };
   }
   if (status === 'running' && changeKind === 'content') {

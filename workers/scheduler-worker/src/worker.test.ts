@@ -22,7 +22,9 @@ function toLatestJobRow(pair: { enrollment_id: string; node_id: string }) {
 
 function createWorker() {
   return new SchedulerWorker({
-    supabase: {} as any,
+    supabase: {
+      rpc: async () => ({ data: 0, error: null }),
+    } as any,
     databaseClient: {
       async poll() {
         return [];
@@ -187,6 +189,7 @@ test('SchedulerWorker.stop clears background timers', async () => {
     { id: 'stale-lock-cleanup' },
     { id: 'batch-interval-assignment' },
     { id: 'ooo-resume' },
+    { id: 'campaign-schedule' },
     { id: 'stale-reserved-reclaim' },
     { id: 'self-recovery-audit' },
     { id: 'categorizer-sweep' },
@@ -195,9 +198,10 @@ test('SchedulerWorker.stop clears background timers', async () => {
   (worker as any).staleLockCleanupTimer = timerHandles[1];
   (worker as any).batchIntervalAssignmentTimer = timerHandles[2];
   (worker as any).oooResumeTimer = timerHandles[3];
-  (worker as any).staleReservedReclaimTimer = timerHandles[4];
-  (worker as any).selfRecoveryAuditTimer = timerHandles[5];
-  (worker as any).categorizerSweepTimer = timerHandles[6];
+  (worker as any).campaignScheduleTimer = timerHandles[4];
+  (worker as any).staleReservedReclaimTimer = timerHandles[5];
+  (worker as any).selfRecoveryAuditTimer = timerHandles[6];
+  (worker as any).categorizerSweepTimer = timerHandles[7];
 
   const originalClearInterval = global.clearInterval;
   const cleared: unknown[] = [];
@@ -690,6 +694,8 @@ test('SchedulerWorker shapes load after a full claim batch', async () => {
   (worker as any).startIntervalMaintenance = () => {};
   (worker as any).startStaleLockCleanup = () => {};
   (worker as any).startBatchIntervalAssignment = () => {};
+  (worker as any).startOutOfOfficeResumeProcessing = () => {};
+  (worker as any).startCampaignScheduleProcessing = () => {};
   (worker as any).loadCampaignContexts = async () =>
     new Map([
       [
@@ -727,4 +733,63 @@ test('SchedulerWorker shapes load after a full claim batch', async () => {
   await worker.start();
 
   assert.ok(sleeps.includes(750));
+});
+
+test('processEnrollment defers enrollments when the campaign is outside lifecycle bounds', async () => {
+  const updates: Array<{ table: string; payload: Record<string, unknown> }> = [];
+  const worker = createWorker();
+  (worker as any).supabase = {
+    from(table: string) {
+      const builder = {
+        update(payload: Record<string, unknown>) {
+          updates.push({ table, payload });
+          return this;
+        },
+        eq() {
+          return this;
+        },
+        then<TResult1 = { data: null; error: null }, TResult2 = never>(
+          onfulfilled?: ((value: { data: null; error: null }) => TResult1 | PromiseLike<TResult1>) | null,
+          onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
+        ) {
+          return Promise.resolve({ data: null, error: null }).then(
+            onfulfilled ?? undefined,
+            onrejected ?? undefined,
+          );
+        },
+      };
+      return builder;
+    },
+  };
+
+  const enrollment: Enrollment = {
+    id: 'enrollment-1',
+    campaign_id: 'campaign-1',
+    lead_id: 'lead-1',
+    current_node_id: null,
+    state: 'active',
+    next_run_at: '2026-08-01T00:00:00.000Z',
+    flow_position: {},
+    created_at: '2026-08-01T00:00:00.000Z',
+    updated_at: '2026-08-01T00:00:00.000Z',
+  };
+
+  const outcome = await (worker as any).processEnrollment(enrollment, {
+    campaign: {
+      id: 'campaign-1',
+      flow_data: { nodes: [], edges: [] },
+      schedule: null,
+      owner_id: 'owner-1',
+      account_id: 'account-1',
+      created_at: '2026-08-01T00:00:00.000Z',
+      status: 'running',
+      deleted_at: null,
+      pause_at: '2020-01-01T00:00:00.000Z',
+    },
+  });
+
+  assert.equal(outcome, 'campaign_paused');
+  assert.equal(updates.length, 1);
+  assert.equal(updates[0].table, 'enrollments');
+  assert.equal(typeof updates[0].payload.next_run_at, 'string');
 });

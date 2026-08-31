@@ -3,6 +3,7 @@ import { View, Text } from 'react-native';
 
 const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
   draft: { bg: '#374151', text: '#9CA3AF' },
+  scheduled: { bg: '#1E3A8A', text: '#60A5FA' },
   running: { bg: '#065F46', text: '#10B981' },
   paused: { bg: '#78350F', text: '#F59E0B' },
   stopped: { bg: '#8B2E1F', text: '#EF5540' },
@@ -10,6 +11,7 @@ const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
 
 const STATUS_LABELS: Record<string, string> = {
   draft: 'Draft',
+  scheduled: 'Scheduled',
   running: 'Running',
   paused: 'Paused',
   stopped: 'Stopped',

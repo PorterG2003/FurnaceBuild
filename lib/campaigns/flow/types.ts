@@ -1,7 +1,7 @@
 import type { EmailEditorMode } from '../../email/emailHtmlMode.js';
 import type { EmailNodeVariant } from '../../email/emailNodeVariants.js';
 
-export type CampaignStatus = 'draft' | 'running' | 'paused' | 'stopped';
+export type CampaignStatus = 'draft' | 'scheduled' | 'running' | 'paused' | 'stopped';
 
 export type FlowNodeType =
   | 'leadSource'

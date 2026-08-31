@@ -66,21 +66,41 @@ test('seeded scheduler states distinguish running, future, stopped, and paused e
       ],
     });
 
+    const scheduledGraph = await harness.createCampaignGraph({
+      name: 'Scheduler Claim Scheduled',
+      status: 'scheduled',
+      flowKind: 'emailOnly',
+      startDate: '2099-01-01',
+      scheduleTimezone: 'America/Chicago',
+      leads: [
+        buildCampaignLead({
+          key: 'scheduled-claimable',
+          email: `scheduled-${harness.namespace}@furnace.test`,
+          enrollment: buildCampaignEnrollment({
+            state: 'active',
+            currentFlowNodeId: null,
+            nextRunAt: new Date(now - 24 * 60 * 60 * 1000).toISOString(),
+          }),
+        }),
+      ],
+    });
+
     const runningClaimable = runningGraph.leadsByKey.get('claimable')!.enrollmentId!;
     const runningFuture = runningGraph.leadsByKey.get('future-active')!.enrollmentId!;
     const runningStopped = runningGraph.leadsByKey.get('stopped')!.enrollmentId!;
     const pausedClaimable = pausedGraph.leadsByKey.get('paused-claimable')!.enrollmentId!;
+    const scheduledClaimable = scheduledGraph.leadsByKey.get('scheduled-claimable')!.enrollmentId!;
 
     const { data: rows, error: rowsError } = await harness.supabase
       .from('enrollments')
       .select('id, campaign_id, state, next_run_at')
-      .in('id', [runningClaimable, runningFuture, runningStopped, pausedClaimable]);
+      .in('id', [runningClaimable, runningFuture, runningStopped, pausedClaimable, scheduledClaimable]);
     assert.equal(rowsError, null);
     const rowById = new Map((rows ?? []).map((row: any) => [row.id, row]));
     const { data: campaigns, error: campaignsError } = await harness.supabase
       .from('campaigns')
       .select('id, status')
-      .in('id', [runningGraph.campaignId, pausedGraph.campaignId]);
+      .in('id', [runningGraph.campaignId, pausedGraph.campaignId, scheduledGraph.campaignId]);
     assert.equal(campaignsError, null);
     const campaignStatusById = new Map((campaigns ?? []).map((row: any) => [row.id, row.status]));
 
@@ -103,6 +123,10 @@ test('seeded scheduler states distinguish running, future, stopped, and paused e
     assert.equal(pausedClaimableRow?.state, 'active');
     assert.equal(campaignStatusById.get(pausedClaimableRow?.campaign_id), 'paused');
     assert.ok(Date.parse(pausedClaimableRow?.next_run_at ?? '') <= now);
+
+    const scheduledClaimableRow = rowById.get(scheduledClaimable);
+    assert.equal(scheduledClaimableRow?.state, 'active');
+    assert.equal(campaignStatusById.get(scheduledClaimableRow?.campaign_id), 'scheduled');
   } finally {
     await harness.cleanup();
   }

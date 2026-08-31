@@ -140,7 +140,7 @@ export function buildLlmsTxt(baseUrl = 'https://api.getfurnace.io'): string {
     '5. POST /v1/campaigns/{id}/launch — start sending',
     '',
     '## Good to know',
-    '- Campaigns move draft -> running -> paused/stopped',
+    '- Campaigns move draft -> running or scheduled -> paused/stopped',
     '- Running allows email copy and timing edits; pause to add/remove/reorder steps',
     '- Personalize with {{first_name}} and {{custom.company}} tokens',
     '- Read replies via /v1/threads; sending a reply returns a message job to poll',

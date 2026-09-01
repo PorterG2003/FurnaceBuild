@@ -137,6 +137,7 @@ import {
   nextStatusAfterLifecycleEdit,
   parseLifecycleScheduleBody,
   presentCampaignLifecycle,
+  type LifecycleScheduleInput,
   timezoneFromScheduleJson,
   validateLifecycleSchedule,
   validateLifecycleScheduleForStatus,
@@ -1423,7 +1424,7 @@ app.patch('/v1/campaigns/:id', async (c) => {
 
   const currentLifecycle = lifecycleScheduleFromRow(campaign);
   const parsedLifecycle = parseOptionalLifecycleSchedule(body);
-  let nextLifecycle = currentLifecycle;
+  let nextLifecycle: LifecycleScheduleInput = currentLifecycle;
   if (parsedLifecycle.present) {
     nextLifecycle = parsedLifecycle.value === null
       ? { time_zone: currentLifecycle.time_zone, start_on: null, pause_on: null }

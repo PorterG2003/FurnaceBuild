@@ -7,7 +7,7 @@ import {
 import type { DocLinkMode } from './docLinks.js';
 import { guideLink } from './docLinks.js';
 
-const WEBHOOK_EVENT_DESCRIPTIONS: Record<WebhookEventType, string> = {
+export const WEBHOOK_EVENT_DESCRIPTIONS: Record<WebhookEventType, string> = {
   'lead.created': 'A single lead was created via `POST /v1/campaigns/{id}/leads`.',
   'lead.updated': 'A single lead was updated via `PATCH /v1/campaigns/{id}/leads/{leadId}`.',
   'lead.deleted': 'A single lead was deleted via `DELETE /v1/campaigns/{id}/leads/{leadId}`.',
@@ -33,12 +33,15 @@ const WEBHOOK_EVENT_DESCRIPTIONS: Record<WebhookEventType, string> = {
   'campaign.resumed': 'The campaign was resumed.',
   'campaign.stopped': 'The campaign was stopped.',
   'email.sent':
-    'An outbound campaign email was sent. `data.email` is the lead recipient address for CRM matching; `mailbox_email` and `campaign_name` identify the sender and campaign.',
+    'An outbound campaign email was sent. `data.email` is the lead recipient address for CRM matching. Includes the shared lead identity block, outbound `body_text`, and `step_number` when the scheduler persisted it.',
   'reply.received':
-    'An inbound reply was received on a campaign thread (before categorization completes). `data.body_text` is the plain-text display body (quoted history stripped).',
+    'An inbound reply was received on a campaign thread (before categorization completes). `data.from_email` is the reply sender; `data.email` is the matched lead. `data.body_text` is the plain-text display body (quoted history stripped).',
   'reply.categorized':
-    'A thread reply category was assigned, changed, or cleared (manual, AI, system, or OOO).',
-  'bounce.detected': 'A hard or soft bounce was detected for a sent message.',
+    'A thread reply category was assigned, changed, or cleared (manual, AI, system, or OOO). Includes the same lead identity block as send/reply.',
+  'bounce.detected':
+    'A hard or soft bounce was detected for a sent message. `data.email` is the matched lead; `candidate_emails` remains for diagnostics. `reason` is `severity` plus the SMTP `code` when present.',
+  'unsubscribe.detected':
+    'A lead unsubscribed via a reply opt-out. `data.source` is `reply_opt_out`. Includes the shared lead identity block.',
 };
 
 /** Maps webhook event group ids to documentation path segments under `/docs/webhooks/`. */
@@ -178,7 +181,7 @@ export function buildWebhooksOverviewMarkdown(linkMode: DocLinkMode = 'openapi')
     '| `PATCH …/leads/{leadId}` | `lead.updated` |',
     '| `DELETE …/leads/{leadId}` | `lead.deleted` |',
     '| Campaign pause/stop/resume | `campaign.paused` / `campaign.stopped` / `campaign.resumed` |',
-    '| Worker: email sent, reply, bounce | `email.sent` / `reply.received` / `bounce.detected` |',
+    '| Worker: email sent, reply, bounce, unsubscribe | `email.sent` / `reply.received` / `bounce.detected` / `unsubscribe.detected` |',
     '| Thread category assign/change/clear | `reply.categorized` |',
     '',
     '### Bulk actions',
@@ -208,6 +211,21 @@ export function buildWebhooksOverviewMarkdown(linkMode: DocLinkMode = 'openapi')
     '3. **Enabled events** — campaign `webhook_enabled_events_override` if set (array), otherwise account `webhook_enabled_events`. If the resolved list is **empty**, no events are delivered. If non-empty, only listed types are delivered.',
     '',
     'When the campaign override URL is empty, the account URL and account signing secret are used.',
+    '',
+    '## Shared lead identity fields',
+    '',
+    'Every lead-scoped email-activity event (`email.sent`, `reply.received`, `reply.categorized`, `bounce.detected`, `unsubscribe.detected`) repeats the same identity block so a CRM can match a contact without a follow-up API call:',
+    '',
+    '| Field | Notes |',
+    '| --- | --- |',
+    '| `email` | Lead address for CRM matching. Reply events also keep `from_email`. |',
+    '| `mailbox_email` | Sending or receiving inbox. |',
+    '| `campaign_name` | Human-readable campaign name. |',
+    '| `first_name`, `last_name`, `full_name`, `company_name`, `title`, `website`, `linkedin_url` | Present only when stored on the lead. `title` is promoted from `custom_lead_data`. |',
+    '| `custom_fields` | Nested object of `leads.custom_lead_data`. Keys that collide with reserved fields stay nested. |',
+    '| `custom_fields_truncated` | `true` only when `custom_fields` exceeded the 8 KB byte budget. |',
+    '',
+    'Empty or whitespace-only values are omitted. Furnace never sends `""` for these fields. `custom_fields` is capped at **8192 UTF-8 bytes**; overflow keys are dropped and `custom_fields_truncated` is set. `body_text` is capped at **16,000 characters**.',
     '',
     '## No-code tools (Zoho Flow, Zapier, Make)',
     '',

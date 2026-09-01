@@ -1205,6 +1205,7 @@ export class SchedulerWorker {
           await handlePriorityEmailNode(enrollment, node, this.supabase, {
             schedule: campaign.schedule,
             activeFlowVersionNumber,
+            flowData: campaign.flow_data,
           });
           logger.info(JSON.stringify({ tag: 'enrollment_outcome', outcome: 'priority_email', enrollment_id: enrollment.id, campaign_id: enrollment.campaign_id, node_id: node.id.substring(0, 8) }));
           lastOutcome = 'priority_email';

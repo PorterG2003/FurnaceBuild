@@ -73,3 +73,11 @@ test('buildWebhookTestPayload includes reply.categorized fields', () => {
   assert.equal(typeof payload.category, 'string');
   assert.ok('previous_category' in payload);
 });
+
+test('buildWebhookTestPayload includes unsubscribe.detected identity', () => {
+  const payload = buildWebhookTestPayload('unsubscribe.detected', ctx);
+  assert.equal(payload.test, true);
+  assert.equal(payload.email, 'lead@example.com');
+  assert.equal(payload.source, 'reply_opt_out');
+  assert.equal(payload.campaign_name, 'Example campaign');
+});

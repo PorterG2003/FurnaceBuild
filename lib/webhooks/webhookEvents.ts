@@ -19,6 +19,7 @@ export const DEFAULT_ALLOWED_WEBHOOK_EVENTS = [
   'reply.received',
   'reply.categorized',
   'bounce.detected',
+  'unsubscribe.detected',
 ] as const;
 
 export type WebhookEventType = (typeof DEFAULT_ALLOWED_WEBHOOK_EVENTS)[number];

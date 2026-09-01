@@ -84,6 +84,18 @@ test('email.sent and reply.received webhook payloads match campaign graph identi
     const messageJobId = randomUUID();
     const providerMessageId = `<sent-${harness.namespace}@furnace.test>`;
 
+    const { error: enrichError } = await harness.supabase
+      .from('leads')
+      .update({
+        last_name: 'Reed',
+        company_name: 'Wasatch Corridor',
+        linkedin_url: 'https://linkedin.com/in/casey-reed',
+        website: 'https://wasatch.example',
+        custom_lead_data: { title: 'VP Sales', region: 'west' },
+      } as never)
+      .eq('id', lead.leadId);
+    assert.equal(enrichError, null);
+
     const { error: jobError } = await harness.supabase.from('message_jobs').insert({
       id: messageJobId,
       enrollment_id: lead.enrollmentId,
@@ -106,6 +118,7 @@ test('email.sent and reply.received webhook payloads match campaign graph identi
       send_wait_reason: null,
       interval_id: null,
       message_data: {
+        step_number: 1,
         node_config: {
           subject: 'Quick check-in',
           body_html: '<p>Hi {{first_name}}</p>',
@@ -156,7 +169,7 @@ test('email.sent and reply.received webhook payloads match campaign graph identi
 
     const { data: leadRow } = await harness.supabase
       .from('leads')
-      .select('email')
+      .select('email, first_name, last_name, company_name, linkedin_url, website, custom_lead_data')
       .eq('id', lead.leadId)
       .single();
     const { data: mailboxRow, error: mailboxError } = await harness.supabase
@@ -178,6 +191,15 @@ test('email.sent and reply.received webhook payloads match campaign graph identi
     assert.equal(sentEvent.payload.campaign_id, graph.campaignId);
     assert.equal(sentEvent.payload.mailbox_id, mailboxId);
     assert.equal(sentEvent.payload.message_job_id, messageJobId);
+    assert.equal(sentEvent.payload.first_name, leadRow?.first_name);
+    assert.equal(sentEvent.payload.last_name, leadRow?.last_name);
+    assert.equal(sentEvent.payload.company_name, leadRow?.company_name);
+    assert.equal(sentEvent.payload.linkedin_url, leadRow?.linkedin_url);
+    assert.equal(sentEvent.payload.website, leadRow?.website);
+    assert.equal(sentEvent.payload.title, 'VP Sales');
+    assert.deepEqual(sentEvent.payload.custom_fields, { region: 'west', title: 'VP Sales' });
+    assert.equal(sentEvent.payload.step_number, 1);
+    assert.equal(typeof sentEvent.payload.body_text, 'string');
 
     const threadManager = new ThreadManager(harness.supabase as any);
     const inbound: ProcessedMessage = {
@@ -218,6 +240,10 @@ test('email.sent and reply.received webhook payloads match campaign graph identi
     assert.equal(replyEvent.payload.campaign_name, campaignRow?.name);
     assert.equal(replyEvent.payload.lead_id, lead.leadId);
     assert.equal(replyEvent.payload.campaign_id, graph.campaignId);
+    assert.equal(replyEvent.payload.email, leadEmail);
+    assert.equal(replyEvent.payload.first_name, leadRow?.first_name);
+    assert.equal(replyEvent.payload.company_name, leadRow?.company_name);
+    assert.deepEqual(replyEvent.payload.custom_fields, { region: 'west', title: 'VP Sales' });
   } finally {
     if (webhookEventIds.length > 0) {
       await harness.supabase.from('webhook_events').delete().in('id', webhookEventIds);

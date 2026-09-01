@@ -48,6 +48,22 @@ function sampleTimestamp(): string {
   return '2026-06-25T12:00:00.000Z';
 }
 
+const SAMPLE_LEAD_IDENTITY = {
+  campaign_name: 'Example campaign',
+  lead_id: TEST_LEAD_ID,
+  email: 'lead@example.com',
+  mailbox_id: TEST_MAILBOX_ID,
+  mailbox_email: 'sender@example.com',
+  first_name: 'Casey',
+  last_name: 'Reed',
+  full_name: 'Casey Reed',
+  company_name: 'Wasatch Corridor',
+  title: 'VP Sales',
+  website: 'https://wasatch.example',
+  linkedin_url: 'https://linkedin.com/in/casey-reed',
+  custom_fields: { title: 'VP Sales', region: 'west' },
+};
+
 export const WEBHOOK_DOC_SAMPLE_CONTEXT: WebhookTestContext = {
   accountId: '11111111-1111-4111-8111-111111111111',
   campaignId: '22222222-2222-4222-8222-222222222222',
@@ -196,27 +212,24 @@ export function buildWebhookTestPayload(
     case 'email.sent':
       return maybeWithTestFlag({
         campaign_id: cid,
-        campaign_name: 'Example campaign',
-        lead_id: TEST_LEAD_ID,
-        email: 'lead@example.com',
+        ...SAMPLE_LEAD_IDENTITY,
         enrollment_id: TEST_ENROLLMENT_ID,
         message_job_id: TEST_MESSAGE_JOB_ID,
-        mailbox_id: TEST_MAILBOX_ID,
-        mailbox_email: 'sender@example.com',
         provider_message_id: 'test-provider-message-id',
         sent_at: sampleTimestamp(),
         subject: 'Example outbound subject (test)',
+        body_text: 'Hi Casey — quick check-in for next week.',
+        step_number: 1,
+        node_id: TEST_MESSAGE_JOB_ID,
+        flow_node_id: 'email-1',
       }, includeTestFlag);
     case 'reply.received':
       return maybeWithTestFlag({
         thread_id: TEST_THREAD_ID,
         email_message_id: TEST_EMAIL_MESSAGE_ID,
         campaign_id: cid,
-        campaign_name: 'Example campaign',
-        lead_id: TEST_LEAD_ID,
+        ...SAMPLE_LEAD_IDENTITY,
         enrollment_id: TEST_ENROLLMENT_ID,
-        mailbox_id: TEST_MAILBOX_ID,
-        mailbox_email: 'sender@example.com',
         from_email: 'lead@example.com',
         subject: 'Re: Example outbound subject (test)',
         body_text: 'Thursday works — send a hold.',
@@ -227,7 +240,7 @@ export function buildWebhookTestPayload(
         thread_id: TEST_THREAD_ID,
         email_message_id: TEST_EMAIL_MESSAGE_ID,
         campaign_id: cid,
-        lead_id: TEST_LEAD_ID,
+        ...SAMPLE_LEAD_IDENTITY,
         enrollment_id: TEST_ENROLLMENT_ID,
         category: 'Interested',
         previous_category: null,
@@ -238,16 +251,23 @@ export function buildWebhookTestPayload(
     case 'bounce.detected':
       return maybeWithTestFlag({
         campaign_id: cid,
-        lead_id: TEST_LEAD_ID,
+        ...SAMPLE_LEAD_IDENTITY,
         enrollment_id: TEST_ENROLLMENT_ID,
         message_job_id: TEST_MESSAGE_JOB_ID,
-        mailbox_id: TEST_MAILBOX_ID,
         severity: 'hard',
         code: '550',
+        reason: 'hard 550',
         bounce_message_id: 'test-bounce-message-id',
         bounce_uid: 42,
         candidate_emails: ['lead@example.com'],
         matched_job_count: 1,
+      }, includeTestFlag);
+    case 'unsubscribe.detected':
+      return maybeWithTestFlag({
+        campaign_id: cid,
+        ...SAMPLE_LEAD_IDENTITY,
+        enrollment_id: TEST_ENROLLMENT_ID,
+        source: 'reply_opt_out',
       }, includeTestFlag);
     default: {
       const _exhaustive: never = eventType;

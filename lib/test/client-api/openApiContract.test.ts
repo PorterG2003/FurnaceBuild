@@ -210,6 +210,10 @@ test('client api guide markdown includes webhook examples', () => {
   assert.match(emailActivity, /`reply.received`/);
   assert.match(emailActivity, /`reply.categorized`/);
   assert.match(emailActivity, /`bounce.detected`/);
+  assert.match(emailActivity, /`unsubscribe.detected`/);
+  assert.match(webhooksOverview, /Shared lead identity fields/);
+  assert.match(webhooksOverview, /8192 UTF-8 bytes/);
+  assert.match(webhooksOverview, /custom_fields_truncated/);
 
   const liveEmailSentExample = buildWebhookSamplePreview(
     'email.sent',

@@ -1,0 +1,288 @@
+{
+  "lead.created": {
+    "campaign_id": "22222222-2222-4222-8222-222222222222",
+    "lead_id": "00000000-0000-4000-8000-000000000001",
+    "email": "lead@example.com"
+  },
+  "lead.updated": {
+    "campaign_id": "22222222-2222-4222-8222-222222222222",
+    "lead_id": "00000000-0000-4000-8000-000000000001",
+    "email": "lead@example.com"
+  },
+  "lead.deleted": {
+    "campaign_id": "22222222-2222-4222-8222-222222222222",
+    "lead_id": "00000000-0000-4000-8000-000000000001",
+    "email": "lead@example.com"
+  },
+  "lead.bulk_import.completed": {
+    "job_id": "00000000-0000-4000-8000-000000000007",
+    "source": "async",
+    "campaign_id": "22222222-2222-4222-8222-222222222222",
+    "operation": "api_lead_import",
+    "counts": {
+      "created": 2,
+      "updated": 1,
+      "enrolled": 3,
+      "skipped": 0,
+      "failed": 0
+    },
+    "errors": []
+  },
+  "lead.added_to_campaign.completed": {
+    "job_id": null,
+    "source": "sync",
+    "campaign_id": "22222222-2222-4222-8222-222222222222",
+    "operation": "add_to_campaign",
+    "counts": {
+      "enrolled": 1,
+      "skipped": 0,
+      "failed": 0
+    },
+    "errors": [],
+    "global_lead_ids": [
+      "00000000-0000-4000-8000-000000000008"
+    ]
+  },
+  "lead.removed_from_campaign.completed": {
+    "job_id": null,
+    "source": "sync",
+    "campaign_id": "22222222-2222-4222-8222-222222222222",
+    "operation": "remove_from_campaign",
+    "counts": {
+      "removed": 1,
+      "skipped": 0,
+      "failed": 0
+    },
+    "errors": [],
+    "global_lead_ids": [
+      "00000000-0000-4000-8000-000000000008"
+    ]
+  },
+  "lead.removed_from_all_campaigns.completed": {
+    "job_id": null,
+    "source": "sync",
+    "campaign_id": null,
+    "operation": "remove_from_all_campaigns",
+    "counts": {
+      "removed": 1,
+      "skipped": 0,
+      "failed": 0
+    },
+    "errors": [],
+    "global_lead_ids": [
+      "00000000-0000-4000-8000-000000000008"
+    ]
+  },
+  "lead.added_to_list.completed": {
+    "job_id": "00000000-0000-4000-8000-000000000007",
+    "source": "async",
+    "campaign_id": null,
+    "operation": "add_to_lead_list",
+    "counts": {
+      "added": 2,
+      "skipped": 0,
+      "failed": 0
+    },
+    "errors": [],
+    "global_lead_ids": [
+      "00000000-0000-4000-8000-000000000008"
+    ]
+  },
+  "lead.removed_from_list.completed": {
+    "job_id": "00000000-0000-4000-8000-000000000007",
+    "source": "async",
+    "campaign_id": null,
+    "operation": "remove_from_lead_list",
+    "counts": {
+      "removed": 1,
+      "skipped": 0,
+      "failed": 0
+    },
+    "errors": [],
+    "global_lead_ids": [
+      "00000000-0000-4000-8000-000000000008"
+    ]
+  },
+  "lead.export.completed": {
+    "job_id": "00000000-0000-4000-8000-000000000007",
+    "source": "async",
+    "campaign_id": null,
+    "operation": "export_leads",
+    "counts": {
+      "rows_exported": 10,
+      "failed": 0
+    },
+    "errors": []
+  },
+  "enrollment.pause_completed": {
+    "job_id": null,
+    "source": "sync",
+    "campaign_id": "22222222-2222-4222-8222-222222222222",
+    "operation": "pause_enrollments",
+    "counts": {
+      "paused": 1,
+      "skipped": 0,
+      "failed": 0
+    },
+    "errors": [],
+    "global_lead_ids": [
+      "00000000-0000-4000-8000-000000000008"
+    ]
+  },
+  "enrollment.resume_completed": {
+    "job_id": null,
+    "source": "sync",
+    "campaign_id": "22222222-2222-4222-8222-222222222222",
+    "operation": "resume_enrollments",
+    "counts": {
+      "resumed": 1,
+      "skipped": 0,
+      "failed": 0
+    },
+    "errors": [],
+    "global_lead_ids": [
+      "00000000-0000-4000-8000-000000000008"
+    ]
+  },
+  "campaign.paused": {
+    "campaign_id": "22222222-2222-4222-8222-222222222222"
+  },
+  "campaign.resumed": {
+    "campaign_id": "22222222-2222-4222-8222-222222222222"
+  },
+  "campaign.stopped": {
+    "campaign_id": "22222222-2222-4222-8222-222222222222"
+  },
+  "email.sent": {
+    "campaign_id": "22222222-2222-4222-8222-222222222222",
+    "campaign_name": "Example campaign",
+    "lead_id": "00000000-0000-4000-8000-000000000001",
+    "email": "lead@example.com",
+    "mailbox_id": "00000000-0000-4000-8000-000000000004",
+    "mailbox_email": "sender@example.com",
+    "first_name": "Casey",
+    "last_name": "Reed",
+    "full_name": "Casey Reed",
+    "company_name": "Wasatch Corridor",
+    "title": "VP Sales",
+    "website": "https://wasatch.example",
+    "linkedin_url": "https://linkedin.com/in/casey-reed",
+    "custom_fields": {
+      "title": "VP Sales",
+      "region": "west"
+    },
+    "enrollment_id": "00000000-0000-4000-8000-000000000002",
+    "message_job_id": "00000000-0000-4000-8000-000000000003",
+    "provider_message_id": "test-provider-message-id",
+    "sent_at": "2026-06-25T12:00:00.000Z",
+    "subject": "Example outbound subject (test)",
+    "body_text": "Hi Casey — quick check-in for next week.",
+    "step_number": 1,
+    "node_id": "00000000-0000-4000-8000-000000000003",
+    "flow_node_id": "email-1"
+  },
+  "reply.received": {
+    "thread_id": "00000000-0000-4000-8000-000000000005",
+    "email_message_id": "00000000-0000-4000-8000-000000000006",
+    "campaign_id": "22222222-2222-4222-8222-222222222222",
+    "campaign_name": "Example campaign",
+    "lead_id": "00000000-0000-4000-8000-000000000001",
+    "email": "lead@example.com",
+    "mailbox_id": "00000000-0000-4000-8000-000000000004",
+    "mailbox_email": "sender@example.com",
+    "first_name": "Casey",
+    "last_name": "Reed",
+    "full_name": "Casey Reed",
+    "company_name": "Wasatch Corridor",
+    "title": "VP Sales",
+    "website": "https://wasatch.example",
+    "linkedin_url": "https://linkedin.com/in/casey-reed",
+    "custom_fields": {
+      "title": "VP Sales",
+      "region": "west"
+    },
+    "enrollment_id": "00000000-0000-4000-8000-000000000002",
+    "from_email": "lead@example.com",
+    "subject": "Re: Example outbound subject (test)",
+    "body_text": "Thursday works — send a hold.",
+    "received_at": "2026-06-25T12:00:00.000Z"
+  },
+  "reply.categorized": {
+    "thread_id": "00000000-0000-4000-8000-000000000005",
+    "email_message_id": "00000000-0000-4000-8000-000000000006",
+    "campaign_id": "22222222-2222-4222-8222-222222222222",
+    "campaign_name": "Example campaign",
+    "lead_id": "00000000-0000-4000-8000-000000000001",
+    "email": "lead@example.com",
+    "mailbox_id": "00000000-0000-4000-8000-000000000004",
+    "mailbox_email": "sender@example.com",
+    "first_name": "Casey",
+    "last_name": "Reed",
+    "full_name": "Casey Reed",
+    "company_name": "Wasatch Corridor",
+    "title": "VP Sales",
+    "website": "https://wasatch.example",
+    "linkedin_url": "https://linkedin.com/in/casey-reed",
+    "custom_fields": {
+      "title": "VP Sales",
+      "region": "west"
+    },
+    "enrollment_id": "00000000-0000-4000-8000-000000000002",
+    "category": "Interested",
+    "previous_category": null,
+    "category_source": "ai",
+    "from_email": "lead@example.com",
+    "subject": "Re: Example outbound subject (test)"
+  },
+  "bounce.detected": {
+    "campaign_id": "22222222-2222-4222-8222-222222222222",
+    "campaign_name": "Example campaign",
+    "lead_id": "00000000-0000-4000-8000-000000000001",
+    "email": "lead@example.com",
+    "mailbox_id": "00000000-0000-4000-8000-000000000004",
+    "mailbox_email": "sender@example.com",
+    "first_name": "Casey",
+    "last_name": "Reed",
+    "full_name": "Casey Reed",
+    "company_name": "Wasatch Corridor",
+    "title": "VP Sales",
+    "website": "https://wasatch.example",
+    "linkedin_url": "https://linkedin.com/in/casey-reed",
+    "custom_fields": {
+      "title": "VP Sales",
+      "region": "west"
+    },
+    "enrollment_id": "00000000-0000-4000-8000-000000000002",
+    "message_job_id": "00000000-0000-4000-8000-000000000003",
+    "severity": "hard",
+    "code": "550",
+    "reason": "hard 550",
+    "bounce_message_id": "test-bounce-message-id",
+    "bounce_uid": 42,
+    "candidate_emails": [
+      "lead@example.com"
+    ],
+    "matched_job_count": 1
+  },
+  "unsubscribe.detected": {
+    "campaign_id": "22222222-2222-4222-8222-222222222222",
+    "campaign_name": "Example campaign",
+    "lead_id": "00000000-0000-4000-8000-000000000001",
+    "email": "lead@example.com",
+    "mailbox_id": "00000000-0000-4000-8000-000000000004",
+    "mailbox_email": "sender@example.com",
+    "first_name": "Casey",
+    "last_name": "Reed",
+    "full_name": "Casey Reed",
+    "company_name": "Wasatch Corridor",
+    "title": "VP Sales",
+    "website": "https://wasatch.example",
+    "linkedin_url": "https://linkedin.com/in/casey-reed",
+    "custom_fields": {
+      "title": "VP Sales",
+      "region": "west"
+    },
+    "enrollment_id": "00000000-0000-4000-8000-000000000002",
+    "source": "reply_opt_out"
+  }
+}

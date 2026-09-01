@@ -1,6 +1,7 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import { reportErrorToSlack } from '@furnace/slack-lib';
 import { calculateNextRunAt } from '../scheduling.js';
+import { resolveEmailStepNumber } from '../email-step-number.js';
 import type { CampaignSchedule, Enrollment } from '../types.js';
 
 /**
@@ -32,6 +33,7 @@ export const resetReplyEmailWarningTracking = resetPriorityEmailWarningTracking;
 export interface PriorityEmailHandlerContext {
   schedule: CampaignSchedule | null;
   activeFlowVersionNumber: number;
+  flowData?: Parameters<typeof resolveEmailStepNumber>[0];
 }
 
 type PriorityThread = {
@@ -191,6 +193,7 @@ export async function handlePriorityEmailNode(
 
   // 4. Variant-aware message_data (same merge RPC as paced campaign sends).
   //    Subject/threading are left to the send worker's normal path.
+  const stepNumber = resolveEmailStepNumber(context.flowData, node.flow_node_id);
   const baseMessageData: Record<string, unknown> = {
     source: 'campaign_priority',
     node_config: node.node_data || {},
@@ -203,6 +206,7 @@ export async function handlePriorityEmailNode(
     to_email: lead.email,
     to_name: lead.name || '',
     ...(thread?.id ? { thread_id: thread.id } : {}),
+    ...(stepNumber != null ? { step_number: stepNumber } : {}),
   };
 
   const { data: mergeRows, error: mergeError } = await supabase.rpc(
@@ -235,6 +239,7 @@ export async function handlePriorityEmailNode(
     node_config:
       (merged?.merged_message_data as { node_config?: Record<string, unknown> } | undefined)
         ?.node_config ?? baseMessageData.node_config,
+    ...(stepNumber != null ? { step_number: stepNumber } : {}),
   };
   const variantId = merged?.chosen_variant_id ?? null;
 

@@ -87,6 +87,6 @@ test('formatWebhookEventsSummary shows partial group counts', () => {
   const summary = formatWebhookEventsSummary(['email.sent', 'reply.categorized']);
   assert.equal(summary.kind, 'groups');
   if (summary.kind === 'groups') {
-    assert.ok(summary.labels.some((label) => label.includes('Email activity (2/4)')));
+    assert.ok(summary.labels.some((label) => label.includes('Email activity (2/5)')));
   }
 });

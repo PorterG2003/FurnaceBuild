@@ -262,12 +262,25 @@ export function buildWebhookTestPayload(
         candidate_emails: ['lead@example.com'],
         matched_job_count: 1,
       }, includeTestFlag);
-    case 'unsubscribe.detected':
+    case 'blocklist.entry_added':
       return maybeWithTestFlag({
         campaign_id: cid,
         ...SAMPLE_LEAD_IDENTITY,
         enrollment_id: TEST_ENROLLMENT_ID,
+        value: 'lead@example.com',
+        type: 'email',
+        reason: 'unsubscribed',
         source: 'reply_opt_out',
+      }, includeTestFlag);
+    case 'blocklist.entry_removed':
+      return maybeWithTestFlag({
+        campaign_id: cid,
+        ...SAMPLE_LEAD_IDENTITY,
+        enrollment_id: TEST_ENROLLMENT_ID,
+        value: 'lead@example.com',
+        type: 'email',
+        reason: 'manual',
+        source: 'inbox',
       }, includeTestFlag);
     default: {
       const _exhaustive: never = eventType;

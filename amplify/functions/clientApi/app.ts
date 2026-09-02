@@ -3475,6 +3475,7 @@ app.post('/v1/block-list', async (c) => {
       value,
       type,
       reason: body.reason ?? 'manual',
+      source: 'api',
     } as never)
     .select('*')
     .single();

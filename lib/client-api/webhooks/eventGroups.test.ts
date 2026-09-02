@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   ALL_WEBHOOK_EVENT_TYPES,
+  expandStoredWebhookEvents,
   expandWebhookSelectionForDisplay,
   flattenWebhookEventGroups,
   formatWebhookEventsSummary,
@@ -79,6 +80,23 @@ test('toggleGroupEvents selects and clears group members', () => {
   assert.ok(cleared.includes('lead.created'));
 });
 
+test('expandStoredWebhookEvents maps legacy blocked to blocklist.entry_added', () => {
+  assert.deepEqual(expandStoredWebhookEvents(['blocked', 'email.sent']), [
+    'blocklist.entry_added',
+    'email.sent',
+  ]);
+});
+
+test('WEBHOOK_EVENT_GROUPS includes Block list and not blocked', () => {
+  const blockList = WEBHOOK_EVENT_GROUPS.find((group) => group.id === 'block_list');
+  assert.ok(blockList);
+  assert.deepEqual([...blockList!.events], ['blocklist.entry_added', 'blocklist.entry_removed']);
+  const emailActivity = WEBHOOK_EVENT_GROUPS.find((group) => group.id === 'email_activity');
+  assert.ok(emailActivity);
+  assert.equal(emailActivity!.events.includes('blocked' as never), false);
+  assert.equal(emailActivity!.events.includes('bounce.detected'), true);
+});
+
 test('formatWebhookEventsSummary shows none when storage is empty', () => {
   assert.deepEqual(formatWebhookEventsSummary([]), { kind: 'none' });
 });
@@ -87,6 +105,6 @@ test('formatWebhookEventsSummary shows partial group counts', () => {
   const summary = formatWebhookEventsSummary(['email.sent', 'reply.categorized']);
   assert.equal(summary.kind, 'groups');
   if (summary.kind === 'groups') {
-    assert.ok(summary.labels.some((label) => label.includes('Email activity (2/5)')));
+    assert.ok(summary.labels.some((label) => label.includes('Email activity (2/4)')));
   }
 });

@@ -73,9 +73,9 @@ export async function getBlockListPage(
  */
 export async function addBlockEntry(
   accountId: string,
-  params: { value: string; type: 'email' | 'domain'; reason?: string }
+  params: { value: string; type: 'email' | 'domain'; reason?: string; source?: string }
 ): Promise<BlockListEntry> {
-  const { value, type, reason = 'manual' } = params;
+  const { value, type, reason = 'manual', source = 'inbox' } = params;
   const normalizedValue = value.trim().toLowerCase();
   if (!normalizedValue) {
     throw new Error('Block list value cannot be empty');
@@ -88,6 +88,7 @@ export async function addBlockEntry(
       value: normalizedValue,
       type,
       reason,
+      source,
     })
     .select()
     .single();

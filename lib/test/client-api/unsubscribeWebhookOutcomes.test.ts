@@ -9,6 +9,7 @@ import {
 } from '../campaign/fixtures.js';
 import { ThreadManager } from '../../../workers/inbox-checker-worker/src/thread-manager.js';
 import type { ProcessedMessage } from '../../../workers/inbox-checker-worker/src/types.js';
+import { ensureBlockListWebhookSchema } from './webhook-outcome-helpers.js';
 
 function unsubscribeMessage(fromEmail: string): ProcessedMessage {
   return {
@@ -31,7 +32,7 @@ function unsubscribeMessage(fromEmail: string): ProcessedMessage {
   };
 }
 
-test('autoBlockUnsubscribe emits unsubscribe.detected and writes block_list', async () => {
+test('autoBlockUnsubscribe emits blocklist.entry_added and writes block_list', async (t) => {
   const harness = new CampaignDbHarness({
     namespace: createCampaignTestNamespace('unsub-webhooks'),
   });
@@ -60,6 +61,7 @@ test('autoBlockUnsubscribe emits unsubscribe.detected and writes block_list', as
       ],
     });
     accountId = graph.accountId;
+    if (!(await ensureBlockListWebhookSchema(harness.supabase, t))) return;
 
     const { data: mailboxRow } = await harness.supabase
       .from('mailboxes')
@@ -74,8 +76,7 @@ test('autoBlockUnsubscribe emits unsubscribe.detected and writes block_list', as
       .from('webhook_events')
       .select('id, payload')
       .eq('account_id', graph.accountId)
-      .eq('event_type', 'unsubscribe.detected')
-      .eq('campaign_id', graph.campaignId)
+      .eq('event_type', 'blocklist.entry_added')
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -85,17 +86,26 @@ test('autoBlockUnsubscribe emits unsubscribe.detected and writes block_list', as
 
     const payload = (data.payload ?? {}) as Record<string, unknown>;
     assert.equal(payload.email, leadEmail);
-    assert.equal(payload.mailbox_email, mailboxEmail);
-    assert.equal(payload.campaign_name, `Unsub ${harness.namespace}`);
+    assert.equal(payload.value, leadEmail);
+    assert.equal(payload.type, 'email');
     assert.equal(payload.source, 'reply_opt_out');
+    assert.equal(payload.reason, 'unsubscribed');
 
     const { data: blockRow } = await harness.supabase
       .from('block_list')
-      .select('value, reason')
+      .select('value, reason, source')
       .eq('account_id', graph.accountId)
       .eq('value', leadEmail)
       .maybeSingle();
     assert.equal(blockRow?.reason, 'unsubscribed');
+    assert.equal(blockRow?.source, 'reply_opt_out');
+
+    const { count: leftoverBlocked } = await harness.supabase
+      .from('webhook_events')
+      .select('id', { count: 'exact', head: true })
+      .eq('account_id', graph.accountId)
+      .eq('event_type', 'blocked');
+    assert.equal(leftoverBlocked, 0);
   } finally {
     if (accountId) {
       await harness.supabase
@@ -104,7 +114,9 @@ test('autoBlockUnsubscribe emits unsubscribe.detected and writes block_list', as
         .eq('account_id', accountId)
         .eq('value', leadEmail);
     }
-    if (webhookEventIds.length > 0) {
+    if (accountId) {
+      await harness.supabase.from('webhook_events').delete().eq('account_id', accountId);
+    } else if (webhookEventIds.length > 0) {
       await harness.supabase.from('webhook_events').delete().in('id', webhookEventIds);
     }
     await harness.cleanup();
@@ -153,7 +165,7 @@ test('autoBlockUnsubscribe emits nothing when the sender matches no sent job', a
       .select('id', { count: 'exact', head: true })
       .eq('account_id', graph.accountId)
       .eq('campaign_id', graph.campaignId)
-      .eq('event_type', 'unsubscribe.detected');
+      .eq('event_type', 'blocklist.entry_added');
     assert.equal(count, 0);
   } finally {
     await harness.cleanup();

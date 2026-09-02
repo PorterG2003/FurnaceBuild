@@ -39,9 +39,11 @@ export const WEBHOOK_EVENT_DESCRIPTIONS: Record<WebhookEventType, string> = {
   'reply.categorized':
     'A thread reply category was assigned, changed, or cleared (manual, AI, system, or OOO). Includes the same lead identity block as send/reply.',
   'bounce.detected':
-    'A hard or soft bounce was detected for a sent message. `data.email` is the matched lead; `candidate_emails` remains for diagnostics. `reason` is `severity` plus the SMTP `code` when present.',
-  'unsubscribe.detected':
-    'A lead unsubscribed via a reply opt-out. `data.source` is `reply_opt_out`. Includes the shared lead identity block.',
+    'A hard or soft bounce was detected for a sent message. `data.email` is the matched lead; `candidate_emails` remains for diagnostics. `reason` is `severity` plus the SMTP `code` when present. A hard bounce that writes the block list also emits `blocklist.entry_added`.',
+  'blocklist.entry_added':
+    'An email or domain was added to the account block list (inbox, API, reply opt-out, import, or bounce suppression). `data.value` and `data.type` are always present. When `type` is `email`, `data.email` equals `value`. A hard bounce may emit this event and `bounce.detected` together.',
+  'blocklist.entry_removed':
+    'An email or domain was removed from the account block list. Same `value` / `type` / `reason` / `source` shape as `blocklist.entry_added`.',
 };
 
 /** Maps webhook event group ids to documentation path segments under `/docs/webhooks/`. */
@@ -52,6 +54,7 @@ export const WEBHOOK_GUIDE_GROUP_PATH_SEGMENTS: Record<string, string> = {
   enrollment_pause_resume: 'enrollment-pause-resume',
   campaign_status: 'campaign-status',
   email_activity: 'email-activity',
+  block_list: 'block-list',
 };
 
 function buildEventsMarkdown(events: readonly WebhookEventType[]): string {
@@ -181,7 +184,8 @@ export function buildWebhooksOverviewMarkdown(linkMode: DocLinkMode = 'openapi')
     '| `PATCH …/leads/{leadId}` | `lead.updated` |',
     '| `DELETE …/leads/{leadId}` | `lead.deleted` |',
     '| Campaign pause/stop/resume | `campaign.paused` / `campaign.stopped` / `campaign.resumed` |',
-    '| Worker: email sent, reply, bounce, unsubscribe | `email.sent` / `reply.received` / `bounce.detected` / `unsubscribe.detected` |',
+    '| Worker: email sent, reply, bounce | `email.sent` / `reply.received` / `bounce.detected` |',
+    '| Block list add or remove | `blocklist.entry_added` / `blocklist.entry_removed` |',
     '| Thread category assign/change/clear | `reply.categorized` |',
     '',
     '### Bulk actions',
@@ -214,7 +218,7 @@ export function buildWebhooksOverviewMarkdown(linkMode: DocLinkMode = 'openapi')
     '',
     '## Shared lead identity fields',
     '',
-    'Every lead-scoped email-activity event (`email.sent`, `reply.received`, `reply.categorized`, `bounce.detected`, `unsubscribe.detected`) repeats the same identity block so a CRM can match a contact without a follow-up API call:',
+    'Every lead-scoped email-activity event (`email.sent`, `reply.received`, `reply.categorized`, `bounce.detected`) repeats the same identity block so a CRM can match a contact without a follow-up API call. Block list events include this block when an email row resolves to a lead; they always send `value` and `type`.',
     '',
     '| Field | Notes |',
     '| --- | --- |',

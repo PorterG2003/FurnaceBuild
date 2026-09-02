@@ -55,6 +55,8 @@ test('buildWebhookSamplePreview omits test flag for live docs', () => {
 
 test('isAllowedWebhookEventType rejects unknown values', () => {
   assert.equal(isAllowedWebhookEventType('email.sent'), true);
+  assert.equal(isAllowedWebhookEventType('blocklist.entry_added'), true);
+  assert.equal(isAllowedWebhookEventType('blocked'), false);
   assert.equal(isAllowedWebhookEventType('webhook.test'), false);
 });
 
@@ -74,10 +76,17 @@ test('buildWebhookTestPayload includes reply.categorized fields', () => {
   assert.ok('previous_category' in payload);
 });
 
-test('buildWebhookTestPayload includes unsubscribe.detected identity', () => {
-  const payload = buildWebhookTestPayload('unsubscribe.detected', ctx);
-  assert.equal(payload.test, true);
-  assert.equal(payload.email, 'lead@example.com');
-  assert.equal(payload.source, 'reply_opt_out');
-  assert.equal(payload.campaign_name, 'Example campaign');
+test('buildWebhookTestPayload includes blocklist value and type', () => {
+  const added = buildWebhookTestPayload('blocklist.entry_added', ctx);
+  assert.equal(added.test, true);
+  assert.equal(added.value, 'lead@example.com');
+  assert.equal(added.type, 'email');
+  assert.equal(added.email, 'lead@example.com');
+  assert.equal(added.source, 'reply_opt_out');
+  assert.equal(added.reason, 'unsubscribed');
+
+  const removed = buildWebhookTestPayload('blocklist.entry_removed', ctx);
+  assert.equal(removed.value, 'lead@example.com');
+  assert.equal(removed.type, 'email');
+  assert.equal(removed.source, 'inbox');
 });

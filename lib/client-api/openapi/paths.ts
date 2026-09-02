@@ -1520,16 +1520,30 @@ export function buildClientApiPaths() {
         operationId: 'createBlockListEntry',
         tags: ['Block list'],
         summary: 'Add block list entry',
-        description: 'Creates a block-list entry for an email address or domain. If an identical entry already exists, Furnace returns the existing row instead of creating a duplicate.',
+        description:
+          'Creates a block-list entry for one email address or one domain host. `type: email` matches that address only. `type: domain` matches every address whose host equals `value` (`example.com` matches `pat@example.com`, not `pat@mail.example.com`). Send the host only — not `@example.com` and not a full email. If an identical `value` + `type` already exists, Furnace returns the existing row instead of creating a duplicate.',
         requestBody: {
           required: true,
           content: {
             'application/json': {
               schema: schemaRef('BlockListCreate'),
-              example: {
-                value: 'blocked@example.com',
-                type: 'email',
-                reason: 'manual',
+              examples: {
+                email: {
+                  summary: 'Block one address',
+                  value: {
+                    value: 'blocked@example.com',
+                    type: 'email',
+                    reason: 'manual',
+                  },
+                },
+                domain: {
+                  summary: 'Block every address at a host',
+                  value: {
+                    value: 'example.com',
+                    type: 'domain',
+                    reason: 'manual',
+                  },
+                },
               },
             },
           },

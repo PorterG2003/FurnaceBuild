@@ -2036,8 +2036,17 @@ export function buildClientApiComponents() {
         properties: {
           id: { type: 'string', format: 'uuid' },
           account_id: { type: 'string', format: 'uuid' },
-          value: { type: 'string' },
-          type: { type: 'string', enum: ['email', 'domain'] },
+          value: {
+            type: 'string',
+            description:
+              'Email address when `type` is `email`, or the exact host when `type` is `domain` (`example.com`).',
+          },
+          type: {
+            type: 'string',
+            enum: ['email', 'domain'],
+            description:
+              '`email` matches one address. `domain` matches every address whose host equals `value` (not subdomains).',
+          },
           reason: { type: 'string', nullable: true },
           created_at: { type: 'string', format: 'date-time', nullable: true },
         },
@@ -2047,8 +2056,17 @@ export function buildClientApiComponents() {
       BlockListCreate: {
         type: 'object',
         properties: {
-          value: { type: 'string' },
-          type: { type: 'string', enum: ['email', 'domain'] },
+          value: {
+            type: 'string',
+            description:
+              'Email address when `type` is `email`, or the host only when `type` is `domain` (`example.com`, not `@example.com`).',
+          },
+          type: {
+            type: 'string',
+            enum: ['email', 'domain'],
+            description:
+              '`email` blocks one address. `domain` blocks every address at that exact host (`pat@example.com`, not `pat@mail.example.com`).',
+          },
           reason: { type: 'string', nullable: true },
         },
         required: ['value', 'type'],

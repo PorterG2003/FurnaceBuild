@@ -214,11 +214,13 @@ test('client api guide markdown includes webhook examples', () => {
   const blockListDocs = buildWebhookEventGroupMarkdown('block_list');
   assert.match(blockListDocs, /`blocklist.entry_added`/);
   assert.match(blockListDocs, /`blocklist.entry_removed`/);
-  assert.match(blockListDocs, /Email vs domain/);
+  assert.match(blockListDocs, /#### Email/);
+  assert.match(blockListDocs, /#### Domain/);
+  assert.match(blockListDocs, /"value": "lead@example.com"/);
+  assert.match(blockListDocs, /"value": "example.com"/);
+  assert.match(blockListDocs, /"type": "email"/);
   assert.match(blockListDocs, /"type": "domain"/);
-  assert.match(blockListDocs, /not `pat@mail\.example\.com`/);
   assert.match(webhooksOverview, /Shared lead identity fields/);
-  assert.match(webhooksOverview, /Domain events send `value` and `type` only/);
   assert.match(webhooksOverview, /8192 UTF-8 bytes/);
   assert.match(webhooksOverview, /custom_fields_truncated/);
 

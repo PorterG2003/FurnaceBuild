@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { DEFAULT_ALLOWED_WEBHOOK_EVENTS } from './webhookEvents.js';
 import {
+  buildBlockListWebhookSamplePreview,
   buildWebhookSamplePreview,
   buildWebhookTestPayload,
   curatedWebhookTestEventOptions,
@@ -89,4 +90,19 @@ test('buildWebhookTestPayload includes blocklist value and type', () => {
   assert.equal(removed.value, 'lead@example.com');
   assert.equal(removed.type, 'email');
   assert.equal(removed.source, 'inbox');
+});
+
+test('buildBlockListWebhookSamplePreview includes full email and domain envelopes', () => {
+  const email = JSON.parse(buildBlockListWebhookSamplePreview('blocklist.entry_added', 'email', ctx));
+  assert.equal(email.type, 'blocklist.entry_added');
+  assert.equal(email.data.type, 'email');
+  assert.equal(email.data.value, 'lead@example.com');
+  assert.equal(email.data.email, 'lead@example.com');
+
+  const domain = JSON.parse(buildBlockListWebhookSamplePreview('blocklist.entry_added', 'domain', ctx));
+  assert.equal(domain.type, 'blocklist.entry_added');
+  assert.equal(domain.data.type, 'domain');
+  assert.equal(domain.data.value, 'example.com');
+  assert.equal(domain.data.email, undefined);
+  assert.equal(domain.data.campaign_id, undefined);
 });

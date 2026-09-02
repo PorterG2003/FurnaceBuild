@@ -15,7 +15,7 @@ export function buildChangelogMarkdown(): string {
     '- Shared lead identity block on `email.sent`, `reply.received`, `reply.categorized`, and `bounce.detected`: `email`, `mailbox_email`, `campaign_name`, contact fields, and nested `custom_fields`',
     '- `email.sent` `body_text` (plain text, 16,000 character cap) plus `step_number` / `node_id` / `flow_node_id` when known',
     '- `bounce.detected` explicit `email` and `reason` (`severity` + SMTP `code`)',
-    '- Block list group: `blocklist.entry_added` and `blocklist.entry_removed` for every `block_list` insert or delete (inbox, API, reply opt-out, import, bounce suppression). A hard bounce may emit both `bounce.detected` and `blocklist.entry_added`',
+    '- Block list group: `blocklist.entry_added` and `blocklist.entry_removed` for every `block_list` insert or delete (inbox, API, reply opt-out, import, bounce suppression). Email rows may include the lead identity block. Domain rows send the host only (`example.com`) with no `email` or identity fields. A hard bounce may emit both `bounce.detected` and `blocklist.entry_added`',
     '- `custom_fields_truncated: true` when custom fields exceed the 8 KB byte budget',
     '',
     '### Changed',

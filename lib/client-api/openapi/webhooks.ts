@@ -41,9 +41,9 @@ export const WEBHOOK_EVENT_DESCRIPTIONS: Record<WebhookEventType, string> = {
   'bounce.detected':
     'A hard or soft bounce was detected for a sent message. `data.email` is the matched lead; `candidate_emails` remains for diagnostics. `reason` is `severity` plus the SMTP `code` when present. A hard bounce that writes the block list also emits `blocklist.entry_added`.',
   'blocklist.entry_added':
-    'An email or domain was added to the account block list (inbox, API, reply opt-out, import, or bounce suppression). `data.value` and `data.type` are always present. When `type` is `email`, `data.email` equals `value`. A hard bounce may emit this event and `bounce.detected` together.',
+    'A block-list row was inserted (inbox, API, reply opt-out, import, or bounce suppression). `data.value` and `data.type` (`email` or `domain`) are always present. Email rows set `data.email` to the same address and merge the lead identity block when a lead exists. Domain rows send the host only (`example.com`) with no `email` field and no identity block. A hard bounce may emit this event and `bounce.detected` together.',
   'blocklist.entry_removed':
-    'An email or domain was removed from the account block list. Same `value` / `type` / `reason` / `source` shape as `blocklist.entry_added`.',
+    'A block-list row was deleted. Same `value` / `type` rules as `blocklist.entry_added`: email rows may include identity; domain rows are host-only with no `email` or identity block.',
 };
 
 /** Maps webhook event group ids to documentation path segments under `/docs/webhooks/`. */
@@ -82,14 +82,46 @@ export function buildWebhookEventGroupMarkdown(groupId: string, linkMode: DocLin
     throw new Error(`Unknown webhook event group: ${groupId}`);
   }
 
-  return [
+  const intro = [
     group.description,
     '',
     `These pages are payload reference. For setup, verification, and retries, follow ${guideLink('Webhook integration', '/guides/webhook-integration/', linkMode)}.`,
     '',
     'Examples use placeholder UUIDs. Live deliveries use real ids from your account.',
+  ];
+
+  if (group.id === 'block_list') {
+    intro.push('', buildBlockListTypeNotes());
+  }
+
+  return [...intro, '', buildEventsMarkdown(group.events)].join('\n');
+}
+
+function buildBlockListTypeNotes(): string {
+  return [
+    '## Email vs domain',
     '',
-    buildEventsMarkdown(group.events),
+    'Match on `data.type` before treating `data.value` as a contact address.',
+    '',
+    '- **`email`** — `value` is one address. `data.email` is always that same address. If a lead exists, Furnace also merges the shared identity block (`campaign_name`, names, `custom_fields`, and so on) plus a best-effort `campaign_id`.',
+    '- **`domain`** — `value` is the host only (`example.com`), not `@example.com` and not a full email. Campaign sends are suppressed for every address whose host **equals** that value (`pat@example.com`, not `pat@mail.example.com`). Domain events omit `email`, `campaign_id`, and the lead identity block.',
+    '',
+    'Reply opt-out and bounce suppression write **email** rows only. Domain rows come from inbox Block domain, Manage block list, `POST /v1/block-list`, or imports.',
+    '',
+    'Domain `data` example (add or remove):',
+    '',
+    '```json',
+    JSON.stringify(
+      {
+        value: 'example.com',
+        type: 'domain',
+        reason: 'manual',
+        source: 'api',
+      },
+      null,
+      2,
+    ),
+    '```',
   ].join('\n');
 }
 
@@ -218,7 +250,7 @@ export function buildWebhooksOverviewMarkdown(linkMode: DocLinkMode = 'openapi')
     '',
     '## Shared lead identity fields',
     '',
-    'Every lead-scoped email-activity event (`email.sent`, `reply.received`, `reply.categorized`, `bounce.detected`) repeats the same identity block so a CRM can match a contact without a follow-up API call. Block list events include this block when an email row resolves to a lead; they always send `value` and `type`.',
+    'Every lead-scoped email-activity event (`email.sent`, `reply.received`, `reply.categorized`, `bounce.detected`) repeats the same identity block so a CRM can match a contact without a follow-up API call. Block list events include this block only when `type` is `email` and a lead exists for that address. Domain events send `value` and `type` only (plus `reason` / `source` when set) — never `email` or contact fields.',
     '',
     '| Field | Notes |',
     '| --- | --- |',

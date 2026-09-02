@@ -45,7 +45,8 @@ const apiTags = [
   },
   {
     name: 'Block list',
-    description: 'List, add, and remove blocked email or domain values.',
+    description:
+      'List, add, and remove blocked email addresses or domain hosts. A domain entry matches the exact host only (`example.com` → `*@example.com`, not subdomains).',
   },
   {
     name: 'Stats',

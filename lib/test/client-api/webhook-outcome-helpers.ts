@@ -36,6 +36,18 @@ export async function ensureWebhookInfrastructureSchema(
   return true;
 }
 
+export async function ensureBlockListWebhookSchema(
+  supabase: { from: (table: string) => { select: (columns: string) => { limit: (n: number) => Promise<{ error: { message: string } | null }> } } },
+  t: { skip: (message: string) => void },
+): Promise<boolean> {
+  const { error } = await supabase.from('block_list').select('source').limit(1);
+  if (error) {
+    t.skip(`block_list webhook migration not applied: ${error.message}`);
+    return false;
+  }
+  return true;
+}
+
 export type LatestWebhookEventFilter = {
   campaignId?: string;
 };

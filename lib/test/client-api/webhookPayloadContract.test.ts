@@ -61,6 +61,17 @@ test('every allowed webhook event has a label, group, sample, and docs descripti
   }
 });
 
+test('blocklist samples always include value and type', () => {
+  for (const event of ['blocklist.entry_added', 'blocklist.entry_removed'] as const) {
+    const sample = buildWebhookTestPayload(event, WEBHOOK_DOC_SAMPLE_CONTEXT, {
+      includeTestFlag: false,
+    });
+    assert.equal(sample.value, 'lead@example.com');
+    assert.equal(sample.type, 'email');
+    assert.equal(sample.email, 'lead@example.com');
+  }
+});
+
 test('lead-activity samples include the shared identity block', () => {
   for (const event of LEAD_ACTIVITY_WEBHOOK_EVENTS) {
     const sample = buildWebhookTestPayload(event, WEBHOOK_DOC_SAMPLE_CONTEXT, {

@@ -2158,6 +2158,7 @@ export interface Database {
           value: string;
           type: 'email' | 'domain';
           reason: string | null;
+          source: string | null;
           created_at: string | null;
         };
         Insert: {
@@ -2166,6 +2167,7 @@ export interface Database {
           value: string;
           type: 'email' | 'domain';
           reason?: string | null;
+          source?: string | null;
           created_at?: string | null;
         };
         Update: {
@@ -2174,6 +2176,7 @@ export interface Database {
           value?: string;
           type?: 'email' | 'domain';
           reason?: string | null;
+          source?: string | null;
           created_at?: string | null;
         };
       };

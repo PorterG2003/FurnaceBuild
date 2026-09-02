@@ -9,7 +9,6 @@ export const LEAD_ACTIVITY_WEBHOOK_EVENTS = [
   'reply.received',
   'reply.categorized',
   'bounce.detected',
-  'unsubscribe.detected',
 ] as const;
 
 export type LeadActivityWebhookEvent = (typeof LEAD_ACTIVITY_WEBHOOK_EVENTS)[number];

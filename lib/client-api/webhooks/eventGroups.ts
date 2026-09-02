@@ -37,7 +37,8 @@ export const WEBHOOK_EVENT_LABELS: Record<WebhookEventType, string> = {
   'reply.received': 'Reply received',
   'reply.categorized': 'Reply categorized',
   'bounce.detected': 'Bounce detected',
-  'unsubscribe.detected': 'Unsubscribe detected',
+  'blocklist.entry_added': 'Entry added',
+  'blocklist.entry_removed': 'Entry removed',
 };
 
 export const WEBHOOK_EVENT_GROUPS: readonly WebhookEventGroup[] = [
@@ -87,8 +88,14 @@ export const WEBHOOK_EVENT_GROUPS: readonly WebhookEventGroup[] = [
   {
     id: 'email_activity',
     label: 'Email activity',
-    description: 'Sends, replies, categorization, bounces, and unsubscribes.',
-    events: ['email.sent', 'reply.received', 'reply.categorized', 'bounce.detected', 'unsubscribe.detected'],
+    description: 'Sends, replies, categorization, and bounces.',
+    events: ['email.sent', 'reply.received', 'reply.categorized', 'bounce.detected'],
+  },
+  {
+    id: 'block_list',
+    label: 'Block list',
+    description: 'Emails and domains added to or removed from the account block list.',
+    events: ['blocklist.entry_added', 'blocklist.entry_removed'],
   },
 ] as const;
 
@@ -114,11 +121,23 @@ export function flattenWebhookEventGroups(groupIds: string[]): WebhookEventType[
   return [...selected].sort();
 }
 
+const LEGACY_WEBHOOK_EVENT_ALIASES: Record<string, WebhookEventType> = {
+  blocked: 'blocklist.entry_added',
+};
+
+export function canonicalizeWebhookEventType(value: unknown): WebhookEventType | null {
+  if (typeof value !== 'string') return null;
+  const mapped = LEGACY_WEBHOOK_EVENT_ALIASES[value] ?? value;
+  return ALL_WEBHOOK_EVENT_TYPES.includes(mapped as WebhookEventType)
+    ? (mapped as WebhookEventType)
+    : null;
+}
+
 export function expandStoredWebhookEvents(stored: unknown): WebhookEventType[] {
   if (!Array.isArray(stored)) return [];
-  return stored.filter((value): value is WebhookEventType =>
-    ALL_WEBHOOK_EVENT_TYPES.includes(value as WebhookEventType),
-  );
+  return stored
+    .map((value) => canonicalizeWebhookEventType(value))
+    .filter((value): value is WebhookEventType => value != null);
 }
 
 export function expandWebhookSelectionForDisplay(stored: unknown): WebhookEventType[] {

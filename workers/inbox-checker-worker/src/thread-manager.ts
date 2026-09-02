@@ -26,7 +26,6 @@ import {
   buildReplyReceivedWebhookPayload,
   campaignNameFromRelation,
 } from './reply-received-webhook-payload.js';
-import { buildUnsubscribeDetectedWebhookPayload } from './unsubscribe-detected-webhook-payload.js';
 import {
   LEAD_WEBHOOK_IDENTITY_COLUMNS,
   type LeadIdentityRow,
@@ -1619,7 +1618,13 @@ export class ThreadManager {
       const leadEmail = leadEmailById.get(canonicalJob.lead_id);
       if (leadEmail) {
         await this.supabase.from('block_list').upsert(
-          { account_id: mailbox.account_id, value: leadEmail, type: 'email', reason: 'bounced' },
+          {
+            account_id: mailbox.account_id,
+            value: leadEmail,
+            type: 'email',
+            reason: 'bounced',
+            source: 'bounce',
+          },
           { onConflict: 'account_id,value,type', ignoreDuplicates: true }
         );
       }
@@ -1701,14 +1706,11 @@ export class ThreadManager {
     const leadIds = [...new Set(recentJobs.map((job: any) => job.lead_id))];
     const { data: leads } = await this.supabase
       .from('leads')
-      .select(LEAD_WEBHOOK_IDENTITY_COLUMNS)
+      .select('id, email')
       .in('id', leadIds);
 
-    const leadById = new Map(
-      (leads || []).map((lead) => [lead.id, lead as LeadIdentityRow]),
-    );
     const leadEmailById = new Map(
-      [...leadById.entries()].map(([id, lead]) => [id, this.normalizeEmail(lead.email)]),
+      (leads || []).map((lead) => [lead.id, this.normalizeEmail(lead.email)]),
     );
     const matchedJobs = recentJobs.filter(
       (job: any) => leadEmailById.get(job.lead_id) === senderEmail
@@ -1733,36 +1735,10 @@ export class ThreadManager {
         value: senderEmail,
         type: 'email',
         reason: 'unsubscribed',
+        source: 'reply_opt_out',
       },
       { onConflict: 'account_id,value,type', ignoreDuplicates: true }
     );
-
-    const canonicalJob = matchedJobs[0] as {
-      campaign_id: string;
-      enrollment_id: string;
-      lead_id: string;
-    };
-    const { data: unsubCampaign } = await this.supabase
-      .from('campaigns')
-      .select('name')
-      .eq('id', canonicalJob.campaign_id)
-      .maybeSingle();
-
-    await emitWebhookEvent(this.supabase, {
-      accountId: mailbox.account_id,
-      campaignId: canonicalJob.campaign_id,
-      eventType: 'unsubscribe.detected',
-      payload: buildUnsubscribeDetectedWebhookPayload({
-        campaignId: canonicalJob.campaign_id,
-        campaignName: unsubCampaign?.name ?? null,
-        lead: leadById.get(canonicalJob.lead_id) ?? null,
-        leadId: canonicalJob.lead_id,
-        enrollmentId: canonicalJob.enrollment_id,
-        mailboxId: mailbox.id,
-        mailboxEmail: mailbox.email_address,
-      }),
-      dedupeKey: `unsubscribe.detected:${mailbox.id}:${senderEmail}:${canonicalJob.campaign_id}`,
-    });
 
     console.log(
       `Auto-blocked unsubscribe sender in mailbox ${mailbox.id}: ${senderEmail}, matchedJobs=${matchedJobs.length}`

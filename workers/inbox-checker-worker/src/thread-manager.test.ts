@@ -1836,6 +1836,8 @@ test('handleBounce matched hard bounce calls record_bounced_event_and_increment,
   const blockCall = supabase.calls.find((c) => (c as QueryCall).table === 'block_list') as QueryCall;
   assert.ok(blockCall);
   assert.equal(blockCall.insertPayloads.length, 1);
+  assert.match(JSON.stringify(blockCall.insertPayloads[0]), /"reason":"bounced"/);
+  assert.match(JSON.stringify(blockCall.insertPayloads[0]), /"source":"bounce"/);
 
   const enrollCalls = supabase.calls.filter((c) => (c as QueryCall).table === 'enrollments') as QueryCall[];
   assert.equal(enrollCalls.length, 1);
@@ -1886,6 +1888,7 @@ test('autoBlockUnsubscribe auto-blocks only the matched sender and does not stop
   assert.equal(blockCall.insertPayloads.length, 1);
   assert.match(JSON.stringify(blockCall.insertPayloads[0]), /"value":"matched-lead@example.com"/);
   assert.match(JSON.stringify(blockCall.insertPayloads[0]), /"reason":"unsubscribed"/);
+  assert.match(JSON.stringify(blockCall.insertPayloads[0]), /"source":"reply_opt_out"/);
   assert.ok(!supabase.calls.some((c) => (c as QueryCall).table === 'enrollments'));
 });
 

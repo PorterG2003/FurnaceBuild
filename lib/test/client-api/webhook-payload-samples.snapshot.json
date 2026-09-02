@@ -264,7 +264,7 @@
     ],
     "matched_job_count": 1
   },
-  "unsubscribe.detected": {
+  "blocklist.entry_added": {
     "campaign_id": "22222222-2222-4222-8222-222222222222",
     "campaign_name": "Example campaign",
     "lead_id": "00000000-0000-4000-8000-000000000001",
@@ -283,6 +283,33 @@
       "region": "west"
     },
     "enrollment_id": "00000000-0000-4000-8000-000000000002",
+    "value": "lead@example.com",
+    "type": "email",
+    "reason": "unsubscribed",
     "source": "reply_opt_out"
+  },
+  "blocklist.entry_removed": {
+    "campaign_id": "22222222-2222-4222-8222-222222222222",
+    "campaign_name": "Example campaign",
+    "lead_id": "00000000-0000-4000-8000-000000000001",
+    "email": "lead@example.com",
+    "mailbox_id": "00000000-0000-4000-8000-000000000004",
+    "mailbox_email": "sender@example.com",
+    "first_name": "Casey",
+    "last_name": "Reed",
+    "full_name": "Casey Reed",
+    "company_name": "Wasatch Corridor",
+    "title": "VP Sales",
+    "website": "https://wasatch.example",
+    "linkedin_url": "https://linkedin.com/in/casey-reed",
+    "custom_fields": {
+      "title": "VP Sales",
+      "region": "west"
+    },
+    "enrollment_id": "00000000-0000-4000-8000-000000000002",
+    "value": "lead@example.com",
+    "type": "email",
+    "reason": "manual",
+    "source": "inbox"
   }
 }

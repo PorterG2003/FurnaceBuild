@@ -1,0 +1,18 @@
+{
+  "captured_at": "2026-09-02T00:00:00Z",
+  "project": "lrfonoslwzodzijzdyiy",
+  "window": "7 days",
+  "pre_ship_expectation": {
+    "blocklist.entry_added": 0,
+    "blocklist.entry_removed": 0,
+    "blocked": 0
+  },
+  "gates": {
+    "leftover_blocked_events": 0,
+    "email_equals_value_pct": 100,
+    "block_list_inserts_approx_entry_added": true,
+    "hard_bounce_dual_emit": true,
+    "delivery_success_pct_min": 99,
+    "p99_payload_bytes_max": 8192
+  }
+}

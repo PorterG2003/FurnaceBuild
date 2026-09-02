@@ -1,6 +1,7 @@
 import type { SQSBatchResponse, SQSEvent } from 'aws-lambda';
 import { createServiceRoleClient } from '../../../lib/client-api/service-role.js';
 import { deliverWebhookPost, isValidHttpsWebhookUrl } from '../../../lib/client-api/webhooks/deliverWebhookPost.js';
+import { expandStoredWebhookEvents } from '../../../lib/client-api/webhooks/eventGroups.js';
 
 export async function processWebhookEventById(eventId: string): Promise<void> {
   const supabase = createServiceRoleClient();
@@ -33,12 +34,10 @@ export async function processWebhookEventById(eventId: string): Promise<void> {
     // Do not deliver to private/local HTTPS targets (SSRF guard for stored URLs).
     return;
   }
-  const enabledEvents = Array.isArray(campaign?.webhook_enabled_events_override)
-    ? campaign?.webhook_enabled_events_override
-    : Array.isArray(account?.webhook_enabled_events)
-      ? account?.webhook_enabled_events
-      : [];
-  if (enabledEvents.length === 0 || !enabledEvents.includes(evt.event_type)) {
+  const enabledEvents = expandStoredWebhookEvents(
+    campaign?.webhook_enabled_events_override ?? account?.webhook_enabled_events,
+  );
+  if (enabledEvents.length === 0 || !enabledEvents.includes(evt.event_type as typeof enabledEvents[number])) {
     return;
   }
   const secret = (campaign?.webhook_signing_secret_override || account?.webhook_signing_secret || '').trim();

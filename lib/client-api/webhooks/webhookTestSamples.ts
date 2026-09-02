@@ -374,6 +374,33 @@ export function buildWebhookSamplePreview(
   );
 }
 
+export function buildBlockListWebhookSamplePreview(
+  eventType: 'blocklist.entry_added' | 'blocklist.entry_removed',
+  entryType: 'email' | 'domain',
+  ctx: WebhookTestContext = WEBHOOK_DOC_SAMPLE_CONTEXT,
+): string {
+  const data =
+    entryType === 'email'
+      ? buildWebhookTestPayload(eventType, ctx, { includeTestFlag: false })
+      : {
+          value: 'example.com',
+          type: 'domain',
+          reason: 'manual',
+          source: eventType === 'blocklist.entry_added' ? 'api' : 'inbox',
+        };
+
+  return JSON.stringify(
+    {
+      id: '00000000-0000-4000-8000-0000000000aa',
+      type: eventType,
+      occurred_at: sampleTimestamp(),
+      data,
+    },
+    null,
+    2,
+  );
+}
+
 export function buildWebhookTestSamplePreview(
   eventType: WebhookEventType,
   ctx: WebhookTestContext,

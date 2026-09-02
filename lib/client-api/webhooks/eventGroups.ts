@@ -94,8 +94,7 @@ export const WEBHOOK_EVENT_GROUPS: readonly WebhookEventGroup[] = [
   {
     id: 'block_list',
     label: 'Block list',
-    description:
-      'Emails and domains added to or removed from the account block list. Domain rows are host-only (`example.com`) and do not include a lead identity block.',
+    description: 'Emails and domains added to or removed from the account block list.',
     events: ['blocklist.entry_added', 'blocklist.entry_removed'],
   },
 ] as const;

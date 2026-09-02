@@ -1,6 +1,7 @@
 import { WEBHOOK_EVENT_GROUPS } from '../webhooks/eventGroups.js';
 import type { WebhookEventType } from '../webhooks/webhookEvents.js';
 import {
+  buildBlockListWebhookSamplePreview,
   buildWebhookSamplePreview,
   WEBHOOK_DOC_SAMPLE_CONTEXT,
 } from '../webhooks/webhookTestSamples.js';
@@ -41,9 +42,9 @@ export const WEBHOOK_EVENT_DESCRIPTIONS: Record<WebhookEventType, string> = {
   'bounce.detected':
     'A hard or soft bounce was detected for a sent message. `data.email` is the matched lead; `candidate_emails` remains for diagnostics. `reason` is `severity` plus the SMTP `code` when present. A hard bounce that writes the block list also emits `blocklist.entry_added`.',
   'blocklist.entry_added':
-    'A block-list row was inserted (inbox, API, reply opt-out, import, or bounce suppression). `data.value` and `data.type` (`email` or `domain`) are always present. Email rows set `data.email` to the same address and merge the lead identity block when a lead exists. Domain rows send the host only (`example.com`) with no `email` field and no identity block. A hard bounce may emit this event and `bounce.detected` together.',
+    'An email or domain was added to the account block list. A hard bounce that also writes the block list emits this event and `bounce.detected`.',
   'blocklist.entry_removed':
-    'A block-list row was deleted. Same `value` / `type` rules as `blocklist.entry_added`: email rows may include identity; domain rows are host-only with no `email` or identity block.',
+    'An email or domain was removed from the account block list.',
 };
 
 /** Maps webhook event group ids to documentation path segments under `/docs/webhooks/`. */
@@ -82,47 +83,43 @@ export function buildWebhookEventGroupMarkdown(groupId: string, linkMode: DocLin
     throw new Error(`Unknown webhook event group: ${groupId}`);
   }
 
-  const intro = [
+  return [
     group.description,
     '',
     `These pages are payload reference. For setup, verification, and retries, follow ${guideLink('Webhook integration', '/guides/webhook-integration/', linkMode)}.`,
     '',
     'Examples use placeholder UUIDs. Live deliveries use real ids from your account.',
-  ];
-
-  if (group.id === 'block_list') {
-    intro.push('', buildBlockListTypeNotes());
-  }
-
-  return [...intro, '', buildEventsMarkdown(group.events)].join('\n');
+    '',
+    group.id === 'block_list' ? buildBlockListEventsMarkdown() : buildEventsMarkdown(group.events),
+  ].join('\n');
 }
 
-function buildBlockListTypeNotes(): string {
-  return [
-    '## Email vs domain',
-    '',
-    'Match on `data.type` before treating `data.value` as a contact address.',
-    '',
-    '- **`email`** — `value` is one address. `data.email` is always that same address. If a lead exists, Furnace also merges the shared identity block (`campaign_name`, names, `custom_fields`, and so on) plus a best-effort `campaign_id`.',
-    '- **`domain`** — `value` is the host only (`example.com`), not `@example.com` and not a full email. Campaign sends are suppressed for every address whose host **equals** that value (`pat@example.com`, not `pat@mail.example.com`). Domain events omit `email`, `campaign_id`, and the lead identity block.',
-    '',
-    'Reply opt-out and bounce suppression write **email** rows only. Domain rows come from inbox Block domain, Manage block list, `POST /v1/block-list`, or imports.',
-    '',
-    'Domain `data` example (add or remove):',
-    '',
-    '```json',
-    JSON.stringify(
-      {
-        value: 'example.com',
-        type: 'domain',
-        reason: 'manual',
-        source: 'api',
-      },
-      null,
-      2,
-    ),
-    '```',
-  ].join('\n');
+function buildBlockListEventsMarkdown(): string {
+  const events = ['blocklist.entry_added', 'blocklist.entry_removed'] as const;
+  const sections: string[] = [];
+
+  for (const event of events) {
+    sections.push(
+      `### \`${event}\``,
+      '',
+      WEBHOOK_EVENT_DESCRIPTIONS[event],
+      '',
+      '#### Email',
+      '',
+      '```json',
+      buildBlockListWebhookSamplePreview(event, 'email'),
+      '```',
+      '',
+      '#### Domain',
+      '',
+      '```json',
+      buildBlockListWebhookSamplePreview(event, 'domain'),
+      '```',
+      '',
+    );
+  }
+
+  return sections.join('\n');
 }
 
 export function buildWebhooksOverviewMarkdown(linkMode: DocLinkMode = 'openapi'): string {
@@ -250,7 +247,7 @@ export function buildWebhooksOverviewMarkdown(linkMode: DocLinkMode = 'openapi')
     '',
     '## Shared lead identity fields',
     '',
-    'Every lead-scoped email-activity event (`email.sent`, `reply.received`, `reply.categorized`, `bounce.detected`) repeats the same identity block so a CRM can match a contact without a follow-up API call. Block list events include this block only when `type` is `email` and a lead exists for that address. Domain events send `value` and `type` only (plus `reason` / `source` when set) — never `email` or contact fields.',
+    'Every lead-scoped email-activity event (`email.sent`, `reply.received`, `reply.categorized`, `bounce.detected`) repeats the same identity block so a CRM can match a contact without a follow-up API call. Block list email examples include this block when a lead exists; domain examples do not.',
     '',
     '| Field | Notes |',
     '| --- | --- |',

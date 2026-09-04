@@ -685,6 +685,19 @@ test('handleReply re-emits notification_events when the email_message already ex
           },
         ],
       },
+      {
+        data: {
+          id: 'thread-1',
+          participants: ['porterg@furnaceoutbound.com', 'lead@example.com'],
+          category: null,
+          category_source: null,
+          message_count: 1,
+          has_reply: false,
+        },
+        error: null,
+      },
+      { count: 2, error: null },
+      { data: null, error: null },
       // 23505 on insert → lookup existing event id, then no-op enqueue (queue URL unset)
       { data: null, error: { code: '23505', message: 'duplicate key' } },
       { data: { id: 'notification-event-existing' }, error: null },
@@ -699,6 +712,18 @@ test('handleReply re-emits notification_events when the email_message already ex
     const handled = await manager.handleReply(mailbox, message);
     assert.equal(handled, true);
 
+    const threadUpdateCalls = supabase.calls.filter(
+      (call): call is QueryCall =>
+        (call as QueryCall).kind === 'query' &&
+        (call as QueryCall).table === 'email_threads' &&
+        (call as QueryCall).insertPayloads.length > 0 &&
+        typeof (call as QueryCall).insertPayloads[0] === 'object' &&
+        (call as QueryCall).insertPayloads[0] !== null &&
+        'has_reply' in ((call as QueryCall).insertPayloads[0] as object)
+    );
+    assert.equal(threadUpdateCalls.length, 1);
+    assert.equal((threadUpdateCalls[0].insertPayloads[0] as { has_reply: boolean }).has_reply, true);
+
     const notificationInsert = supabase.calls.find(
       (call) => (call as QueryCall).table === 'notification_events' && (call as QueryCall).insertPayloads.length > 0
     ) as QueryCall | undefined;
@@ -710,6 +735,121 @@ test('handleReply re-emits notification_events when the email_message already ex
     assert.equal(eventPayload.email_message_id, 'email-message-existing');
     assert.equal(eventPayload.thread_id, 'thread-1');
     assert.equal(eventPayload.mailbox_id, mailbox.id);
+  } finally {
+    if (prevQueue === undefined) delete process.env.NOTIFICATION_QUEUE_URL;
+    else process.env.NOTIFICATION_QUEUE_URL = prevQueue;
+  }
+});
+
+test('handleReply throws after stamp retries so a failed has_reply write is not ignored', async () => {
+  const existingThread = {
+    id: 'thread-1',
+    account_id: 'account-1',
+    mailbox_id: 'mailbox-1',
+    message_count: 1,
+    participants: ['porterg@furnaceoutbound.com', 'lead@example.com'],
+    category: null,
+    category_source: null,
+  };
+  const deadlock = { code: '40P01', message: 'deadlock detected', status: 500 };
+  const supabase = new MockSupabase([
+    { data: [] },
+    { data: [createMessageJob()] },
+    { data: [existingThread] },
+    { data: [] },
+    { data: { id: 'email-message-1', received_at: '2026-04-06T02:58:50.000Z' }, error: null },
+    { count: 2, error: null },
+    { data: null, error: deadlock },
+    { count: 2, error: null },
+    { data: null, error: deadlock },
+    { count: 2, error: null },
+    { data: null, error: deadlock },
+  ]);
+  const manager = new ThreadManager(supabase as any);
+
+  await assert.rejects(
+    () => manager.handleReply(createMailbox(), createProcessedMessage()),
+    /Failed to stamp inbound reply on thread thread-1/,
+  );
+
+  const stampUpdates = supabase.calls.filter(
+    (call): call is QueryCall =>
+      (call as QueryCall).kind === 'query' &&
+      (call as QueryCall).table === 'email_threads' &&
+      (call as QueryCall).insertPayloads.length > 0 &&
+      typeof (call as QueryCall).insertPayloads[0] === 'object' &&
+      (call as QueryCall).insertPayloads[0] !== null &&
+      'has_reply' in ((call as QueryCall).insertPayloads[0] as object),
+  );
+  assert.equal(stampUpdates.length, 3);
+  assert.ok(
+    !supabase.calls.some((call) => (call as QueryCall).table === 'notification_events'),
+    'must not mark the reply processed when the stamp fails',
+  );
+});
+
+test('handleReply stamps has_reply when insert hits a 23505 duplicate', async () => {
+  const prevQueue = process.env.NOTIFICATION_QUEUE_URL;
+  delete process.env.NOTIFICATION_QUEUE_URL;
+  try {
+    const existingThread = {
+      id: 'thread-1',
+      account_id: 'account-1',
+      mailbox_id: 'mailbox-1',
+      message_count: 1,
+      participants: ['porterg@furnaceoutbound.com', 'lead@example.com'],
+      category: null,
+      category_source: null,
+    };
+    const supabase = new MockSupabase([
+      { data: [] },
+      { data: [createMessageJob()] },
+      { data: [existingThread] },
+      { data: [] },
+      { data: null, error: { code: '23505', message: 'duplicate key value violates unique constraint' } },
+      {
+        data: [
+          {
+            id: 'email-message-existing',
+            thread_id: 'thread-1',
+            received_at: '2026-04-06T02:58:50.000Z',
+          },
+        ],
+      },
+      {
+        data: {
+          id: 'thread-1',
+          participants: existingThread.participants,
+          category: null,
+          category_source: null,
+          message_count: 1,
+          has_reply: false,
+        },
+        error: null,
+      },
+      { count: 2, error: null },
+      { data: null, error: null },
+      { data: { id: 'notification-event-1' }, error: null },
+    ]);
+    const manager = new ThreadManager(supabase as any);
+
+    const handled = await manager.handleReply(createMailbox(), createProcessedMessage());
+    assert.equal(handled, true);
+
+    const stampUpdates = supabase.calls.filter(
+      (call): call is QueryCall =>
+        (call as QueryCall).kind === 'query' &&
+        (call as QueryCall).table === 'email_threads' &&
+        (call as QueryCall).insertPayloads.length > 0 &&
+        typeof (call as QueryCall).insertPayloads[0] === 'object' &&
+        (call as QueryCall).insertPayloads[0] !== null &&
+        'has_reply' in ((call as QueryCall).insertPayloads[0] as object),
+    );
+    assert.equal(stampUpdates.length, 1);
+    const payload = stampUpdates[0].insertPayloads[0] as Record<string, unknown>;
+    assert.equal(payload.has_reply, true);
+    assert.equal(payload.last_inbound_at, '2026-04-06T02:58:50.000Z');
+    assert.equal(payload.message_count, 2);
   } finally {
     if (prevQueue === undefined) delete process.env.NOTIFICATION_QUEUE_URL;
     else process.env.NOTIFICATION_QUEUE_URL = prevQueue;

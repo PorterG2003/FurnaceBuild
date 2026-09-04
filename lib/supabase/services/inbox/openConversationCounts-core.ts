@@ -16,5 +16,6 @@ export async function loadOpenConversationCountsByAccountIds(
 
 export const OPEN_CONVERSATION_COUNT_FILTERS = {
   conversationStatus: 'open',
+  hasReply: true,
   countColumn: 'id',
 } as const;

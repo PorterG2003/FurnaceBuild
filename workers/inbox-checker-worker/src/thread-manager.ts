@@ -76,6 +76,21 @@ const OOO_CLEAR_FOR_NEW_INBOUND_REPLY = {
   ooo_resume_processed_at: null,
 } as const;
 
+const THREAD_STAMP_ATTEMPTS = 3;
+const THREAD_STAMP_RETRY_BASE_DELAY_MS = 50;
+
+type StampableThread = {
+  id: string;
+  participants?: string[] | null;
+  category?: string | null;
+  category_source?: string | null;
+  message_count?: number | null;
+};
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 const CATEGORIZER_CACHE_TTL_MS = 60 * 1000;
 
 /**
@@ -164,6 +179,143 @@ export class ThreadManager {
       out.push(trimmed);
     }
     return out;
+  }
+
+  private buildInboundReplyThreadPatch(
+    thread: StampableThread,
+    message: ProcessedMessage,
+    messageCount: number,
+  ): Record<string, unknown> {
+    const inboundIsAutoReply = isAutoReplyMessage(message.headers);
+    const threadCategory: string | null = thread.category ?? null;
+    const threadCategorySource: string | null = thread.category_source ?? null;
+    let threadCategoryPatch: Record<string, unknown> = {};
+    if (inboundIsAutoReply) {
+      if (threadCategorySource !== 'user') {
+        threadCategoryPatch = { category: 'Auto Reply', category_source: 'system' };
+      }
+    } else if (
+      threadCategory === 'Auto Reply' &&
+      (threadCategorySource === 'system' || threadCategorySource === 'ai')
+    ) {
+      threadCategoryPatch = { category: null, category_source: null };
+    }
+
+    const inboundAt = message.date.toISOString();
+    return {
+      has_reply: true,
+      last_message_at: inboundAt,
+      last_inbound_at: inboundAt,
+      message_count: messageCount,
+      participants: this.mergeThreadParticipants(
+        thread.participants || [],
+        [
+          message.from.address,
+          ...message.to.map((t) => t.address),
+          ...(message.cc ?? []).map((c) => c.address),
+        ],
+      ),
+      conversation_status: inboundIsAutoReply ? 'closed' : 'open',
+      conversation_status_source: 'system',
+      classification_status: inboundIsAutoReply ? 'complete' : 'pending',
+      classification_requested_at: inboundAt,
+      classification_completed_at: inboundIsAutoReply ? inboundAt : null,
+      ...OOO_CLEAR_FOR_NEW_INBOUND_REPLY,
+      ...threadCategoryPatch,
+    };
+  }
+
+  private async loadThreadForInboundStamp(
+    threadId: string,
+    accountId: string,
+  ): Promise<StampableThread> {
+    const { data, error } = await this.supabase
+      .from('email_threads')
+      .select('id, participants, category, category_source, message_count, has_reply')
+      .eq('id', threadId)
+      .eq('account_id', accountId)
+      .maybeSingle();
+    if (error) {
+      const errorMessage = formatUnknownError(error);
+      console.error('Error loading thread to stamp inbound reply:', error);
+      reportErrorToSlack('Inbox-checker: failed to load thread to stamp inbound reply', {
+        severity: 'critical',
+        thread_id: threadId,
+        error: errorMessage,
+        alertPolicy: isRetryableSupabaseReadError(error)
+          ? 'transient_retryable_warning'
+          : 'critical_failure',
+        aggregationKey: `inbox-stamp-thread-load:${threadId}`,
+        summaryFields: { thread_id: threadId },
+      });
+      throw new Error(`Failed to load thread ${threadId} to stamp inbound reply: ${errorMessage}`);
+    }
+    if (!data) {
+      throw new Error(`Failed to load thread ${threadId} to stamp inbound reply`);
+    }
+    return data as StampableThread;
+  }
+
+  private async stampInboundReplyOnThread(
+    thread: StampableThread,
+    message: ProcessedMessage,
+  ): Promise<void> {
+    let lastError: { message?: string; code?: string; details?: string } | null = null;
+
+    for (let attempt = 1; attempt <= THREAD_STAMP_ATTEMPTS; attempt++) {
+      const { count: actualMessageCount, error: countError } = await this.supabase
+        .from('email_messages')
+        .select('*', { count: 'exact', head: true })
+        .eq('thread_id', thread.id);
+
+      if (countError) {
+        console.error('Error counting messages for thread:', countError);
+      }
+      const messageCount = countError ? (thread.message_count || 0) + 1 : actualMessageCount || 1;
+      const { error } = await this.supabase
+        .from('email_threads')
+        .update(this.buildInboundReplyThreadPatch(thread, message, messageCount))
+        .eq('id', thread.id);
+
+      if (!error) return;
+      lastError = error;
+      if (attempt < THREAD_STAMP_ATTEMPTS && isRetryableSupabaseReadError(error)) {
+        await sleep(THREAD_STAMP_RETRY_BASE_DELAY_MS * attempt);
+        continue;
+      }
+      break;
+    }
+
+    const errorMessage = formatUnknownError(lastError);
+    reportErrorToSlack('Inbox-checker: failed to stamp inbound reply on thread', {
+      severity: 'critical',
+      thread_id: thread.id,
+      error: errorMessage,
+      alertPolicy: 'critical_failure',
+      aggregationKey: `inbox-stamp-thread:${thread.id}`,
+      summaryFields: { thread_id: thread.id },
+    });
+    throw new Error(`Failed to stamp inbound reply on thread ${thread.id}: ${errorMessage}`);
+  }
+
+  private async healExistingInboundReply(
+    mailbox: Mailbox,
+    message: ProcessedMessage,
+    existing: { id: string; thread_id: string | null; received_at: string | null },
+  ): Promise<void> {
+    if (!existing.thread_id) return;
+    const thread = await this.loadThreadForInboundStamp(existing.thread_id, mailbox.account_id);
+    await this.stampInboundReplyOnThread(thread, message);
+    await emitEmailReceivedNotification(this.supabase, {
+      accountId: mailbox.account_id,
+      threadId: existing.thread_id,
+      emailMessageId: existing.id,
+      mailboxId: mailbox.id,
+      fromEmail: message.from.address,
+      fromName: message.from.name || null,
+      subject: message.subject,
+      receivedAt: existing.received_at || message.date.toISOString(),
+    });
   }
 
   private unwrapRelation<T>(value: T | T[] | null | undefined): T | null {
@@ -338,21 +490,10 @@ export class ThreadManager {
 
     if (existingMessage) {
       console.log(`[INBOX CHECKER] Message ${normalizedMessageId} already processed, re-emitting notification event`);
-      // Heal dropped SQS: re-enqueue even when the email_messages row already exists.
-      if (existingMessage.thread_id) {
-        await emitEmailReceivedNotification(this.supabase, {
-          accountId: mailbox.account_id,
-          threadId: existingMessage.thread_id,
-          emailMessageId: existingMessage.id,
-          mailboxId: mailbox.id,
-          fromEmail: message.from.address,
-          fromName: message.from.name || null,
-          subject: message.subject,
-          receivedAt: existingMessage.received_at || message.date.toISOString(),
-        });
-      }
+      // IMAP retries after a failed has_reply stamp land here — stamp before notifying.
+      await this.healExistingInboundReply(mailbox, message, existingMessage);
       this.logReplyMatch(true, 'duplicate', mailbox, message);
-      return true; // Already processed, return success
+      return true;
     }
 
     let thread: any;
@@ -612,19 +753,10 @@ export class ThreadManager {
         const raced = racedMessages?.[0] as
           | { id: string; thread_id: string | null; received_at: string | null }
           | undefined;
-        if (raced?.thread_id) {
-          await emitEmailReceivedNotification(this.supabase, {
-            accountId: mailbox.account_id,
-            threadId: raced.thread_id,
-            emailMessageId: raced.id,
-            mailboxId: mailbox.id,
-            fromEmail: message.from.address,
-            fromName: message.from.name || null,
-            subject: message.subject,
-            receivedAt: raced.received_at || message.date.toISOString(),
-          });
+        if (raced) {
+          await this.healExistingInboundReply(mailbox, message, raced);
         }
-        return true; // Already processed by another worker, return success
+        return true;
       }
       console.error('Error creating email_message:', messageError);
       reportErrorToSlack('Inbox-checker: failed to create email_message', {
@@ -644,75 +776,7 @@ export class ThreadManager {
       throw messageError;
     }
 
-    // Auto Reply category handling:
-    // - header-detected autoresponder stamps the thread Auto Reply (never
-    //   overwriting a user-set category)
-    // - a real inbound reply clears a machine-set Auto Reply so the new
-    //   message gets classified
-    const inboundIsAutoReply = isAutoReplyMessage(message.headers);
-    const threadCategory: string | null = (thread as any).category ?? null;
-    const threadCategorySource: string | null = (thread as any).category_source ?? null;
-    let threadCategoryPatch: Record<string, unknown> = {};
-    if (inboundIsAutoReply) {
-      if (threadCategorySource !== 'user') {
-        threadCategoryPatch = { category: 'Auto Reply', category_source: 'system' };
-      }
-    } else if (
-      threadCategory === 'Auto Reply' &&
-      (threadCategorySource === 'system' || threadCategorySource === 'ai')
-    ) {
-      threadCategoryPatch = { category: null, category_source: null };
-    }
-
-    const inboundAt = message.date.toISOString();
-    const threadUpdateBase = {
-      has_reply: true,
-      last_message_at: inboundAt,
-      last_inbound_at: inboundAt,
-      participants: this.mergeThreadParticipants(
-        thread.participants || [],
-        [
-          message.from.address,
-          ...message.to.map((t) => t.address),
-          ...(message.cc ?? []).map((c) => c.address),
-        ],
-      ),
-      conversation_status: inboundIsAutoReply ? 'closed' : 'open',
-      conversation_status_source: 'system',
-      classification_status: inboundIsAutoReply ? 'complete' : 'pending',
-      classification_requested_at: inboundAt,
-      classification_completed_at: inboundIsAutoReply ? inboundAt : null,
-      ...OOO_CLEAR_FOR_NEW_INBOUND_REPLY,
-      ...threadCategoryPatch,
-    };
-
-    // Update thread: set has_reply = true, update last_message_at / last_inbound_at
-    // Recalculate message_count from actual count to avoid race conditions
-    const { count: actualMessageCount, error: countError } = await this.supabase
-      .from('email_messages')
-      .select('*', { count: 'exact', head: true })
-      .eq('thread_id', thread.id);
-
-    if (countError) {
-      console.error('Error counting messages for thread:', countError);
-      // Fall back to incrementing if count fails
-      const fallbackCount = (thread.message_count || 0) + 1;
-      await this.supabase
-        .from('email_threads')
-        .update({
-          ...threadUpdateBase,
-          message_count: fallbackCount,
-        })
-        .eq('id', thread.id);
-    } else {
-      await this.supabase
-        .from('email_threads')
-        .update({
-          ...threadUpdateBase,
-          message_count: actualMessageCount || 1, // Use actual count to avoid race conditions
-        })
-        .eq('id', thread.id);
-    }
+    await this.stampInboundReplyOnThread(thread, message);
 
     // Only act on the enrollment if this is a reply to the original sent message
     // (not a reply to a reply)

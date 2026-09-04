@@ -263,6 +263,7 @@ test('header-detected auto replies auto-close and a later human reply reopens an
     assert.equal(autoReplyThread.category_source, 'system');
     assert.equal(autoReplyThread.conversation_status, 'closed');
     assert.equal(autoReplyThread.classification_status, 'complete');
+    assert.equal(autoReplyThread.has_reply, true);
 
     const reopenedThread = await deliverReply({
       harness,

@@ -5,8 +5,9 @@ import {
   OPEN_CONVERSATION_COUNT_FILTERS,
 } from './openConversationCounts-core';
 
-test('OPEN_CONVERSATION_COUNT_FILTERS uses open status only', () => {
+test('OPEN_CONVERSATION_COUNT_FILTERS matches the inbox list (open + has_reply)', () => {
   assert.equal(OPEN_CONVERSATION_COUNT_FILTERS.conversationStatus, 'open');
+  assert.equal(OPEN_CONVERSATION_COUNT_FILTERS.hasReply, true);
   assert.equal(OPEN_CONVERSATION_COUNT_FILTERS.countColumn, 'id');
 });
 

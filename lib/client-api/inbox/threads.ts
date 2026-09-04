@@ -51,7 +51,7 @@ export async function listAccountThreads(
     p_date_from: options.dateFrom ?? null,
     p_date_to: options.dateTo ?? null,
     p_tag_ids: options.tagIds?.length ? options.tagIds : null,
-    p_category: options.category ?? null,
+    p_category: options.category ? [options.category] : null,
     p_conversation_status: options.conversationStatus ?? null,
     p_has_reply_only: options.hasReplyOnly !== false,
     p_limit: options.limit,

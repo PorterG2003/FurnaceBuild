@@ -10,6 +10,7 @@ import {
 import { buildProcessedReply } from '../campaign/categorizer-helpers';
 import { ThreadManager } from '../../../workers/inbox-checker-worker/src/thread-manager';
 import type { Mailbox } from '../../../workers/inbox-checker-worker/src/types';
+import { OPEN_CONVERSATION_COUNT_FILTERS } from '../../supabase/services/inbox/openConversationCounts-core';
 
 function isMissingSentJobLookupRpc(message: string | undefined): boolean {
   return !!message && /could not find|schema cache|does not exist|PGRST202/i.test(message);
@@ -435,6 +436,257 @@ test('inbound reply persists multi-To and Cc on the final email_messages row', a
     assert.ok(normalized.includes(mailbox.email_address.toLowerCase()));
     assert.ok(normalized.includes(secondaryTo.toLowerCase()));
     assert.ok(normalized.includes(ccAddress.toLowerCase()));
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+async function countOpenConversationsWithReply(
+  harness: CampaignDbHarness,
+  accountId: string,
+  campaignId: string,
+): Promise<number> {
+  const { count, error } = await harness.supabase
+    .from('email_threads')
+    .select(OPEN_CONVERSATION_COUNT_FILTERS.countColumn, { count: 'exact', head: true })
+    .eq('account_id', accountId)
+    .eq('campaign_id', campaignId)
+    .eq('conversation_status', OPEN_CONVERSATION_COUNT_FILTERS.conversationStatus)
+    .eq('has_reply', OPEN_CONVERSATION_COUNT_FILTERS.hasReply);
+  assert.equal(error, null, error?.message);
+  return count ?? 0;
+}
+
+async function listInboxThreadIds(
+  harness: CampaignDbHarness,
+  accountId: string,
+  campaignId: string,
+): Promise<string[]> {
+  const { data, error } = await harness.supabase.rpc('list_account_inbox_threads', {
+    p_account_id: accountId,
+    p_campaign_ids: [campaignId],
+    p_has_reply_only: true,
+    p_limit: 20,
+    p_offset: 0,
+  });
+  assert.equal(error, null, error?.message);
+  return ((data ?? []) as Array<{ id: string }>).map((row) => row.id);
+}
+
+async function skipIfInboxListRpcMissing(
+  harness: CampaignDbHarness,
+  t: { skip: (reason?: string) => void },
+): Promise<boolean> {
+  const { error } = await harness.supabase.rpc('list_account_inbox_threads', {
+    p_account_id: '00000000-0000-4000-8000-000000000000',
+    p_has_reply_only: true,
+    p_limit: 1,
+    p_offset: 0,
+  });
+  if (
+    error &&
+    /Could not find the function|does not exist|schema cache/i.test(error.message)
+  ) {
+    t.skip(`list_account_inbox_threads not applied: ${error.message}`);
+    return true;
+  }
+  return false;
+}
+
+test('lazy-create human reply stamps has_reply and is listable as open', async (t) => {
+  const harness = new CampaignDbHarness({
+    namespace: createCampaignTestNamespace('thread-ingest-human-stamp'),
+  });
+
+  try {
+    if (await skipIfSentJobLookupRpcMissing(harness, t)) return;
+    if (await skipIfInboxListRpcMissing(harness, t)) return;
+
+    const graph = await harness.createCampaignGraph({
+      name: 'Lazy Human Reply Stamp',
+      status: 'running',
+      flowKind: 'emailWaitEmail',
+      mailboxes: [
+        {
+          key: 'mailbox-1',
+          emailAddress: `sender-${harness.namespace}@example.com`,
+          displayName: 'Sender',
+        },
+      ],
+      leads: [
+        buildCampaignLead({
+          key: 'ingest-lead',
+          email: `lead-human-${harness.namespace}@example.com`,
+          firstName: 'Casey',
+          enrollment: buildCampaignEnrollment({
+            state: 'active',
+            currentFlowNodeId: 'email-1',
+            nextRunAt: new Date(Date.now() - 60_000).toISOString(),
+          }),
+        }),
+      ],
+    });
+    const lead = graph.leadsByKey.get('ingest-lead')!;
+    const leadEmail = `lead-human-${harness.namespace}@example.com`;
+    const mailboxId = graph.mailboxIdsByKey.get('mailbox-1')!;
+    const providerId = `<root-human-${harness.namespace}@furnace.build>`;
+    await seedSentJob({
+      harness,
+      graph,
+      lead,
+      mailboxId,
+      providerMessageId: providerId,
+    });
+
+    const mailbox = asMailbox(graph, mailboxId);
+    const inboundAt = new Date('2026-09-03T20:44:33.000Z');
+    const manager = new ThreadManager(harness.supabase as any);
+    const handled = await manager.handleReply(
+      mailbox,
+      buildProcessedReply({
+        leadEmail,
+        mailboxEmail: mailbox.email_address,
+        inReplyTo: providerId,
+        subject: 'Re: Quick check-in',
+        date: inboundAt,
+      }),
+    );
+    assert.equal(handled, true);
+
+    const { data: receivedRows, error: receivedError } = await harness.supabase
+      .from('email_messages')
+      .select('id, thread_id, received_at')
+      .eq('account_id', graph.accountId)
+      .eq('direction', 'received')
+      .eq('from_email', leadEmail);
+    assert.equal(receivedError, null, receivedError?.message);
+    assert.equal(receivedRows?.length, 1);
+    const threadId = receivedRows![0]!.thread_id as string;
+    graph.manifest.threadIds.push(threadId);
+    graph.manifest.messageIds.push(receivedRows![0]!.id as string);
+
+    const { count: messageCount, error: countError } = await harness.supabase
+      .from('email_messages')
+      .select('id', { count: 'exact', head: true })
+      .eq('thread_id', threadId);
+    assert.equal(countError, null, countError?.message);
+
+    const { data: thread, error: threadError } = await harness.supabase
+      .from('email_threads')
+      .select('has_reply, last_inbound_at, message_count, conversation_status')
+      .eq('id', threadId)
+      .single();
+    assert.equal(threadError, null, threadError?.message);
+    assert.equal(thread?.has_reply, true);
+    assert.equal(thread?.last_inbound_at, receivedRows![0]!.received_at);
+    assert.equal(thread?.message_count, messageCount);
+    assert.equal(thread?.conversation_status, 'open');
+
+    const listed = await listInboxThreadIds(harness, graph.accountId, graph.campaignId);
+    assert.ok(listed.includes(threadId), `expected ${threadId} in inbox list, got ${listed.join(',')}`);
+    assert.equal(await countOpenConversationsWithReply(harness, graph.accountId, graph.campaignId), 1);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test('lazy-create header auto-reply stamps has_reply and closes as Auto Reply', async (t) => {
+  const harness = new CampaignDbHarness({
+    namespace: createCampaignTestNamespace('thread-ingest-ooo-stamp'),
+  });
+
+  try {
+    if (await skipIfSentJobLookupRpcMissing(harness, t)) return;
+    if (await skipIfInboxListRpcMissing(harness, t)) return;
+
+    const graph = await harness.createCampaignGraph({
+      name: 'Lazy Auto Reply Stamp',
+      status: 'running',
+      flowKind: 'emailWaitEmail',
+      mailboxes: [
+        {
+          key: 'mailbox-1',
+          emailAddress: `sender-${harness.namespace}@example.com`,
+          displayName: 'Sender',
+        },
+      ],
+      leads: [
+        buildCampaignLead({
+          key: 'ingest-lead',
+          email: `lead-ooo-${harness.namespace}@example.com`,
+          firstName: 'Casey',
+          enrollment: buildCampaignEnrollment({
+            state: 'active',
+            currentFlowNodeId: 'email-1',
+            nextRunAt: new Date(Date.now() - 60_000).toISOString(),
+          }),
+        }),
+      ],
+    });
+    const lead = graph.leadsByKey.get('ingest-lead')!;
+    const leadEmail = `lead-ooo-${harness.namespace}@example.com`;
+    const mailboxId = graph.mailboxIdsByKey.get('mailbox-1')!;
+    const providerId = `<root-ooo-${harness.namespace}@furnace.build>`;
+    await seedSentJob({
+      harness,
+      graph,
+      lead,
+      mailboxId,
+      providerMessageId: providerId,
+    });
+
+    const mailbox = asMailbox(graph, mailboxId);
+    const inboundAt = new Date('2026-09-03T20:44:33.000Z');
+    const manager = new ThreadManager(harness.supabase as any);
+    const handled = await manager.handleReply(
+      mailbox,
+      buildProcessedReply({
+        leadEmail,
+        mailboxEmail: mailbox.email_address,
+        inReplyTo: providerId,
+        subject: 'Re: Quick check-in',
+        date: inboundAt,
+        autoReply: true,
+      }),
+    );
+    assert.equal(handled, true);
+
+    const { data: receivedRows, error: receivedError } = await harness.supabase
+      .from('email_messages')
+      .select('id, thread_id, received_at')
+      .eq('account_id', graph.accountId)
+      .eq('direction', 'received')
+      .eq('from_email', leadEmail);
+    assert.equal(receivedError, null, receivedError?.message);
+    assert.equal(receivedRows?.length, 1);
+    const threadId = receivedRows![0]!.thread_id as string;
+    graph.manifest.threadIds.push(threadId);
+    graph.manifest.messageIds.push(receivedRows![0]!.id as string);
+
+    const { count: messageCount, error: countError } = await harness.supabase
+      .from('email_messages')
+      .select('id', { count: 'exact', head: true })
+      .eq('thread_id', threadId);
+    assert.equal(countError, null, countError?.message);
+
+    const { data: thread, error: threadError } = await harness.supabase
+      .from('email_threads')
+      .select(
+        'has_reply, last_inbound_at, message_count, conversation_status, category, category_source',
+      )
+      .eq('id', threadId)
+      .single();
+    assert.equal(threadError, null, threadError?.message);
+    assert.equal(thread?.has_reply, true);
+    assert.equal(thread?.last_inbound_at, receivedRows![0]!.received_at);
+    assert.equal(thread?.message_count, messageCount);
+    assert.equal(thread?.conversation_status, 'closed');
+    assert.equal(thread?.category, 'Auto Reply');
+    assert.equal(thread?.category_source, 'system');
+
+    const listed = await listInboxThreadIds(harness, graph.accountId, graph.campaignId);
+    assert.ok(listed.includes(threadId), `expected ${threadId} in inbox list, got ${listed.join(',')}`);
+    assert.equal(await countOpenConversationsWithReply(harness, graph.accountId, graph.campaignId), 0);
   } finally {
     await harness.cleanup();
   }

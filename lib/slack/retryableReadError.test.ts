@@ -63,6 +63,15 @@ test('isRetryableSupabaseReadError inspects hint from structured Supabase errors
   );
 });
 
+test('isRetryableSupabaseReadError detects Postgres deadlocks', () => {
+  assert.equal(isRetryableSupabaseReadError({ code: '40P01', message: 'deadlock detected' }), true);
+  assert.equal(isRetryableSupabaseReadError({ code: '40001', message: 'could not serialize access' }), true);
+  assert.equal(
+    isRetryableSupabaseReadError('PostgREST unavailable: deadlock detected'),
+    true,
+  );
+});
+
 test('isRetryableSupabaseReadError ignores unrelated errors', () => {
   assert.equal(
     isRetryableSupabaseReadError('Campaign abc has no account_id. Campaigns must be associated with an account.'),

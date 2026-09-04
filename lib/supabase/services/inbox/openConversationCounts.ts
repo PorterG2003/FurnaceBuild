@@ -11,7 +11,8 @@ export async function getOpenConversationCount(accountId: string): Promise<numbe
     .from('email_threads')
     .select(OPEN_CONVERSATION_COUNT_FILTERS.countColumn, { count: 'exact', head: true })
     .eq('account_id', accountId)
-    .eq('conversation_status', OPEN_CONVERSATION_COUNT_FILTERS.conversationStatus);
+    .eq('conversation_status', OPEN_CONVERSATION_COUNT_FILTERS.conversationStatus)
+    .eq('has_reply', OPEN_CONVERSATION_COUNT_FILTERS.hasReply);
 
   if (error) throw new Error(`Failed to count open conversations: ${error.message}`);
   return count ?? 0;

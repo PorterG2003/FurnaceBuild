@@ -73,7 +73,7 @@ export function useInboxData({
   const [datePreset, setDatePresetState] = useState<'7d' | '30d' | null>(null);
   const [tagFilterIds, setTagFilterIdsState] = useState<string[]>([]);
   const [campaignTagFilterIds, setCampaignTagFilterIdsState] = useState<string[]>([]);
-  const [categoryFilter, setCategoryFilterState] = useState<string | null>(null);
+  const [categoryFilter, setCategoryFilterState] = useState<string[]>([]);
   const [conversationStatusFilter, setConversationStatusFilterState] = useState<'open' | 'closed' | 'all'>('all');
   const [sortBy, setSortByState] = useState<InboxThreadSortBy>('newest');
   const [savedDefault, setSavedDefault] = useState<InboxDefaultFilterSnapshot | null>(null);
@@ -177,7 +177,7 @@ export function useInboxData({
     !!datePreset ||
     tagFilterIds.length > 0 ||
     campaignTagFilterIds.length > 0 ||
-    !!categoryFilter ||
+    categoryFilter.length > 0 ||
     conversationStatusFilter !== 'all' ||
     !!normalizeInboxSearchQuery(threadSearchQuery);
 
@@ -230,7 +230,7 @@ export function useInboxData({
     setDatePresetState(null);
     setTagFilterIdsState([]);
     setCampaignTagFilterIdsState([]);
-    setCategoryFilterState(null);
+    setCategoryFilterState([]);
     setConversationStatusFilterState('all');
     setSortByState('newest');
   }, []);
@@ -349,7 +349,7 @@ export function useInboxData({
       searchQuery: normalizeInboxSearchQuery(threadSearchQuery) ?? undefined,
       tagIds: tagFilterIds.length > 0 ? tagFilterIds : undefined,
       campaignTagIds: campaignTagFilterIds.length > 0 ? campaignTagFilterIds : undefined,
-      category: categoryFilter ?? undefined,
+      category: categoryFilter.length > 0 ? categoryFilter : undefined,
       conversationStatus: conversationStatusFilter,
       sortBy,
     };

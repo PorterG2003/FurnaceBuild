@@ -27,8 +27,8 @@ export interface InboxModalsFiltersProps {
   setMailboxFilterId: (id: string | null) => void;
   campaignFilterId: string | null;
   setCampaignFilterId: (id: string | null) => void;
-  categoryFilter: string | null;
-  setCategoryFilter: (v: string | null) => void;
+  categoryFilter: string[];
+  setCategoryFilter: (v: string[]) => void;
   conversationStatusFilter: 'open' | 'closed' | 'all';
   setConversationStatusFilter: (v: 'open' | 'closed' | 'all') => void;
   tagFilterIds: string[];

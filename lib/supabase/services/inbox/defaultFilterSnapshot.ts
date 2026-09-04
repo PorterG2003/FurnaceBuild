@@ -7,7 +7,7 @@ export type InboxDefaultFilterSnapshot = {
   datePreset: '7d' | '30d' | null;
   tagFilterIds: string[];
   campaignTagFilterIds: string[];
-  categoryFilter: string | null;
+  categoryFilter: string[];
   conversationStatusFilter: 'open' | 'closed' | 'all';
   sortBy: InboxThreadSortBy;
 };
@@ -41,14 +41,21 @@ function parseNullableId(value: unknown): string | null | undefined {
   return undefined;
 }
 
+/** Accepts current `string[]` and legacy scalar/`null` saved defaults. */
+function parseCategoryFilter(value: unknown): string[] | null {
+  if (value === null) return [];
+  if (isNonEmptyString(value)) return [value];
+  return parseIdList(value);
+}
+
 export function parseInboxDefaultFilter(value: unknown): InboxDefaultFilterSnapshot | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const raw = value as Record<string, unknown>;
 
   const mailboxFilterId = parseNullableId(raw.mailboxFilterId);
   const campaignFilterId = parseNullableId(raw.campaignFilterId);
-  const categoryFilter = parseNullableId(raw.categoryFilter);
-  if (mailboxFilterId === undefined || campaignFilterId === undefined || categoryFilter === undefined) {
+  const categoryFilter = parseCategoryFilter(raw.categoryFilter);
+  if (mailboxFilterId === undefined || campaignFilterId === undefined || categoryFilter === null) {
     return null;
   }
 
@@ -97,7 +104,7 @@ export function toInboxFilterSnapshot(input: InboxDefaultFilterSnapshot): InboxD
     datePreset: input.datePreset,
     tagFilterIds: [...input.tagFilterIds],
     campaignTagFilterIds: [...input.campaignTagFilterIds],
-    categoryFilter: input.categoryFilter,
+    categoryFilter: [...input.categoryFilter],
     conversationStatusFilter: input.conversationStatusFilter,
     sortBy: input.sortBy,
   };
@@ -116,9 +123,9 @@ export function inboxFiltersEqual(
     a.campaignFilterId === b.campaignFilterId &&
     a.unreadOnlyFilter === b.unreadOnlyFilter &&
     a.datePreset === b.datePreset &&
-    a.categoryFilter === b.categoryFilter &&
     a.conversationStatusFilter === b.conversationStatusFilter &&
     a.sortBy === b.sortBy &&
+    sortedCopy(a.categoryFilter).join('\0') === sortedCopy(b.categoryFilter).join('\0') &&
     sortedCopy(a.tagFilterIds).join('\0') === sortedCopy(b.tagFilterIds).join('\0') &&
     sortedCopy(a.campaignTagFilterIds).join('\0') === sortedCopy(b.campaignTagFilterIds).join('\0')
   );

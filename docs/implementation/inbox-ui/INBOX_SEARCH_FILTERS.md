@@ -40,7 +40,7 @@ Migration: `supabase/migrations/20260715180000_inbox_thread_search.sql`
 ### Filter options (RPC params)
 
 - `p_mailbox_id`, `p_campaign_ids` (TS resolves campaign tags → ids), `p_unread_only`, `p_date_from` / `p_date_to`
-- `p_category` (`__no_category__` or `no_category` → uncategorized). When omitted, all categories are included (null-safe; does not collapse to “uncategorized only”).
+- `p_category` (`text[]`). Empty/null means all categories. Named values match `t.category = ANY (...)`. `__no_category__` or `no_category` also include uncategorized (`t.category IS NULL`). Mixed selections are OR’d. Client API still accepts a single `?category=` and wraps it as a one-element array.
 - `p_conversation_status`, `p_has_reply_only`, `p_limit` / `p_offset`
 - `p_search` — min 2 chars after trim ([`normalizeInboxSearchQuery`](../../../lib/inbox/normalizeInboxSearchQuery.ts))
 - `p_sort` — `newest` (default), `open_first`, `oldest`, `unread_first`. When `p_search` is set, search rank stays the primary `ORDER BY` key and sort applies after. Unknown values coerce to `newest`. Added in `supabase/migrations/20260716160000_inbox_thread_list_sort.sql`.

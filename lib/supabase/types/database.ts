@@ -3395,7 +3395,7 @@ export interface Database {
           p_date_from?: string | null;
           p_date_to?: string | null;
           p_tag_ids?: string[] | null;
-          p_category?: string | null;
+          p_category?: string[] | null;
           p_conversation_status?: string | null;
           p_has_reply_only?: boolean | null;
           p_limit?: number | null;

@@ -18,7 +18,7 @@ export interface GetThreadsByAccountOptions {
   tagIds?: string[];
   /** Threads whose campaign has any of these campaign tags. */
   campaignTagIds?: string[];
-  category?: string;
+  category?: string[];
   includeUnreadCount?: boolean;
   conversationStatus?: 'open' | 'closed' | 'all';
   sortBy?: InboxThreadSortBy;
@@ -85,7 +85,7 @@ export async function getThreadsByAccount(
     p_date_from: options?.dateFrom ?? null,
     p_date_to: options?.dateTo ?? null,
     p_tag_ids: options?.tagIds?.length ? options.tagIds : null,
-    p_category: options?.category ?? null,
+    p_category: options?.category?.length ? options.category : null,
     p_conversation_status:
       options?.conversationStatus && options.conversationStatus !== 'all'
         ? options.conversationStatus

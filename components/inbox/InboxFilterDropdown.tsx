@@ -60,8 +60,8 @@ export interface InboxFilterDropdownProps {
   onMailboxFilterIdChange: (id: string | null) => void;
   campaignFilterId: string | null;
   onCampaignFilterIdChange: (id: string | null) => void;
-  categoryFilter: string | null;
-  onCategoryFilterChange: (v: string | null) => void;
+  categoryFilter: string[];
+  onCategoryFilterChange: (v: string[]) => void;
   conversationStatusFilter: 'open' | 'closed' | 'all';
   onConversationStatusFilterChange: (v: 'open' | 'closed' | 'all') => void;
   tagFilterIds: string[];
@@ -126,7 +126,6 @@ export function InboxFilterDropdown({
   );
   const categoryItems = useMemo(
     () => [
-      { id: 'all', name: 'All' },
       { id: NO_CATEGORY_FILTER, name: 'No category' },
       ...THREAD_CATEGORIES.map((c) => ({ id: c, name: c })),
     ],
@@ -260,19 +259,18 @@ export function InboxFilterDropdown({
         </>
       )}
 
-      <Select
+      <SearchAndSelectMulti
         label="Category"
         items={categoryItems}
         getItemId={(i) => i.id}
-        getItemLabel={(i) => ({ primary: i.name })}
+        getItemLabel={(i) => i.name}
         getItemColor={(item) =>
-          item.id === 'all' || item.id === NO_CATEGORY_FILTER ? null : getCategoryColor(item.id)
+          item.id === NO_CATEGORY_FILTER ? null : getCategoryColor(item.id)
         }
-        itemColorVariant="tint"
-        value={categoryFilter || 'all'}
-        onChange={(id) => onCategoryFilterChange(id === 'all' ? null : id)}
-        searchable={false}
-        placeholder="All"
+        value={categoryFilter}
+        onChange={onCategoryFilterChange}
+        searchPlaceholder="Search categories…"
+        placeholder="All categories"
         listMaxHeight={SELECT_LIST_MAX}
       />
 
